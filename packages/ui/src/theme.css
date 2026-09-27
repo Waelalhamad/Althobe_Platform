@@ -1,0 +1,84 @@
+/* Al Thob Al Arabi — brand tokens (docs/brand.md). Import after `@import "tailwindcss"`.
+   Components never hard-code hex values; they use these tokens. */
+
+@font-face {
+  font-family: 'Somar';
+  src: url('../brand/fonts/ArbFONTS-Somar-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Somar';
+  src: url('../brand/fonts/ArbFONTS-Somar-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Somar';
+  src: url('../brand/fonts/ArbFONTS-Somar-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Somar';
+  src: url('../brand/fonts/ArbFONTS-Somar-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* Digits only (U+0030–0039), from the device's system font. Somar's Latin "0" is a small circle
+   that reads as the Arabic five «٥», and its bold "8" looks like "a" — unacceptable where the
+   numbers are stock quantities. Everything else stays Somar. */
+@font-face {
+  font-family: 'AlthobeDigits';
+  src: local('Segoe UI'), local('SegoeUI'), local('Roboto'), local('Arial');
+  font-weight: 400;
+  unicode-range: U+0030-0039;
+}
+@font-face {
+  font-family: 'AlthobeDigits';
+  src:
+    local('Segoe UI Semibold'), local('SegoeUI-Semibold'), local('Roboto Medium'), local('Arial');
+  font-weight: 500 600;
+  unicode-range: U+0030-0039;
+}
+@font-face {
+  font-family: 'AlthobeDigits';
+  src: local('Segoe UI Bold'), local('SegoeUI-Bold'), local('Roboto Bold'), local('Arial Bold');
+  font-weight: 700 900;
+  unicode-range: U+0030-0039;
+}
+
+@theme {
+  --font-sans: 'AlthobeDigits', 'Somar', system-ui, sans-serif;
+
+  --color-brand: #8a1913;
+  --color-brand-dark: #6d130f;
+  --color-blush: #ebd8d2;
+  --color-stone: #dad3cb;
+  --color-mauve: #aa999a;
+
+  --color-surface: #fbf7f5;
+  --color-ink: #231a19;
+  --color-ink-muted: #6b5d5c;
+
+  /* Scan feedback is deliberately NOT the brand red (docs/brand.md). */
+  --color-ok: #15803d;
+  --color-ok-soft: #dcfce7;
+  --color-bad: #e11d48;
+  --color-bad-soft: #ffe4e6;
+  --color-warn: #b45309;
+  --color-warn-soft: #fef3c7;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-surface);
+  }
+  /* Barcodes, SKUs and quantities line up in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

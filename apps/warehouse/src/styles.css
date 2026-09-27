@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+@import '@althobe/ui/theme.css';
+
+/* Tailwind scans this app by default; the shared components live in a workspace package. */
+@source '../../../packages/ui/src';

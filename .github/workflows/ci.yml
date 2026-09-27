@@ -1,0 +1,72 @@
+# CI: every push and pull request. A red pipeline means the task is not done (AGENTS.md).
+#
+# Required repository settings (GitHub → Settings → Secrets and variables → Actions):
+#   secret   NEON_API_KEY     — Neon API key
+#   variable NEON_PROJECT_ID  — Neon project id
+# Integration tests run on a throwaway Neon branch created for this run and deleted afterwards
+# (ADR-006). They never touch the main branch.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: typecheck · lint · format · unit · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @althobe/backend db:generate
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm --filter @althobe/backend test:unit
+      - run: pnpm build
+
+  integration:
+    name: integration (Neon branch)
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @althobe/backend db:generate
+
+      - name: Create throwaway Neon branch
+        id: branch
+        uses: neondatabase/create-branch-action@v5
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch_name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Integration tests
+        run: pnpm --filter @althobe/backend test:integration
+        env:
+          TEST_DATABASE_URL: ${{ steps.branch.outputs.db_url }}
+
+      - name: Delete Neon branch
+        if: always()
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch: ${{ steps.branch.outputs.branch_id }}

@@ -1,0 +1,43 @@
+{
+  "name": "@althobe/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:practice": "tsx watch src/main.ts --practice",
+    "start": "node dist/main.js",
+    "user:create": "tsx scripts/create-user.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:migration:new": "tsx scripts/new-migration.ts",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/static": "10.1.4",
+    "@neondatabase/serverless": "1.1.0",
+    "@node-rs/argon2": "2.2.1",
+    "@prisma/adapter-neon": "6.19.3",
+    "@prisma/client": "6.19.3",
+    "fastify": "5.12.5",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "prisma": "6.19.3",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

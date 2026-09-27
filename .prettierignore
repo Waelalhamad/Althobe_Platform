@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+backend/prisma/migrations
+packages/ui/brand
+*.md

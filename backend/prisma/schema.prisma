@@ -1,0 +1,486 @@
+// Al Thob Al Arabi — database schema.
+// Conventions: docs/database.md. Inventory rules: docs/inventory.md.
+// Rules Prisma cannot express (check constraints, the barcode sequence, append-only triggers)
+// live in raw SQL at the end of the migrations. Never edit an applied migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Neon (ADR-006): the app connects through the pooler; migrations need the direct connection.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────────────────────────
+
+enum UnitOfMeasure {
+  PIECE
+  BOX
+  METER
+  KG
+
+  @@map("unit_of_measure")
+}
+
+enum LocationKind {
+  WAREHOUSE
+  STORE
+
+  @@map("location_kind")
+}
+
+enum MovementType {
+  OPENING
+  PURCHASE
+  SALE
+  RETURN
+  TRANSFER_OUT
+  TRANSFER_IN
+  ADJUSTMENT
+  DAMAGE
+  STOCKTAKE
+
+  @@map("movement_type")
+}
+
+enum ReferenceType {
+  OPENING
+  SCAN_SESSION
+  STOCKTAKE
+  MANUAL
+  TRANSFER
+  GOODS_RECEIPT
+  PURCHASE_ORDER
+  SALES_ORDER
+  RETURN
+
+  @@map("reference_type")
+}
+
+enum ReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+  EXPIRED
+
+  @@map("reservation_status")
+}
+
+enum ScanSessionKind {
+  OPENING
+  RECEIVE
+  TRANSFER
+  DAMAGE
+
+  @@map("scan_session_kind")
+}
+
+enum ScanSessionStatus {
+  OPEN
+  COMMITTED
+  CANCELLED
+
+  @@map("scan_session_status")
+}
+
+enum StocktakeScope {
+  FULL
+  PARTIAL
+
+  @@map("stocktake_scope")
+}
+
+enum StocktakeStatus {
+  DRAFT
+  COUNTING
+  REVIEW
+  APPLIED
+  CANCELLED
+
+  @@map("stocktake_status")
+}
+
+enum ExternalBarcodeKind {
+  GTIN
+  SUPPLIER
+
+  @@map("external_barcode_kind")
+}
+
+// ─── Platform ──────────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  email        String    @unique(map: "uq_users_email")
+  nameAr       String    @map("name_ar")
+  nameEn       String?   @map("name_en")
+  isActive     Boolean   @default(true) @map("is_active")
+  // argon2id. Null for machine users (e.g. "system"), which can never log in.
+  passwordHash String?   @map("password_hash")
+  // Role names from src/modules/auth/roles.ts. Code checks permissions, never these names.
+  roles        String[]  @default([])
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions           Session[]
+
+  movements          InventoryMovement[]
+  reservations       Reservation[]
+  scanSessions       ScanSession[]       @relation("ScanSessionCreatedBy")
+  scanSessionsClosed ScanSession[]       @relation("ScanSessionCommittedBy")
+  scanEvents         ScanSessionEvent[]
+  stocktakesCreated  Stocktake[]         @relation("StocktakeCreatedBy")
+  stocktakesApplied  Stocktake[]         @relation("StocktakeAppliedBy")
+  stocktakeEvents    StocktakeScanEvent[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+// Server-side sessions (docs/security.md): the cookie holds a random token; only its SHA-256 is
+// stored, so a database leak does not leak live sessions. Revocation is instant.
+model Session {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique(map: "uq_sessions_token_hash") @map("token_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  ip         String?
+  userAgent  String?   @map("user_agent")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "idx_sessions_user_id")
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId], map: "idx_audit_logs_entity")
+  @@index([actorId, createdAt(sort: Desc)], map: "idx_audit_logs_actor_created")
+  @@map("audit_logs")
+}
+
+model IdempotencyRecord {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String
+  operation   String
+  requestHash String   @map("request_hash")
+  response    Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@unique([key, operation], map: "uq_idempotency_records_key_operation")
+  @@index([expiresAt], map: "idx_idempotency_records_expires_at")
+  @@map("idempotency_records")
+}
+
+// ─── Catalogue ─────────────────────────────────────────────────────────────────────────────────
+
+model Product {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  code          String        @unique(map: "uq_products_code")
+  nameAr        String        @map("name_ar")
+  nameEn        String?       @map("name_en")
+  unitOfMeasure UnitOfMeasure @default(PIECE) @map("unit_of_measure")
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz(3)
+
+  variants ProductVariant[]
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  productId String    @map("product_id") @db.Uuid
+  sku       String    @unique(map: "uq_product_variants_sku")
+  barcode   String    @unique(map: "uq_product_variants_barcode") @db.Char(13)
+  fabric    String
+  colour    String
+  size      String
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  product          Product             @relation(fields: [productId], references: [id])
+  externalBarcodes VariantBarcode[]
+  balances         InventoryBalance[]
+  movements        InventoryMovement[]
+  reservations     Reservation[]
+  scanLines        ScanSessionLine[]
+  scanEvents       ScanSessionEvent[]
+  stocktakeLines   StocktakeLine[]
+  stocktakeEvents  StocktakeScanEvent[]
+
+  @@unique([productId, fabric, colour, size], map: "uq_product_variants_attributes")
+  @@index([productId], map: "idx_product_variants_product_id")
+  @@map("product_variants")
+}
+
+// Barcodes that arrive printed on goods: manufacturer GTINs and supplier codes.
+model VariantBarcode {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  variantId String              @map("variant_id") @db.Uuid
+  barcode   String              @unique(map: "uq_variant_barcodes_barcode")
+  kind      ExternalBarcodeKind
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([variantId], map: "idx_variant_barcodes_variant_id")
+  @@map("variant_barcodes")
+}
+
+// ─── Locations ─────────────────────────────────────────────────────────────────────────────────
+
+model Location {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  code      String       @unique(map: "uq_locations_code")
+  nameAr    String       @map("name_ar")
+  nameEn    String?      @map("name_en")
+  kind      LocationKind
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  balances          InventoryBalance[]
+  movements         InventoryMovement[]
+  reservations      Reservation[]
+  scanSessionsFrom  ScanSession[]       @relation("ScanSessionLocation")
+  scanSessionsTo    ScanSession[]       @relation("ScanSessionToLocation")
+  stocktakes        Stocktake[]
+
+  @@map("locations")
+}
+
+// ─── Inventory ledger ──────────────────────────────────────────────────────────────────────────
+
+// Derived, cached current state. Written only by InventoryService, in the same transaction as the
+// movements that change it. value_base_amount is the total stock value in SYP minor units; the
+// average unit cost is derived (value / quantity) so repeated averaging never accumulates
+// rounding error.
+model InventoryBalance {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  variantId        String   @map("variant_id") @db.Uuid
+  locationId       String   @map("location_id") @db.Uuid
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0) @map("reserved_quantity")
+  valueBaseAmount  BigInt   @default(0) @map("value_base_amount")
+  version          Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  variant  ProductVariant @relation(fields: [variantId], references: [id])
+  location Location       @relation(fields: [locationId], references: [id])
+
+  @@unique([variantId, locationId], map: "uq_inventory_balances_variant_location")
+  @@index([locationId], map: "idx_inventory_balances_location_id")
+  @@map("inventory_balances")
+}
+
+// The ledger. Append-only: a trigger rejects UPDATE and DELETE.
+// seq gives a total order of the ledger, used by stocktake snapshots.
+model InventoryMovement {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  seq                BigInt        @unique(map: "uq_inventory_movements_seq") @default(autoincrement())
+  variantId          String        @map("variant_id") @db.Uuid
+  locationId         String        @map("location_id") @db.Uuid
+  type               MovementType
+  quantity           Int
+  balanceAfter       Int           @map("balance_after")
+  referenceType      ReferenceType @map("reference_type")
+  referenceId        String?       @map("reference_id") @db.Uuid
+  transferId         String?       @map("transfer_id") @db.Uuid
+  reason             String?
+  note               String?
+  unitCostAmount     BigInt?       @map("unit_cost_amount")
+  unitCostCurrency   String?       @map("unit_cost_currency") @db.Char(3)
+  rateToBase         Decimal?      @map("rate_to_base") @db.Decimal(18, 6)
+  unitCostBaseAmount BigInt        @map("unit_cost_base_amount")
+  valueBaseAmount    BigInt        @map("value_base_amount")
+  createdById        String        @map("created_by") @db.Uuid
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  idempotencyKey     String?       @map("idempotency_key")
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  location  Location       @relation(fields: [locationId], references: [id])
+  createdBy User           @relation(fields: [createdById], references: [id])
+
+  @@index([variantId, locationId, seq(sort: Desc)], map: "idx_inventory_movements_variant_location_seq")
+  @@index([locationId, seq], map: "idx_inventory_movements_location_seq")
+  @@index([referenceType, referenceId], map: "idx_inventory_movements_reference")
+  @@index([transferId], map: "idx_inventory_movements_transfer_id")
+  @@map("inventory_movements")
+}
+
+model Reservation {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  variantId   String            @map("variant_id") @db.Uuid
+  locationId  String            @map("location_id") @db.Uuid
+  orderId     String            @map("order_id") @db.Uuid
+  quantity    Int
+  status      ReservationStatus @default(ACTIVE)
+  expiresAt   DateTime?         @map("expires_at") @db.Timestamptz(3)
+  releasedAt  DateTime?         @map("released_at") @db.Timestamptz(3)
+  createdById String            @map("created_by") @db.Uuid
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  location  Location       @relation(fields: [locationId], references: [id])
+  createdBy User           @relation(fields: [createdById], references: [id])
+
+  @@index([variantId, locationId, status], map: "idx_reservations_variant_location_status")
+  @@index([orderId], map: "idx_reservations_order_id")
+  @@map("reservations")
+}
+
+// ─── Scan sessions (drafts built by scanning; touch the ledger only on commit) ────────────────
+
+model ScanSession {
+  id            String            @id @default(uuid(7)) @db.Uuid
+  kind          ScanSessionKind
+  status        ScanSessionStatus @default(OPEN)
+  locationId    String            @map("location_id") @db.Uuid
+  toLocationId  String?           @map("to_location_id") @db.Uuid
+  reason        String?
+  note          String?
+  createdById   String            @map("created_by") @db.Uuid
+  committedById String?           @map("committed_by") @db.Uuid
+  committedAt   DateTime?         @map("committed_at") @db.Timestamptz(3)
+  cancelledAt   DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location    Location  @relation("ScanSessionLocation", fields: [locationId], references: [id])
+  toLocation  Location? @relation("ScanSessionToLocation", fields: [toLocationId], references: [id])
+  createdBy   User      @relation("ScanSessionCreatedBy", fields: [createdById], references: [id])
+  committedBy User?     @relation("ScanSessionCommittedBy", fields: [committedById], references: [id])
+
+  lines  ScanSessionLine[]
+  events ScanSessionEvent[]
+
+  @@index([status, locationId], map: "idx_scan_sessions_status_location")
+  @@map("scan_sessions")
+}
+
+model ScanSessionLine {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  sessionId        String   @map("session_id") @db.Uuid
+  variantId        String   @map("variant_id") @db.Uuid
+  quantity         Int      @default(0)
+  unitCostAmount   BigInt?  @map("unit_cost_amount")
+  unitCostCurrency String?  @map("unit_cost_currency") @db.Char(3)
+  rateToBase       Decimal? @map("rate_to_base") @db.Decimal(18, 6)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  session ScanSession    @relation(fields: [sessionId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([sessionId, variantId], map: "uq_scan_session_lines_session_variant")
+  @@map("scan_session_lines")
+}
+
+// One row per physical scan. unique(session, scan_id) turns a double trigger pull into one scan.
+model ScanSessionEvent {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  scanId      String   @map("scan_id")
+  barcode     String
+  variantId   String   @map("variant_id") @db.Uuid
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session   ScanSession    @relation(fields: [sessionId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  createdBy User           @relation(fields: [createdById], references: [id])
+
+  @@unique([sessionId, scanId], map: "uq_scan_session_events_session_scan")
+  @@map("scan_session_events")
+}
+
+// ─── Stocktake ─────────────────────────────────────────────────────────────────────────────────
+
+model Stocktake {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  locationId  String          @map("location_id") @db.Uuid
+  scope       StocktakeScope
+  status      StocktakeStatus @default(DRAFT)
+  note        String?
+  snapshotAt  DateTime?       @map("snapshot_at") @db.Timestamptz(3)
+  // Highest ledger seq included in the expected quantities. Movements at this location with a
+  // higher seq happened after the snapshot, and review warns about them.
+  snapshotSeq BigInt?         @map("snapshot_seq")
+  createdById String          @map("created_by") @db.Uuid
+  appliedById String?         @map("applied_by") @db.Uuid
+  appliedAt   DateTime?       @map("applied_at") @db.Timestamptz(3)
+  cancelledAt DateTime?       @map("cancelled_at") @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  location  Location @relation(fields: [locationId], references: [id])
+  createdBy User     @relation("StocktakeCreatedBy", fields: [createdById], references: [id])
+  appliedBy User?    @relation("StocktakeAppliedBy", fields: [appliedById], references: [id])
+
+  lines  StocktakeLine[]
+  events StocktakeScanEvent[]
+
+  @@index([locationId, status], map: "idx_stocktakes_location_status")
+  @@map("stocktakes")
+}
+
+model StocktakeLine {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  stocktakeId      String   @map("stocktake_id") @db.Uuid
+  variantId        String   @map("variant_id") @db.Uuid
+  expectedQuantity Int      @default(0) @map("expected_quantity")
+  // null = not counted yet. Review refuses to proceed while any line is null, unless the user
+  // explicitly confirms uncounted lines as zero.
+  countedQuantity  Int?     @map("counted_quantity")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  stocktake Stocktake      @relation(fields: [stocktakeId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([stocktakeId, variantId], map: "uq_stocktake_lines_stocktake_variant")
+  @@map("stocktake_lines")
+}
+
+model StocktakeScanEvent {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  stocktakeId String   @map("stocktake_id") @db.Uuid
+  scanId      String   @map("scan_id")
+  barcode     String
+  variantId   String   @map("variant_id") @db.Uuid
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  stocktake Stocktake      @relation(fields: [stocktakeId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  createdBy User           @relation(fields: [createdById], references: [id])
+
+  @@unique([stocktakeId, scanId], map: "uq_stocktake_scan_events_stocktake_scan")
+  @@map("stocktake_scan_events")
+}
