@@ -197,6 +197,7 @@ Code checks permissions, never role names. Inventory permissions:
 | `inventory.adjust` | Manual adjustment with a reason |
 | `inventory.reserve` | Reserve stock for an order |
 | `inventory.release` | Release a reservation |
+| `inventory.return` | Take back goods from a customer (`RETURN`) |
 | `inventory.stocktake.count` | Create a stocktake and record counts |
 | `inventory.stocktake.apply` | Approve and post a stocktake |
 | `inventory.cost.view` | See unit costs and valuations |
@@ -263,6 +264,14 @@ OPEN -> COMMITTED
 | `RECEIVE` | WAREHOUSE | `PURCHASE` movements | `inventory.receive` |
 | `TRANSFER` | from → to | `TRANSFER_OUT` + `TRANSFER_IN` pairs | `inventory.transfer` |
 | `DAMAGE` | any | `DAMAGE` movements | `inventory.damage` |
+| `SALE` | any | `SALE` movements (goods leaving to a customer); optional customer/invoice note | `inventory.issue` |
+| `RETURN` | any | `RETURN` movements (goods coming back); **reason required** | `inventory.return` |
+
+`SALE` and `RETURN` sessions bridge the gap until the POS (Phase 4) and sales (Phase 6) record
+sales and returns as documents. Sales leave at the moving-average cost and returns re-enter at the
+current average. A damaged return is recorded as a return, then as damage, so both facts stay in
+the ledger. The app suggests one sale session per customer or invoice, so balances stay current
+during the day.
 
 Behaviour:
 

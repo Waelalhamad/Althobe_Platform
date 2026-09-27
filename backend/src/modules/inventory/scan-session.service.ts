@@ -54,9 +54,12 @@ const PERMISSION_BY_KIND: Record<ScanSessionKind, Permission> = {
   RECEIVE: PERMISSIONS.inventory.receive,
   TRANSFER: PERMISSIONS.inventory.transfer,
   DAMAGE: PERMISSIONS.inventory.damage,
+  SALE: PERMISSIONS.inventory.issue,
+  RETURN: PERMISSIONS.inventory.return,
 };
 
 const COSTED_KINDS: ReadonlySet<ScanSessionKind> = new Set(['OPENING', 'RECEIVE']);
+const OUTGOING_KINDS: ReadonlySet<ScanSessionKind> = new Set(['DAMAGE', 'SALE']);
 
 export interface ScanLineView {
   variant: VariantView;
@@ -97,6 +100,7 @@ interface SessionRow {
   location_id: string;
   to_location_id: string | null;
   reason: string | null;
+  note: string | null;
   created_by: string;
 }
 
@@ -111,10 +115,10 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     const rows =
       mode === 'update'
         ? await tx.$queryRaw<SessionRow[]>`
-            SELECT id, kind, status, location_id, to_location_id, reason, created_by
+            SELECT id, kind, status, location_id, to_location_id, reason, note, created_by
             FROM scan_sessions WHERE id = ${sessionId}::uuid FOR UPDATE`
         : await tx.$queryRaw<SessionRow[]>`
-            SELECT id, kind, status, location_id, to_location_id, reason, created_by
+            SELECT id, kind, status, location_id, to_location_id, reason, note, created_by
             FROM scan_sessions WHERE id = ${sessionId}::uuid FOR SHARE`;
     const session = rows[0];
     if (!session) throw new NotFoundError('scan_session', sessionId);
@@ -447,6 +451,10 @@ function entryTypeOf(kind: ScanSessionKind) {
       return 'TRANSFER_OUT' as const;
     case 'DAMAGE':
       return 'DAMAGE' as const;
+    case 'SALE':
+      return 'SALE' as const;
+    case 'RETURN':
+      return 'RETURN' as const;
   }
 }
 
@@ -493,9 +501,11 @@ function entriesFor(
     variantId: line.variantId,
     locationId: session.location_id,
     type: entryTypeOf(session.kind),
-    quantity: session.kind === 'DAMAGE' ? -line.quantity : line.quantity,
+    // Damage and sales take stock away; everything else here brings it in.
+    quantity: OUTGOING_KINDS.has(session.kind) ? -line.quantity : line.quantity,
     unitCost: COSTED_KINDS.has(session.kind) ? costOf(line) : null,
     reason: session.reason,
+    note: session.note,
     ...reference,
   }));
 }

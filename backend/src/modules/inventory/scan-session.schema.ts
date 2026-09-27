@@ -3,7 +3,7 @@ import { unitCostSchema } from '../../shared/money.js';
 
 export const openScanSessionSchema = z
   .object({
-    kind: z.enum(['OPENING', 'RECEIVE', 'TRANSFER', 'DAMAGE']),
+    kind: z.enum(['OPENING', 'RECEIVE', 'TRANSFER', 'DAMAGE', 'SALE', 'RETURN']),
     locationId: z.uuid(),
     toLocationId: z.uuid().optional(),
     reason: z.string().trim().min(3).max(500).optional(),
@@ -33,6 +33,13 @@ export const openScanSessionSchema = z
     }
     if (s.kind === 'DAMAGE' && !s.reason) {
       ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Damage needs a reason' });
+    }
+    if (s.kind === 'RETURN' && !s.reason) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: 'A return needs a reason',
+      });
     }
   });
 

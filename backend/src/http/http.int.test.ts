@@ -186,6 +186,15 @@ describe('opening count over HTTP — the first real use', () => {
     });
     expect(denied.statusCode).toBe(403);
 
+    // Until the POS exists, store staff record the store's own sales.
+    const sale = await app.inject({
+      method: 'POST',
+      url: '/api/v1/scan-sessions',
+      headers: shop.headers,
+      payload: { kind: 'SALE', locationId: w.store.id, note: 'زبون' },
+    });
+    expect(sale.statusCode).toBe(200);
+
     const keeper = await login('keeper@test.local');
     const refused = await app.inject({
       method: 'POST',

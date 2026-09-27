@@ -74,6 +74,8 @@ enum ScanSessionKind {
   RECEIVE
   TRANSFER
   DAMAGE
+  SALE
+  RETURN
 
   @@map("scan_session_kind")
 }

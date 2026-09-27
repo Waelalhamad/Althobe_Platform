@@ -45,7 +45,7 @@ stock endpoints arriving in Phase 3 will require it.
 | `GET` | `/inventory/balances?locationId=&q=` | `inventory.view` |
 | `GET` | `/inventory/movements?variantId=&locationId=` | `inventory.view` |
 | `GET` | `/scan-sessions` (open sessions, to resume) | `inventory.view` |
-| `POST` | `/scan-sessions` | by kind: `inventory.receive` / `.transfer` / `.damage` |
+| `POST` | `/scan-sessions` | by kind: `OPENING`/`RECEIVE` → `inventory.receive`, `TRANSFER` → `.transfer`, `DAMAGE` → `.damage`, `SALE` → `.issue`, `RETURN` → `.return` |
 | `GET` | `/scan-sessions/:id` | `inventory.view` |
 | `POST` | `/scan-sessions/:id/scans` | same as the session kind |
 | `PATCH` / `DELETE` | `/scan-sessions/:id/lines/:variantId` | same as the session kind |

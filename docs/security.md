@@ -47,6 +47,7 @@ inventory.damage
 inventory.adjust
 inventory.reserve
 inventory.release
+inventory.return
 inventory.stocktake.count
 inventory.stocktake.apply
 inventory.cost.view
@@ -71,8 +72,8 @@ Starting roles:
 | `owner` | مدير عام | everything |
 | `manager` | مدير | everything except `admin.*` and `employees.salary.*` |
 | `inventory_manager` | مدير مخزون | all `inventory.*`, including adjust, stocktake apply, and cost |
-| `warehouse_keeper` | أمين مستودع | view, receive, issue, transfer, damage, stocktake count; no adjust, no apply, no cost |
-| `store_staff` | موظف متجر | view stock at the store, POS sale (later); no cost, no discount beyond a configured limit |
+| `warehouse_keeper` | أمين مستودع | view, receive, issue, return, transfer, damage, stocktake count; no adjust, no apply, no cost |
+| `store_staff` | موظف متجر | view stock, record sales (`inventory.issue`) and returns (`inventory.return`) until the POS exists; no cost |
 | `accountant` | محاسب | accounting, invoicing, `inventory.view`, `inventory.cost.view` |
 | `wholesale_customer` | زبون جملة | own orders, own invoices, own prices, nothing else |
 

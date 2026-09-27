@@ -12,6 +12,7 @@ export const PERMISSIONS = {
     adjust: 'inventory.adjust',
     reserve: 'inventory.reserve',
     release: 'inventory.release',
+    return: 'inventory.return',
     stocktakeCount: 'inventory.stocktake.count',
     stocktakeApply: 'inventory.stocktake.apply',
     costView: 'inventory.cost.view',

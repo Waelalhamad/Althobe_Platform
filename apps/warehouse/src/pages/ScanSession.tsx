@@ -51,7 +51,8 @@ export function ScanSessionPage() {
   const costed = session?.kind === 'OPENING' || session?.kind === 'RECEIVE';
   // Outgoing sessions take stock away from the source: show what is available there, so an
   // over-scan is visible before confirming rather than refused after.
-  const outgoing = session?.kind === 'TRANSFER' || session?.kind === 'DAMAGE';
+  const outgoing =
+    session?.kind === 'TRANSFER' || session?.kind === 'DAMAGE' || session?.kind === 'SALE';
   const { data: sourceBalances } = useQuery({
     ...balancesQuery(session?.locationId ?? ''),
     enabled: Boolean(open && outgoing && session?.locationId),
@@ -137,6 +138,12 @@ export function ScanSessionPage() {
         {session.toLocationId && ` ← ${locationName(session.toLocationId)}`}
       </PageTitle>
       {session.reason && <p className="-mt-2 mb-4 text-ink-muted">السبب: {session.reason}</p>}
+      {session.note && <p className="-mt-2 mb-4 text-ink-muted">العميل / ملاحظة: {session.note}</p>}
+      {open && session.kind === 'SALE' && (
+        <div className="mb-4">
+          <Alert tone="warn">أكّد بعد كل زبون أو فاتورة ليبقى الرصيد صحيحاً طوال اليوم.</Alert>
+        </div>
+      )}
 
       {session.status === 'COMMITTED' && (
         <div className="mb-4">

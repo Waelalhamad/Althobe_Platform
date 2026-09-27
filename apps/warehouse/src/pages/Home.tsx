@@ -1,12 +1,18 @@
 import { Alert, Button, Card, Input, PageTitle, Select } from '@althobe/ui/components';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { api, type Location, type SessionKind, type User } from '../api';
 import { errorText, formatQuantity, LOCATION_KIND, SESSION_KIND } from '../format';
 import { balancesQuery, can, locationsQuery, meQuery, openSessionsQuery } from '../queries';
 
-type StartInput = { kind: SessionKind; locationId: string; toLocationId?: string; reason?: string };
+type StartInput = {
+  kind: SessionKind;
+  locationId: string;
+  toLocationId?: string;
+  reason?: string;
+  note?: string;
+};
 
 export function HomePage() {
   const { data: user } = useQuery(meQuery);
@@ -93,7 +99,10 @@ export function HomePage() {
   );
 }
 
-/** What can be started at a location, filtered by the user's permissions (the server re-checks). */
+/**
+ * What can be started at a location, grouped by direction and filtered by the user's permissions
+ * (the server re-checks every one). Forms open inline for the kinds that need more than a click.
+ */
 function StartActions({
   user,
   location,
@@ -107,15 +116,25 @@ function StartActions({
   onStart: (input: StartInput) => void;
   busy: boolean;
 }) {
-  const [mode, setMode] = useState<'transfer' | 'damage' | null>(null);
+  const [mode, setMode] = useState<'transfer' | 'damage' | 'sale' | 'return' | null>(null);
   const [destination, setDestination] = useState('');
   const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
   const base = { locationId: location.id };
+  const open = (next: typeof mode) => {
+    setReason('');
+    setNote('');
+    setMode(next);
+  };
+  const back = (
+    <Button variant="ghost" onClick={() => setMode(null)}>
+      رجوع
+    </Button>
+  );
 
   if (mode === 'transfer') {
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-blush p-3">
-        <span className="text-sm font-medium">نقل إلى:</span>
+      <InlineForm title="نقل إلى:">
         <Select value={destination} onChange={(e) => setDestination(e.target.value)}>
           <option value="">اختر الموقع…</option>
           {others.map((l) => (
@@ -131,18 +150,15 @@ function StartActions({
           >
             ابدأ النقل
           </Button>
-          <Button variant="ghost" onClick={() => setMode(null)}>
-            رجوع
-          </Button>
+          {back}
         </div>
-      </div>
+      </InlineForm>
     );
   }
 
   if (mode === 'damage') {
     return (
-      <div className="flex flex-col gap-2 rounded-lg bg-blush p-3">
-        <span className="text-sm font-medium">سبب التلف (إلزامي):</span>
+      <InlineForm title="سبب التلف (إلزامي):">
         <Input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -156,41 +172,132 @@ function StartActions({
           >
             ابدأ تسجيل التالف
           </Button>
-          <Button variant="ghost" onClick={() => setMode(null)}>
-            رجوع
-          </Button>
+          {back}
         </div>
-      </div>
+      </InlineForm>
     );
   }
 
+  if (mode === 'sale') {
+    return (
+      <InlineForm title="العميل / رقم الفاتورة (اختياري):">
+        <Input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="مثال: فاتورة 1042"
+        />
+        <div className="flex gap-2">
+          <Button
+            disabled={busy}
+            onClick={() =>
+              onStart({ ...base, kind: 'SALE', ...(note.trim() ? { note: note.trim() } : {}) })
+            }
+          >
+            ابدأ الإخراج
+          </Button>
+          {back}
+        </div>
+      </InlineForm>
+    );
+  }
+
+  if (mode === 'return') {
+    return (
+      <InlineForm title="سبب الإرجاع (إلزامي):">
+        <Input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="مثال: مقاس غير مناسب"
+        />
+        <Input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="العميل / رقم الفاتورة (اختياري)"
+        />
+        <div className="flex gap-2">
+          <Button
+            disabled={busy || reason.trim().length < 3}
+            onClick={() =>
+              onStart({
+                ...base,
+                kind: 'RETURN',
+                reason: reason.trim(),
+                ...(note.trim() ? { note: note.trim() } : {}),
+              })
+            }
+          >
+            ابدأ المرتجع
+          </Button>
+          {back}
+        </div>
+      </InlineForm>
+    );
+  }
+
+  const canReceive = can(user, 'inventory.receive');
+  const incoming = [
+    canReceive && (
+      <Button
+        key="opening"
+        variant="secondary"
+        disabled={busy}
+        onClick={() => onStart({ ...base, kind: 'OPENING' })}
+      >
+        {SESSION_KIND.OPENING}
+      </Button>
+    ),
+    // The store is stocked by transfer, never straight from a supplier (inventory.policy.ts).
+    canReceive && location.kind === 'WAREHOUSE' && (
+      <Button key="receive" disabled={busy} onClick={() => onStart({ ...base, kind: 'RECEIVE' })}>
+        {SESSION_KIND.RECEIVE}
+      </Button>
+    ),
+    can(user, 'inventory.return') && (
+      <Button key="return" variant="secondary" disabled={busy} onClick={() => open('return')}>
+        {SESSION_KIND.RETURN}
+      </Button>
+    ),
+  ].filter(Boolean);
+  const outgoing = [
+    can(user, 'inventory.issue') && (
+      <Button key="sale" disabled={busy} onClick={() => open('sale')}>
+        {SESSION_KIND.SALE}
+      </Button>
+    ),
+    can(user, 'inventory.transfer') && others.length > 0 && (
+      <Button key="transfer" variant="secondary" disabled={busy} onClick={() => open('transfer')}>
+        {SESSION_KIND.TRANSFER}
+      </Button>
+    ),
+    can(user, 'inventory.damage') && (
+      <Button key="damage" variant="ghost" disabled={busy} onClick={() => open('damage')}>
+        {SESSION_KIND.DAMAGE}
+      </Button>
+    ),
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {can(user, 'inventory.receive') && (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => onStart({ ...base, kind: 'OPENING' })}
-        >
-          {SESSION_KIND.OPENING}
-        </Button>
-      )}
-      {/* The store is stocked by transfer, never straight from a supplier (inventory.policy.ts). */}
-      {can(user, 'inventory.receive') && location.kind === 'WAREHOUSE' && (
-        <Button disabled={busy} onClick={() => onStart({ ...base, kind: 'RECEIVE' })}>
-          {SESSION_KIND.RECEIVE}
-        </Button>
-      )}
-      {can(user, 'inventory.transfer') && others.length > 0 && (
-        <Button variant="secondary" disabled={busy} onClick={() => setMode('transfer')}>
-          {SESSION_KIND.TRANSFER}
-        </Button>
-      )}
-      {can(user, 'inventory.damage') && (
-        <Button variant="ghost" disabled={busy} onClick={() => setMode('damage')}>
-          {SESSION_KIND.DAMAGE}
-        </Button>
-      )}
+    <div className="flex flex-col gap-3">
+      {incoming.length > 0 && <ActionGroup label="وارد">{incoming}</ActionGroup>}
+      {outgoing.length > 0 && <ActionGroup label="صادر">{outgoing}</ActionGroup>}
+    </div>
+  );
+}
+
+function ActionGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-ink-muted">{label}</span>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
+function InlineForm({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-blush p-3">
+      <span className="text-sm font-medium">{title}</span>
+      {children}
     </div>
   );
 }

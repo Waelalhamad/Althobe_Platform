@@ -72,6 +72,8 @@ export const SESSION_KIND: Record<SessionKind, string> = {
   RECEIVE: 'إدخال بضاعة',
   TRANSFER: 'نقل بضاعة',
   DAMAGE: 'تالف',
+  SALE: 'إخراج / بيع',
+  RETURN: 'مرتجع',
 };
 
 const numberFormat = new Intl.NumberFormat('ar-SY-u-nu-latn');

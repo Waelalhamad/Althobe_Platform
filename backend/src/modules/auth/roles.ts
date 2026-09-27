@@ -17,10 +17,12 @@ export const ROLES = {
     P.inventory.issue,
     P.inventory.transfer,
     P.inventory.damage,
+    P.inventory.return,
     P.inventory.stocktakeCount,
     P.products.read,
   ],
-  store_staff: [P.inventory.view, P.products.read],
+  // Until the POS exists, the store records its own sales and returns as scan sessions.
+  store_staff: [P.inventory.view, P.inventory.issue, P.inventory.return, P.products.read],
   accountant: [P.inventory.view, P.inventory.costView, P.products.read],
 } satisfies Record<string, readonly Permission[]>;
 

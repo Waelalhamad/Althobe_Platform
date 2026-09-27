@@ -2,7 +2,7 @@
 // generated from the OpenAPI document. Money and sequence numbers arrive as strings.
 
 export type LocationKind = 'WAREHOUSE' | 'STORE';
-export type SessionKind = 'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE';
+export type SessionKind = 'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN';
 export type Currency = 'SYP' | 'USD';
 
 export interface User {
@@ -234,6 +234,7 @@ export const api = {
     locationId: string;
     toLocationId?: string;
     reason?: string;
+    note?: string;
   }) => post<ScanSession>('/scan-sessions', input),
   session: async (id: string) => get<ScanSession>(`/scan-sessions/${id}`),
   scan: async (id: string, barcode: string, scanId: string) =>

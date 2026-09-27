@@ -8,6 +8,7 @@ import {
   SYP,
   USD,
   withoutPermission,
+  write,
   type World,
 } from '../../../test/helpers.js';
 
@@ -220,5 +221,108 @@ describe('TRANSFER session', () => {
     await expect(
       sessions.setLineCost({ sessionId: session.id, variantId: w.x.id, unitCost: SYP(1) }, w.owner),
     ).rejects.toMatchObject({ code: 'COST_NOT_ALLOWED' });
+  });
+});
+
+describe('SALE and RETURN sessions — goods leaving to and coming back from customers', () => {
+  /** Puts `quantity` of X into the store the only legal way: received at WH1, then transferred. */
+  async function stockTheStore(quantity: number) {
+    await stock(t.services, w, w.x, w.wh1, quantity, SYP(1000));
+    await t.services.inventory.transferStock(
+      { variantId: w.x.id, fromLocationId: w.wh1.id, toLocationId: w.store.id, quantity },
+      write(w.owner),
+    );
+  }
+
+  it('a sale at the store posts one SALE line, reduces stock, and carries the customer note', async () => {
+    await stockTheStore(5);
+    const session = await sessions.openSession(
+      { kind: 'SALE', locationId: w.store.id, note: 'فاتورة 1042 — أبو محمد' },
+      w.owner,
+    );
+    await scan(session.id, w.x.barcode);
+    await scan(session.id, w.x.barcode);
+    const result = await sessions.commitSession({ sessionId: session.id }, w.owner);
+
+    expect(result.movements).toMatchObject([
+      { type: 'SALE', quantity: -2, referenceType: 'SCAN_SESSION', note: 'فاتورة 1042 — أبو محمد' },
+    ]);
+    expect(await quantityAt(w.x.id, w.store.id)).toBe(3);
+    // Value leaves at the moving average (1,000 SYP each).
+    expect(result.movements[0]!.valueBaseAmount).toBe(-200_000n);
+  });
+
+  it('cannot sell more than is there, and cannot sell reserved stock', async () => {
+    await stockTheStore(1);
+    const over = await sessions.openSession({ kind: 'SALE', locationId: w.store.id }, w.owner);
+    await sessions.setLineQuantity({ sessionId: over.id, variantId: w.x.id, quantity: 2 }, w.owner);
+    await expect(sessions.commitSession({ sessionId: over.id }, w.owner)).rejects.toMatchObject({
+      code: 'INSUFFICIENT_STOCK',
+    });
+    expect(await quantityAt(w.x.id, w.store.id)).toBe(1);
+
+    await stock(t.services, w, w.y, w.wh1, 3);
+    await t.services.inventory.reserveStock(
+      { variantId: w.y.id, locationId: w.wh1.id, quantity: 2, orderId: randomUUID() },
+      write(w.owner),
+    );
+    const wholesale = await sessions.openSession({ kind: 'SALE', locationId: w.wh1.id }, w.owner);
+    await sessions.setLineQuantity(
+      { sessionId: wholesale.id, variantId: w.y.id, quantity: 2 },
+      w.owner,
+    );
+    await expect(
+      sessions.commitSession({ sessionId: wholesale.id }, w.owner),
+    ).rejects.toMatchObject({
+      code: 'INSUFFICIENT_AVAILABLE_STOCK',
+    });
+  });
+
+  it('a return needs a reason, comes back at the average cost, and posts once', async () => {
+    await stockTheStore(4);
+    await expect(
+      sessions.openSession({ kind: 'RETURN', locationId: w.store.id }, w.owner),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const session = await sessions.openSession(
+      { kind: 'RETURN', locationId: w.store.id, reason: 'مقاس غير مناسب' },
+      w.owner,
+    );
+    await scan(session.id, w.x.barcode);
+    const first = await sessions.commitSession({ sessionId: session.id }, w.owner);
+    const again = await sessions.commitSession({ sessionId: session.id }, w.owner);
+
+    expect(first.movements).toMatchObject([
+      { type: 'RETURN', quantity: 1, reason: 'مقاس غير مناسب', unitCostBaseAmount: 100_000n },
+    ]);
+    expect(again.movements.map((m) => m.id)).toEqual(first.movements.map((m) => m.id));
+    expect(await quantityAt(w.x.id, w.store.id)).toBe(5);
+  });
+
+  it('needs inventory.issue to sell and inventory.return to take a return', async () => {
+    const noIssue = withoutPermission(w.owner, PERMISSIONS.inventory.issue);
+    await expect(
+      sessions.openSession({ kind: 'SALE', locationId: w.store.id }, noIssue),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    const noReturn = withoutPermission(w.owner, PERMISSIONS.inventory.return);
+    await expect(
+      sessions.openSession({ kind: 'RETURN', locationId: w.store.id, reason: 'تجربة' }, noReturn),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+  });
+
+  it('keeps the ledger consistent across sales and returns', async () => {
+    await stockTheStore(6);
+    const sale = await sessions.openSession({ kind: 'SALE', locationId: w.store.id }, w.owner);
+    await sessions.setLineQuantity({ sessionId: sale.id, variantId: w.x.id, quantity: 4 }, w.owner);
+    await sessions.commitSession({ sessionId: sale.id }, w.owner);
+    const ret = await sessions.openSession(
+      { kind: 'RETURN', locationId: w.store.id, reason: 'عيب خياطة' },
+      w.owner,
+    );
+    await sessions.setLineQuantity({ sessionId: ret.id, variantId: w.x.id, quantity: 1 }, w.owner);
+    await sessions.commitSession({ sessionId: ret.id }, w.owner);
+
+    expect(await quantityAt(w.x.id, w.store.id)).toBe(3);
+    expect(await t.services.inventory.verifyLedger()).toEqual({ balances: [], runningTotals: [] });
   });
 });

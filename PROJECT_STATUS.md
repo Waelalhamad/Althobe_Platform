@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 Read this first in every session. It is the only file that describes what actually exists.
 If it disagrees with the code, the code wins — and this file gets fixed in the same PR.
@@ -61,6 +61,7 @@ Scanner UI, then connect the store.
 - [x] Confirm / finish buttons wait for typed quantities and counts to finish saving (bug found by the E2E test)
 - [x] Scanner input accepts Arabic-Indic / Persian digits (Arabic keyboard layout)
 - [x] Practice mode (`pnpm dev:practice`, separate database, banner)
+- [x] **Goods leaving and coming back** (2026-09-28): `SALE` (إخراج / بيع, optional customer/invoice note) and `RETURN` (مرتجع, reason required) scan sessions at any location; new permission `inventory.return`; store staff can record sales and returns; home actions grouped into وارد / صادر
 - [ ] OpenAPI document + generated client — deferred (developer convenience, no business impact)
 - [ ] Reservation endpoints — with wholesale (Phase 6)
 - [ ] Nightly ledger check and reservation expiry jobs — with hosting
@@ -120,6 +121,10 @@ Resolved 2026-09-25: labels are printed for everything (no existing barcodes); n
 | 8 | At least two people with access (stocktake needs a second approver) | Phase 3 |
 
 ## Known issues
+
+- **A silently dropped WebSocket to Neon can hang a request** (seen twice on the VPN during tests:
+  once for hours, once 120 s). Add connection and query timeouts to the database pool so a request
+  fails fast and the scan queue can retry. Scheduled with the weak-network work (improvement #4).
 
 - **Reset the Neon password**: it was pasted in chat on 2026-09-24, and a debugging command printed a
   connection string again on 2026-09-27.
