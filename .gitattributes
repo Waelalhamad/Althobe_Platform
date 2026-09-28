@@ -2,3 +2,5 @@
 *.otf binary
 *.png binary
 *.jpg binary
+# Windows batch files need CRLF, or cmd mis-parses labels and goto.
+*.bat text eol=crlf

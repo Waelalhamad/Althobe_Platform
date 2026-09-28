@@ -26,7 +26,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen print:min-h-0">
       <header className="bg-brand text-white print:hidden">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link to="/" className="flex items-center gap-3">
@@ -70,7 +70,8 @@ export function AppLayout() {
           وضع التدريب — قاعدة بيانات للتجربة، لا تؤثر على المخزون الحقيقي
         </div>
       )}
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* No padding or width limit when printing: labels must start at the paper edge. */}
+      <main className="mx-auto max-w-6xl px-4 py-6 print:m-0 print:max-w-none print:p-0">
         <Outlet />
       </main>
     </div>
