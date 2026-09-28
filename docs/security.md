@@ -141,7 +141,11 @@ before (jsonb), after (jsonb), ip, user_agent, created_at
 ## Secrets
 
 - Never committed. `.env` is git-ignored; `.env.example` lists keys with empty values.
-- Production secrets live in the deployment platform, not in the repository and not in chat.
+- Production secrets live in the deployment platform (Railway service variables, ADR-007), not in
+  the repository and not in chat. That includes the Neon URLs and the S3 IAM user's keys.
+- Production sets `NODE_ENV=production`: session cookies are `Secure; HttpOnly; SameSite=Strict`
+  and Railway terminates HTTPS in front of the app (`trustProxy` is on).
+- The S3 IAM user may only read and write objects in the photo bucket; the bucket stays private.
 - Rotate on any staff departure, and at least annually.
 - If a secret is ever committed, it is burned: rotate it, do not just delete the commit.
 

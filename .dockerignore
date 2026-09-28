@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.github
+**/.env
+**/.env.*
+!.env.example
+**/e2e/screenshots
+**/test-results
+**/playwright-report
+*.bat
+*.log

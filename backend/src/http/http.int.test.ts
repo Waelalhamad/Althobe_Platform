@@ -62,6 +62,36 @@ async function login(email: string, password = PASSWORD) {
   return { res, cookie, headers: cookie ? { cookie: `${SESSION_COOKIE}=${cookie.value}` } : {} };
 }
 
+describe('health', () => {
+  it('answers 200 without a login when the database is reachable', async () => {
+    const healthy = await buildServer({
+      services: t.services,
+      secureCookies: false,
+      checkHealth: async () => {
+        await Promise.resolve();
+      },
+    });
+    const res = await healthy.inject({ method: 'GET', url: '/api/v1/health' });
+    expect(res.statusCode).toBe(200);
+    expect(dataOf<{ ok: boolean }>(res)).toEqual({ ok: true });
+    await healthy.close();
+  });
+
+  it('answers 503 when the database is unreachable', async () => {
+    const broken = await buildServer({
+      services: t.services,
+      secureCookies: false,
+      checkHealth: async () => {
+        await Promise.reject(new Error('down'));
+      },
+    });
+    const res = await broken.inject({ method: 'GET', url: '/api/v1/health' });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<Body<never>>().error?.code).toBe('UNAVAILABLE');
+    await broken.close();
+  });
+});
+
 describe('auth', () => {
   it('rejects a wrong password and an unknown email identically', async () => {
     const wrong = await login('keeper@test.local', 'nope-nope-nope');

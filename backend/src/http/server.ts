@@ -26,6 +26,8 @@ export interface ServerOptions {
   secureCookies: boolean;
   /** Running against the practice database; the app shows a banner. */
   practice?: boolean;
+  /** Rejects when a dependency (the database) is unreachable; backs GET /api/v1/health. */
+  checkHealth?: () => Promise<void>;
   logger?: boolean;
 }
 
@@ -89,6 +91,19 @@ export async function buildServer(options: ServerOptions) {
   });
 
   app.get('/api/v1/mode', () => ({ data: { practice: options.practice ?? false } }));
+
+  // The host's health check (Railway): a release goes live only once it can reach the database.
+  app.get('/api/v1/health', async (request, reply) => {
+    try {
+      await options.checkHealth?.();
+      return { data: { ok: true } };
+    } catch (error) {
+      request.log.warn({ err: error }, 'health check failed');
+      return reply
+        .code(503)
+        .send({ error: { code: 'UNAVAILABLE', message: 'Database unreachable' } });
+    }
+  });
 
   await app.register(
     async (api) => {

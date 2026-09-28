@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildServer } from './http/server.js';
 import { createServices } from './services.js';
-import { createDb } from './shared/db.js';
+import { createDb, pingDb } from './shared/db.js';
 
 const envFile = join(import.meta.dirname, '..', '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -26,6 +26,7 @@ const app = await buildServer({
   staticDir: join(import.meta.dirname, '..', '..', 'apps', 'warehouse', 'dist'),
   secureCookies: production,
   practice,
+  checkHealth: async () => pingDb(db),
   logger: true,
 });
 

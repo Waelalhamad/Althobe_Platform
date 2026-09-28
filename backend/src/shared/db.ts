@@ -15,8 +15,30 @@ neonConfig.webSocketConstructor = WebSocket;
 export function createDb(url: string | undefined = process.env.DATABASE_URL): Db {
   if (!url) throw new Error('DATABASE_URL is not set — see .env.example');
   return new PrismaClient({
-    adapter: new PrismaNeon({ connectionString: withoutPrismaParams(url) }),
+    adapter: new PrismaNeon({
+      connectionString: withoutPrismaParams(url),
+      // A WebSocket that dies silently (network drop, Neon restart) must fail a request within
+      // seconds instead of hanging it: the app retries a failed request, never a hung one.
+      connectionTimeoutMillis: 15_000,
+      idleTimeoutMillis: 30_000,
+      query_timeout: 30_000,
+      statement_timeout: 30_000,
+      max: 10,
+    }),
   });
+}
+
+/** Resolves when the database answers within `ms`; rejects otherwise. */
+export async function pingDb(db: Db, ms = 5_000): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`database did not answer within ${ms} ms`)), ms);
+  });
+  try {
+    await Promise.race([db.$queryRaw`select 1`, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** pgbouncer / connect_timeout / pool_timeout are Prisma engine parameters, not libpq ones. */

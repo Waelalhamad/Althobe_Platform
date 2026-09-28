@@ -94,6 +94,17 @@ cannot be repeated. Point the API at `TEST_DATABASE_URL` for manual testing.
 
 Never run the project from a path containing `#` — Vite and Vitest cannot resolve modules there.
 
+## Deploy
+
+Production runs on Railway as one Docker service (ADR-007). Every push to `main` builds the
+`Dockerfile`, runs the migrations (pre-deploy), and goes live once `GET /api/v1/health` answers 200.
+Settings live in `railway.json`; secrets only in Railway's service variables (see `.env.example`).
+
+```bash
+docker build -t althobe .                     # the same image Railway builds
+docker run -p 3000:3000 -e NODE_ENV=production -e DATABASE_URL=… -e DIRECT_URL=… althobe
+```
+
 ## Conventions at a glance
 
 - Code, identifiers, and commits in English. UI copy in Arabic, RTL by default.

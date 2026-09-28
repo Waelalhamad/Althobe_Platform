@@ -84,7 +84,12 @@ Scanner UI, then connect the store.
 1. Create the owner login on the real database (run in your own terminal so the password is not in chat):
    `pnpm --filter @althobe/backend user:create --email <you> --name "<الاسم>" --roles owner`
 2. Buy a scanner (USB or Bluetooth, **HID keyboard mode**). Labels can start on A4 sticker sheets.
-3. Choose hosting **in Frankfurt** (ADR-006) and deploy the API + built app.
+3. Deploy on **Railway** (ADR-007): reset the Neon password first (it was once shared in chat);
+   Railway → New Project → GitHub repo, branch `main` → region europe-west4 → variables
+   `DATABASE_URL`, `DIRECT_URL`, `NODE_ENV=production`, `BASE_CURRENCY=SYP` → generate a domain.
+   Remove the sample product `THB-CLASSIC` from the real database before the opening count.
+   Later, for photos: `AWS_REGION`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+   a bucket CORS rule for the Railway domain.
 4. Create the real products, print labels, stick them on, then run the opening count per location.
 
 ## Settled decisions

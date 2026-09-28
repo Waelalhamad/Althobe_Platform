@@ -40,6 +40,8 @@ jobs:
     name: integration (Neon branch)
     runs-on: ubuntu-latest
     needs: checks
+    # Skipped (not failed) until the Neon settings above are added to the repository.
+    if: ${{ vars.NEON_PROJECT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
