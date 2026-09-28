@@ -253,13 +253,16 @@ export function LabelsPage() {
 
       {/* Print output only. The @page rule sets the paper to exactly one label (or A4). */}
       <style>{`@media print { @page { size: ${pageRule}; margin: 0; } html, body { margin: 0; padding: 0; background: #fff; } }`}</style>
-      <div className="hidden print:block">
+      {/* LTR so every label sits in the top-left corner of the paper, where the printer starts,
+          even if the driver's paper is larger than the label. The label content stays RTL. */}
+      <div className="hidden print:block" dir="ltr">
         {pages.map((page, i) => (
           <div
             key={i}
             className={settings.format === 'a4' ? 'grid grid-cols-3' : ''}
             style={{
-              breakAfter: 'page',
+              // No break after the last label: that would feed one blank label.
+              breakAfter: i < pages.length - 1 ? 'page' : 'auto',
               overflow: 'hidden',
               ...(settings.format === 'a4'
                 ? { width: '210mm', height: '297mm', gridTemplateRows: 'repeat(8, 37.125mm)' }
@@ -306,6 +309,7 @@ const Label = memo(function Label({
 
   return (
     <div
+      dir="rtl"
       className="flex flex-col overflow-hidden bg-white text-black"
       style={{
         width: `${size.w}mm`,
