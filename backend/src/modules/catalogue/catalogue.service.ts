@@ -103,7 +103,7 @@ export function createCatalogueService(db: Db) {
           const product = toProductView(
             await tx.product.create({
               data: {
-                code: data.code,
+                code: data.code ?? (await repo.nextProductCode(tx)),
                 nameAr: data.nameAr,
                 nameEn: data.nameEn ?? null,
                 unitOfMeasure: data.unitOfMeasure,
@@ -122,7 +122,7 @@ export function createCatalogueService(db: Db) {
           return product;
         });
       } catch (error) {
-        if (isUniqueViolation(error)) throw new ProductCodeTakenError(data.code);
+        if (isUniqueViolation(error)) throw new ProductCodeTakenError(data.code ?? '');
         throw error;
       }
     },

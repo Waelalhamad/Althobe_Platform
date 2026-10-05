@@ -109,6 +109,7 @@ async function wipe(db: Db) {
   // TRUNCATE is not UPDATE/DELETE, so the append-only triggers do not block test cleanup.
   await db.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
   await db.$executeRawUnsafe(`ALTER SEQUENCE variant_barcode_seq RESTART WITH 1`);
+  await db.$executeRawUnsafe(`ALTER SEQUENCE product_code_seq RESTART WITH 1`);
 }
 
 async function buildWorld(db: Db, services: Services): Promise<World> {

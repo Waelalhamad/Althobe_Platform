@@ -74,7 +74,6 @@ export function ProductsPage() {
 function CreateProduct() {
   const { data: groups = [] } = useQuery(optionGroupsQuery);
   const active = groups.filter((g) => g.isActive);
-  const [code, setCode] = useState('');
   const [nameAr, setNameAr] = useState('');
   // null = untouched: every active type, which is what most products use.
   const [picked, setPicked] = useState<string[] | null>(null);
@@ -83,7 +82,8 @@ function CreateProduct() {
   const navigate = useNavigate();
 
   const create = useMutation({
-    mutationFn: async () => api.createProduct({ code, nameAr, groupIds }),
+    // The code is generated (P-0001, P-0002, …).
+    mutationFn: async () => api.createProduct({ nameAr, groupIds }),
     onSuccess: async (product) => {
       await queryClient.invalidateQueries({ queryKey: productsQuery.queryKey });
       await navigate({ to: '/products/$productId', params: { productId: product.id } });
@@ -101,16 +101,8 @@ function CreateProduct() {
   return (
     <Card>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <div className="grid items-end gap-3 md:grid-cols-[1fr_2fr]">
-          <Field label="رمز المنتج" hint="أحرف لاتينية وأرقام، مثل THB أو KLB">
-            <Input
-              dir="ltr"
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-            />
-          </Field>
-          <Field label="اسم المنتج">
+        <div className="max-w-xl">
+          <Field label="اسم المنتج" hint="رمز المنتج يُنشأ تلقائياً (P-0001، P-0002…)">
             <Input
               required
               value={nameAr}

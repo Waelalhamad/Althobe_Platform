@@ -16,7 +16,6 @@ async function scan(page: Page, barcode: string) {
 
 test('opening count by scanner, end to end', async ({ page }) => {
   test.skip(!PASSWORD, 'Set E2E_PASSWORD (and E2E_EMAIL) for a login on the TEST database');
-  const code = `E2E-${Date.now().toString(36).toUpperCase()}`;
 
   // ── Log in ──────────────────────────────────────────────────────────────────────────────
   await page.goto('/login');
@@ -39,10 +38,9 @@ test('opening count by scanner, end to end', async ({ page }) => {
     await ensureOptionType(page.request, name, values);
   }
   await page.getByRole('link', { name: 'المنتجات' }).click();
-  await page.getByLabel('رمز المنتج').fill(code);
   await page.getByLabel('اسم المنتج').fill('ثوب اختبار شامل');
   // Only these three types, whatever else exists on the test database.
-  const form = page.locator('form').filter({ has: page.getByLabel('رمز المنتج') });
+  const form = page.locator('form').filter({ has: page.getByLabel('اسم المنتج') });
   // The type chips arrive with the option list; read them only once they are there.
   await expect(form.getByRole('button', { name: 'القياس', exact: true })).toBeVisible();
   for (;;) {

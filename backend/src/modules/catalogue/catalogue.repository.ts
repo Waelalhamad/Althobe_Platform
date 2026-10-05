@@ -189,6 +189,20 @@ export async function lockProduct(tx: Tx, productId: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * The next generated product code, P-0001, P-0002, … from the database sequence. Skips a number
+ * someone already used by hand, so a generated code never collides.
+ */
+export async function nextProductCode(tx: Tx): Promise<string> {
+  for (;;) {
+    const [row] = await tx.$queryRaw<
+      { value: bigint }[]
+    >`SELECT nextval('product_code_seq') AS value`;
+    const code = `P-${row!.value.toString().padStart(4, '0')}`;
+    if (!(await tx.product.findUnique({ where: { code }, select: { id: true } }))) return code;
+  }
+}
+
 /** Allocates barcode sequence numbers from the database — never from application code. */
 export async function nextBarcodeSequences(tx: Tx, count: number): Promise<bigint[]> {
   const rows = await tx.$queryRaw<{ value: bigint }[]>`

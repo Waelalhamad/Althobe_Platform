@@ -14,7 +14,9 @@ export const createProductSchema = z.object({
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z0-9][A-Z0-9-]{1,19}$/, 'Code: 2–20 characters, A–Z, 0–9 and dashes'),
+    .regex(/^[A-Z0-9][A-Z0-9-]{1,19}$/, 'Code: 2–20 characters, A–Z, 0–9 and dashes')
+    // Omitted: the next free P-0001, P-0002, … is generated.
+    .optional(),
   nameAr: z.string().trim().min(1).max(120),
   nameEn: z.string().trim().min(1).max(120).optional(),
   // Phase 1 counts every product in whole pieces. BOX / METER / KG exist in the schema so adding

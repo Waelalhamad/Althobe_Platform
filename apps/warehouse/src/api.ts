@@ -266,7 +266,7 @@ export const api = {
 
   products: async () => get<Product[]>('/products'),
   createProduct: async (input: {
-    code: string;
+    code?: string;
     nameAr: string;
     nameEn?: string;
     groupIds?: string[];

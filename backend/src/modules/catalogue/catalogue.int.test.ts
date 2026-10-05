@@ -290,6 +290,13 @@ describe('catalogue — editing lists, products and variants', () => {
 });
 
 describe('catalogue — codes and barcodes', () => {
+  it('generates product codes P-0001, P-0002…, skipping one already used by hand', async () => {
+    await catalogue.createProduct({ code: 'P-0002', nameAr: 'يدوي' }, w.owner);
+    const first = await catalogue.createProduct({ nameAr: 'ثوب' }, w.owner);
+    const second = await catalogue.createProduct({ nameAr: 'كلابية' }, w.owner);
+    expect([first.code, second.code]).toEqual(['P-0001', 'P-0003']);
+  });
+
   it('refuses a duplicate product code and units other than PIECE', async () => {
     await expect(
       catalogue.createProduct({ code: 'THB-TEST', nameAr: 'مكرر' }, w.owner),
