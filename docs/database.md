@@ -75,6 +75,7 @@ option_groups         (option types: القصة، الزر، … — ADR-008)
 option_values         (their values; deactivated, never deleted)
 product_option_groups (which types a product is made with)
 variant_option_values (one value per type per variant)
+variant_prices        (RETAIL / WHOLESALE price per variant, USD minor units — ADR-009)
 variant_barcodes      (external GTIN / supplier barcodes)
 categories            (later)
 ```

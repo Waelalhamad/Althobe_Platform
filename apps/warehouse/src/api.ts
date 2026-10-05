@@ -43,6 +43,12 @@ export interface VariantOption {
   value: string;
 }
 
+/** Minor units as a string (ADR-004); prices are in USD for now (ADR-009). */
+export interface Money {
+  amount: string;
+  currency: Currency;
+}
+
 export interface Variant {
   id: string;
   sku: string;
@@ -54,6 +60,8 @@ export interface Variant {
   title: string;
   /** The القياس value, printed large on labels. */
   size: string | null;
+  /** null = not priced yet. */
+  prices: { retail: Money | null; wholesale: Money | null };
   product: {
     id: string;
     code: string;
@@ -256,7 +264,10 @@ export const api = {
   ) => request<Product>('PATCH', `/products/${id}`, patch),
   generateVariants: async (
     productId: string,
-    input: { selections: { groupId: string; valueIds: string[] }[] },
+    input: {
+      selections: { groupId: string; valueIds: string[] }[];
+      prices?: { retail?: string; wholesale?: string };
+    },
   ) =>
     post<{ created: Variant[]; existing: Variant[] }>(
       `/products/${productId}/variants/generate`,
@@ -267,6 +278,12 @@ export const api = {
     get<Variant[]>(
       `/variants?${new URLSearchParams({ ...params, limit: params.productId ? '2000' : '200' })}`,
     ),
+  /** Same price for every listed variant; null removes it. Amounts in minor units. */
+  setPrices: async (input: {
+    variantIds: string[];
+    retail?: string | null;
+    wholesale?: string | null;
+  }) => post<Variant[]>('/variants/prices', input),
   setVariantActive: async (id: string, isActive: boolean) =>
     request<Variant>('PATCH', `/variants/${id}`, { isActive }),
 

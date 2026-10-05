@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { minorAmountSchema } from '../../shared/money.js';
 
 /** Trimmed, inner whitespace collapsed: "جوخ  هندي " and "جوخ هندي" are one value. */
 const label = z
@@ -32,9 +33,16 @@ export const updateProductSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 
+/** A price in minor units (string of digits); null removes it. Prices are in USD (ADR-009). */
+const priceSchema = minorAmountSchema.nullable();
+
 /** Every combination of the chosen values: one value per option type of the product. */
 export const generateVariantsSchema = z.object({
   productId: z.uuid(),
+  /** Prices for the variants this call creates (needs prices.write). */
+  prices: z
+    .object({ retail: minorAmountSchema.optional(), wholesale: minorAmountSchema.optional() })
+    .optional(),
   selections: z
     .array(
       z.object({
@@ -64,6 +72,19 @@ export const updateOptionValueSchema = z
 
 export const setVariantActiveSchema = z.object({ isActive: z.boolean() });
 
+/** One variant or many (a filtered list): the same retail and/or wholesale price for all. */
+export const setPricesSchema = z
+  .object({
+    variantIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(2000)
+      .transform((ids) => [...new Set(ids)]),
+    retail: priceSchema.optional(),
+    wholesale: priceSchema.optional(),
+  })
+  .refine((v) => v.retail !== undefined || v.wholesale !== undefined, 'Nothing to change');
+
 export const registerExternalBarcodeSchema = z.object({
   variantId: z.uuid(),
   barcode: z.string().trim().min(4).max(64),
@@ -84,5 +105,6 @@ export type UpdateOptionGroupInput = z.input<typeof updateOptionGroupSchema>;
 export type AddOptionValueInput = z.input<typeof addOptionValueSchema>;
 export type UpdateOptionValueInput = z.input<typeof updateOptionValueSchema>;
 export type SetVariantActiveInput = z.input<typeof setVariantActiveSchema>;
+export type SetPricesInput = z.input<typeof setPricesSchema>;
 export type RegisterExternalBarcodeInput = z.input<typeof registerExternalBarcodeSchema>;
 export type SearchVariantsInput = z.input<typeof searchVariantsSchema>;

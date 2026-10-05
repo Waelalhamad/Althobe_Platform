@@ -100,6 +100,11 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       ),
     }));
 
+    // One variant or a filtered list at once: { variantIds, retail?, wholesale? }.
+    priv.post('/variants/prices', async (request) => ({
+      data: await s.catalogue.setPrices(request.body as never, actorOf(request)),
+    }));
+
     priv.patch('/variants/:id', async (request: Params<{ id: string }>) => ({
       data: await s.catalogue.setVariantActive(
         request.params.id,

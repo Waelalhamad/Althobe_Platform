@@ -16,8 +16,13 @@ typecheck, lint, formatting, build.
 
 **Product options (2026-10-05, ADR-008):** products ثوب / كلابية are built by tapping values of
 editable option types — القصة، الزر، السحاب، الكم، القماش، اللون، القياس — on the new «الخيارات»
-page; products and variants can be edited, retired and restored. **Next for products:** prices,
-then photos (S3), then categories.
+page; products and variants can be edited, retired and restored.
+
+**Prices (2026-10-06, ADR-009):** each variant has a retail and a wholesale price in USD — set when
+creating variants, per variant in the table, or in bulk for a filtered list; shown on the product
+page, the scan screen and balances. The suit (الطقم) types موديل الطقم and عدد القطع are in place.
+**Next for products:** photos (S3), categories, then display currency (SYP / LYD) by exchange
+rate.
 
 **Practice mode:** `pnpm dev:practice` runs the app on a separate `althobe_practice` database with a
 yellow «وضع التدريب» banner — for learning the scanner and printer without touching real stock.

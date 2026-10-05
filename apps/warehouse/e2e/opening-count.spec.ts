@@ -43,8 +43,13 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await page.getByLabel('اسم المنتج').fill('ثوب اختبار شامل');
   // Only these three types, whatever else exists on the test database.
   const form = page.locator('form').filter({ has: page.getByLabel('رمز المنتج') });
-  for (const chip of await form.locator('button[aria-pressed="true"]').all()) {
-    if (!((await chip.innerText()).trim() in types)) await chip.click();
+  // The type chips arrive with the option list; read them only once they are there.
+  await expect(form.getByRole('button', { name: 'القياس', exact: true })).toBeVisible();
+  for (;;) {
+    const pressed = await form.locator('button[aria-pressed="true"]').allInnerTexts();
+    const extra = pressed.map((t) => t.trim()).find((name) => !(name in types));
+    if (!extra) break;
+    await form.getByRole('button', { name: extra, exact: true }).click();
   }
   for (const name of Object.keys(types)) {
     const chip = form.getByRole('button', { name, exact: true });

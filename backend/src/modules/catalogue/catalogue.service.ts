@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type PriceList } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
 import { BARCODE_ENTITY, buildInternalBarcode, isMisreadEan13 } from '../../shared/barcode.js';
 import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
@@ -26,6 +26,7 @@ import {
   generateVariantsSchema,
   registerExternalBarcodeSchema,
   searchVariantsSchema,
+  setPricesSchema,
   setVariantActiveSchema,
   updateOptionGroupSchema,
   updateOptionValueSchema,
@@ -36,6 +37,7 @@ import {
   type GenerateVariantsInput,
   type RegisterExternalBarcodeInput,
   type SearchVariantsInput,
+  type SetPricesInput,
   type SetVariantActiveInput,
   type UpdateOptionGroupInput,
   type UpdateOptionValueInput,
@@ -58,6 +60,9 @@ export type {
 
 /** One request may create at most this many variants; more is almost certainly a mistake. */
 export const MAX_COMBINATIONS = 500;
+
+/** Selling prices are held in USD (ADR-009); display in other currencies comes later. */
+export const PRICE_CURRENCY = 'USD';
 
 const productSelect = {
   id: true,
@@ -191,6 +196,7 @@ export function createCatalogueService(db: Db) {
     ): Promise<{ created: VariantView[]; existing: VariantView[] }> {
       assertPermission(ctx, PERMISSIONS.products.write);
       const data = parse(generateVariantsSchema, input);
+      if (data.prices) assertPermission(ctx, PERMISSIONS.prices.write);
 
       return inTransaction(db, async (tx) => {
         const product = await repo.lockProduct(tx, data.productId);
@@ -269,6 +275,13 @@ export function createCatalogueService(db: Db) {
             select: { id: true, optionKey: true },
           });
           const idByKey = new Map(inserted.map((v) => [v.optionKey, v.id]));
+          const newIds = inserted.map((v) => v.id);
+          if (data.prices?.retail !== undefined) {
+            await writePrices(tx, newIds, 'RETAIL', data.prices.retail);
+          }
+          if (data.prices?.wholesale !== undefined) {
+            await writePrices(tx, newIds, 'WHOLESALE', data.prices.wholesale);
+          }
           await tx.variantOptionValue.createMany({
             data: fresh.flatMap((combo) =>
               combo.map((valueId, j) => ({
@@ -320,6 +333,41 @@ export function createCatalogueService(db: Db) {
           after: { isActive: data.isActive },
         });
         return { ...before, isActive: data.isActive };
+      });
+    },
+
+    /**
+     * Sets the retail and/or wholesale price of one variant or many (a filtered list) to the same
+     * amount; null removes a price. Every change is audited with the prices it replaced.
+     */
+    async setPrices(input: SetPricesInput, ctx: ActorContext): Promise<VariantView[]> {
+      assertPermission(ctx, PERMISSIONS.prices.write);
+      const data = parse(setPricesSchema, input);
+
+      return inTransaction(db, async (tx) => {
+        const before = await repo.findVariantsByIds(tx, data.variantIds);
+        const missing = data.variantIds.filter((id) => !before.some((v) => v.id === id));
+        if (missing.length) throw new NotFoundError('variant', missing[0]!);
+
+        if (data.retail !== undefined) {
+          await writePrices(tx, data.variantIds, 'RETAIL', data.retail);
+        }
+        if (data.wholesale !== undefined) {
+          await writePrices(tx, data.variantIds, 'WHOLESALE', data.wholesale);
+        }
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: 'prices.set',
+          entityType: 'variant_prices',
+          before: before.map((v) => ({ variantId: v.id, sku: v.sku, ...v.prices })),
+          after: {
+            variantIds: data.variantIds,
+            currency: PRICE_CURRENCY,
+            ...(data.retail !== undefined ? { retail: data.retail } : {}),
+            ...(data.wholesale !== undefined ? { wholesale: data.wholesale } : {}),
+          },
+        });
+        return repo.findVariantsByIds(tx, data.variantIds);
       });
     },
 
@@ -589,6 +637,25 @@ export function createCatalogueService(db: Db) {
 }
 
 export type CatalogueService = ReturnType<typeof createCatalogueService>;
+
+/** One statement for any number of variants: a filtered list of 500 is priced at once. */
+async function writePrices(
+  tx: Tx,
+  variantIds: string[],
+  list: PriceList,
+  amount: bigint | null,
+): Promise<void> {
+  if (amount === null) {
+    await tx.variantPrice.deleteMany({ where: { variantId: { in: variantIds }, list } });
+    return;
+  }
+  await tx.$executeRaw`
+    INSERT INTO variant_prices (id, variant_id, list, amount, currency, updated_at)
+    SELECT gen_random_uuid(), v, ${list}::price_list, ${amount}, ${PRICE_CURRENCY}, now()
+    FROM unnest(${variantIds}::uuid[]) AS v
+    ON CONFLICT (variant_id, list)
+    DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = now()`;
+}
 
 /**
  * The option types a product is made with: the given ones (each must exist and be active, unless

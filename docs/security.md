@@ -53,7 +53,7 @@ inventory.stocktake.apply
 inventory.cost.view
 products.read
 products.write
-pricing.wholesale.write
+prices.write
 sales.order.create
 sales.order.discount
 invoicing.issue
@@ -70,7 +70,7 @@ Starting roles:
 | Role | Arabic | Shape |
 | --- | --- | --- |
 | `owner` | مدير عام | everything |
-| `manager` | مدير | everything except `admin.*` and `employees.salary.*` |
+| `manager` | مدير | everything except `admin.*` and `employees.salary.*`; sets prices (`prices.write`) |
 | `inventory_manager` | مدير مخزون | all `inventory.*`, including adjust, stocktake apply, and cost |
 | `warehouse_keeper` | أمين مستودع | view, receive, issue, return, transfer, damage, stocktake count; no adjust, no apply, no cost |
 | `store_staff` | موظف متجر | view stock, record sales (`inventory.issue`) and returns (`inventory.return`) until the POS exists; no cost |

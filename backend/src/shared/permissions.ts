@@ -21,6 +21,10 @@ export const PERMISSIONS = {
     read: 'products.read',
     write: 'products.write',
   },
+  // Selling prices (ADR-009). Everyone with products.read sees them; few may change them.
+  prices: {
+    write: 'prices.write',
+  },
   admin: {
     users: 'admin.users.write',
   },

@@ -43,12 +43,16 @@ stock endpoints arriving in Phase 3 will require it.
 | `POST` | `/products/:id/variants/generate` — `{ selections: [{ groupId, valueIds }] }` | `products.write` |
 | `GET` | `/variants?q=&productId=` | `products.read` |
 | `PATCH` | `/variants/:id` — `{ isActive }` (retire / restore) | `products.write` |
+| `POST` | `/variants/prices` — `{ variantIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
 | `GET` | `/option-groups` (types with their values) | `products.read` |
 | `POST` | `/option-groups` · `/option-groups/:id/values` | `products.write` |
 | `PATCH` | `/option-groups/:id` · `/option-values/:id` — rename, `isActive`, `move: up/down` | `products.write` |
 
 A variant is returned with `options: [{ groupId, groupKey, group, valueId, value }]` (in type
-order), `title` (the values joined with « · ») and `size` (the `SIZE` value or null). Until
+order), `title` (the values joined with « · »), `size` (the `SIZE` value or null) and
+`prices: { retail, wholesale }`, each `{ amount, currency }` in USD minor units or null (ADR-009).
+`POST /products/:id/variants/generate` also takes optional `prices` for the variants it creates
+(needs `prices.write`). Until
 2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).
 | `GET` | `/barcodes/:code` | `inventory.view` |
 | `GET` | `/inventory/balances?locationId=&q=` | `inventory.view` |

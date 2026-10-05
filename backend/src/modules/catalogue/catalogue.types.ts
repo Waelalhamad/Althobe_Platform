@@ -10,6 +10,12 @@ export interface VariantOption {
   value: string;
 }
 
+/** A selling price: minor units of `currency` (ADR-004). Crosses the wire as a string. */
+export interface PriceView {
+  amount: bigint;
+  currency: string;
+}
+
 /** Everything a scan screen needs to show about a variant. */
 export interface VariantView {
   id: string;
@@ -22,6 +28,8 @@ export interface VariantView {
   title: string;
   /** The SIZE value, printed large on labels; null if the product has no size type. */
   size: string | null;
+  /** Selling prices (ADR-009); null = not priced yet. */
+  prices: { retail: PriceView | null; wholesale: PriceView | null };
   product: {
     id: string;
     code: string;

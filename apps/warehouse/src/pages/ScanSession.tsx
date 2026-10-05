@@ -17,6 +17,7 @@ import { api, ApiError, type Currency, type ScanLine, type ScanSession } from '.
 import {
   errorText,
   formatMoney,
+  formatPrice,
   formatQuantity,
   fromMinorUnits,
   SESSION_KIND,
@@ -287,6 +288,9 @@ function LastScanPanel({ last, pending }: { last: LastScan | null; pending: numb
       <div>
         <div className="text-xl font-bold">{variant.product.nameAr}</div>
         <div className="text-lg">{variant.title}</div>
+        <div className="tabular text-sm text-ink-muted">
+          مفرق {formatPrice(variant.prices.retail)} · جملة {formatPrice(variant.prices.wholesale)}
+        </div>
         {last.status === 'dup' && (
           <div className="text-sm text-warn">مسحة مكررة — لم تُحتسب مرتين</div>
         )}

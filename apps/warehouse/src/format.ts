@@ -1,4 +1,11 @@
-import { ApiError, type Currency, type LocationKind, type SessionKind, type Variant } from './api';
+import {
+  ApiError,
+  type Currency,
+  type LocationKind,
+  type Money,
+  type SessionKind,
+  type Variant,
+} from './api';
 
 // Arabic copy keyed by the API's stable error codes (docs/api.md: clients switch on `code`).
 const ERRORS: Record<string, string> = {
@@ -96,6 +103,11 @@ export function formatMoney(minor: string | null, currency: Currency = 'SYP'): s
   const cents = (value < 0n ? -value : value) % 100n;
   const text = numberFormat.format(whole) + (cents ? `.${cents.toString().padStart(2, '0')}` : '');
   return `${text} ${currency === 'SYP' ? 'ل.س' : '$'}`;
+}
+
+/** A selling price, or a clear "no price yet". */
+export function formatPrice(price: Money | null): string {
+  return price ? formatMoney(price.amount, price.currency) : 'بدون سعر';
 }
 
 /** "250000" or "1.5" as typed → minor units as a string, without ever using a float. */

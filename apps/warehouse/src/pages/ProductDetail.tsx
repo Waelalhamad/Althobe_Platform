@@ -13,8 +13,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { api, type OptionGroup, type Product, type Variant } from '../api';
-import { errorText } from '../format';
+import { api, type Money, type OptionGroup, type Product, type Variant } from '../api';
+import { errorText, formatPrice, fromMinorUnits, toMinorUnits } from '../format';
 import { can, meQuery, optionGroupsQuery, productsQuery, variantsQuery } from '../queries';
 
 const route = getRouteApi('/app/products/$productId');
@@ -33,6 +33,7 @@ export function ProductDetailPage() {
   const product = products.find((p) => p.id === productId);
   const productGroups = groups.filter((g) => product?.groupIds.includes(g.id));
   const canWrite = can(user, 'products.write');
+  const canPrice = can(user, 'prices.write');
 
   return (
     <>
@@ -56,9 +57,19 @@ export function ProductDetailPage() {
 
       {canWrite && product && <ProductSettings product={product} groups={groups} />}
       {canWrite && product?.isActive && (
-        <VariantBuilder productId={productId} groups={productGroups} variants={variants} />
+        <VariantBuilder
+          productId={productId}
+          groups={productGroups}
+          variants={variants}
+          canPrice={canPrice}
+        />
       )}
-      <VariantTable groups={productGroups} variants={variants} canWrite={canWrite} />
+      <VariantTable
+        groups={productGroups}
+        variants={variants}
+        canWrite={canWrite}
+        canPrice={canPrice}
+      />
     </>
   );
 }
@@ -68,13 +79,18 @@ function VariantBuilder({
   productId,
   groups,
   variants,
+  canPrice,
 }: {
   productId: string;
   groups: OptionGroup[];
   variants: Variant[];
+  canPrice: boolean;
 }) {
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
+  const [retail, setRetail] = useState('');
+  const [wholesale, setWholesale] = useState('');
+  const prices = parsePrices(retail, wholesale);
   const lists = groups.map((g) => chosen[g.id] ?? []);
   const total = groups.length ? lists.reduce((n, list) => n * list.length, 1) : 0;
 
@@ -109,6 +125,14 @@ function VariantBuilder({
     mutationFn: async () =>
       api.generateVariants(productId, {
         selections: groups.map((g) => ({ groupId: g.id, valueIds: chosen[g.id] ?? [] })),
+        ...(prices?.retail || prices?.wholesale
+          ? {
+              prices: {
+                ...(prices.retail ? { retail: prices.retail } : {}),
+                ...(prices.wholesale ? { wholesale: prices.wholesale } : {}),
+              },
+            }
+          : {}),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['variants', productId] });
@@ -138,10 +162,22 @@ function VariantBuilder({
         ))}
       </div>
 
+      {canPrice && (
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <PriceField label="سعر المفرق للأصناف الجديدة" value={retail} onChange={setRetail} />
+          <PriceField
+            label="سعر الجملة للأصناف الجديدة"
+            value={wholesale}
+            onChange={setWholesale}
+          />
+          <span className="pb-2 text-sm text-ink-muted">اختياري — يمكن التسعير لاحقاً</span>
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-stone pt-4">
         <Button
           size="lg"
-          disabled={fresh === 0 || total > MAX_COMBINATIONS || generate.isPending}
+          disabled={fresh === 0 || total > MAX_COMBINATIONS || !prices || generate.isPending}
           onClick={() => generate.mutate()}
         >
           {fresh > 0 ? `إنشاء ${fresh} صنف` : 'إنشاء الأصناف'}
@@ -352,10 +388,12 @@ function VariantTable({
   groups,
   variants,
   canWrite,
+  canPrice,
 }: {
   groups: OptionGroup[];
   variants: Variant[];
   canWrite: boolean;
+  canPrice: boolean;
 }) {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -400,6 +438,7 @@ function VariantTable({
           </span>
         </div>
       )}
+      {canPrice && visible.length > 0 && <BulkPrices variants={visible} />}
       <table className="w-full">
         <thead className="bg-blush text-sm text-ink-muted">
           <tr>
@@ -410,6 +449,8 @@ function VariantTable({
             ))}
             <th className="p-3 text-start">SKU</th>
             <th className="p-3 text-start">الباركود</th>
+            <th className="p-3 text-start">المفرق</th>
+            <th className="p-3 text-start">الجملة</th>
             {canWrite && <th className="p-3" />}
           </tr>
         </thead>
@@ -427,6 +468,8 @@ function VariantTable({
               <td className="p-3">
                 <Code>{v.barcode}</Code>
               </td>
+              <PriceCell variant={v} list="retail" editable={canPrice} />
+              <PriceCell variant={v} list="wholesale" editable={canPrice} />
               {canWrite && (
                 <td className="p-2 text-end">
                   <Button
@@ -442,7 +485,7 @@ function VariantTable({
           ))}
           {variants.length === 0 && (
             <tr>
-              <td colSpan={groups.length + 3} className="p-6 text-center text-ink-muted">
+              <td colSpan={groups.length + 5} className="p-6 text-center text-ink-muted">
                 لا توجد أصناف بعد
               </td>
             </tr>
@@ -455,5 +498,154 @@ function VariantTable({
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * The typed prices as minor units: undefined for an empty field, or null when either field is
+ * not a valid amount (so nothing is sent).
+ */
+function parsePrices(retail: string, wholesale: string) {
+  const one = (text: string) => (text.trim() ? toMinorUnits(text) : undefined);
+  const [r, w] = [one(retail), one(wholesale)];
+  return r === null || w === null ? null : { retail: r, wholesale: w };
+}
+
+function PriceField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const invalid = value.trim() !== '' && toMinorUnits(value) === null;
+  return (
+    <div className="w-48">
+      <Field label={`${label} ($)`}>
+        <Input
+          dir="ltr"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="25.00"
+          className={invalid ? 'border-bad' : ''}
+        />
+      </Field>
+    </div>
+  );
+}
+
+/** Same price for every variant the filters show; an empty field leaves that price alone. */
+function BulkPrices({ variants }: { variants: Variant[] }) {
+  const queryClient = useQueryClient();
+  const [retail, setRetail] = useState('');
+  const [wholesale, setWholesale] = useState('');
+  const prices = parsePrices(retail, wholesale);
+  const ready = Boolean(prices?.retail ?? prices?.wholesale);
+
+  const apply = useMutation({
+    mutationFn: async () =>
+      api.setPrices({
+        variantIds: variants.map((v) => v.id),
+        ...(prices?.retail ? { retail: prices.retail } : {}),
+        ...(prices?.wholesale ? { wholesale: prices.wholesale } : {}),
+      }),
+    onSuccess: async () => {
+      setRetail('');
+      setWholesale('');
+      await queryClient.invalidateQueries({ queryKey: ['variants'] });
+    },
+  });
+
+  return (
+    <div className="mx-3 mb-3 flex flex-wrap items-end gap-3 rounded-lg bg-blush p-3">
+      <span className="pb-2 font-medium">تسعير الأصناف المعروضة ({variants.length}):</span>
+      <PriceField label="المفرق" value={retail} onChange={setRetail} />
+      <PriceField label="الجملة" value={wholesale} onChange={setWholesale} />
+      <ConfirmButton disabled={!ready || apply.isPending} onConfirm={() => apply.mutate()}>
+        تعيين السعر لـ {variants.length} صنف
+      </ConfirmButton>
+      {apply.isSuccess && <span className="pb-2 text-ok">تم التسعير</span>}
+      {apply.isError && <span className="pb-2 text-bad">{errorText(apply.error)}</span>}
+    </div>
+  );
+}
+
+/** A price in the table; with prices.write, click it to edit. Saving an empty field removes it. */
+function PriceCell({
+  variant,
+  list,
+  editable,
+}: {
+  variant: Variant;
+  list: 'retail' | 'wholesale';
+  editable: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const price: Money | null = variant.prices[list];
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+
+  const save = useMutation({
+    mutationFn: async (amount: string | null) =>
+      api.setPrices({ variantIds: [variant.id], [list]: amount }),
+    onSuccess: async () => {
+      setEditing(false);
+      await queryClient.invalidateQueries({ queryKey: ['variants'] });
+    },
+  });
+
+  if (!editing) {
+    return (
+      <td className={`tabular p-3 ${price ? '' : 'text-ink-muted'}`}>
+        {editable ? (
+          <button
+            type="button"
+            className="hover:text-brand hover:underline"
+            onClick={() => {
+              setText(price ? fromMinorUnits(price.amount) : '');
+              setEditing(true);
+            }}
+          >
+            {formatPrice(price)}
+          </button>
+        ) : (
+          formatPrice(price)
+        )}
+      </td>
+    );
+  }
+
+  const amount = text.trim() ? toMinorUnits(text) : null;
+  const valid = !text.trim() || amount !== null;
+  return (
+    <td className="p-2">
+      <form
+        className="flex items-center gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid) save.mutate(amount);
+        }}
+      >
+        <Input
+          autoFocus
+          dir="ltr"
+          inputMode="decimal"
+          aria-label={list === 'retail' ? 'سعر المفرق' : 'سعر الجملة'}
+          className={`w-24 ${valid ? '' : 'border-bad'}`}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+        <Button type="submit" variant="secondary" disabled={!valid || save.isPending}>
+          حفظ
+        </Button>
+      </form>
+      {save.isError && <div className="text-sm text-bad">{errorText(save.error)}</div>}
+    </td>
   );
 }

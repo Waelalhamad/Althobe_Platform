@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, type Balance, type Variant } from '../api';
-import { errorText, formatMoney, formatQuantity } from '../format';
+import { errorText, formatMoney, formatPrice, formatQuantity } from '../format';
 import { balancesQuery, can, locationsQuery, meQuery } from '../queries';
 
 const route = getRouteApi('/app/balances');
@@ -64,6 +64,7 @@ export function BalancesPage() {
               <th className="p-3 text-start">الباركود</th>
               <th className="p-3 text-start">الكمية</th>
               <th className="p-3 text-start">المتاح</th>
+              <th className="p-3 text-start">سعر المفرق</th>
               {showCost && <th className="p-3 text-start">متوسط التكلفة</th>}
               {showCost && <th className="p-3 text-start">القيمة</th>}
               <th className="p-3" />
@@ -102,7 +103,7 @@ export function BalancesPage() {
                   المجموع
                 </td>
                 <td className="tabular p-3 font-bold">{formatQuantity(total)}</td>
-                <td colSpan={showCost ? 4 : 2} />
+                <td colSpan={showCost ? 5 : 3} />
               </tr>
             </tfoot>
           )}
@@ -126,7 +127,7 @@ function BalanceRow({
   canAdjust: boolean;
 }) {
   const [adjusting, setAdjusting] = useState(false);
-  const columns = showCost ? 8 : 6;
+  const columns = showCost ? 9 : 7;
   return (
     <>
       <tr className="border-t border-stone">
@@ -137,6 +138,7 @@ function BalanceRow({
         </td>
         <td className="tabular p-3 font-bold">{formatQuantity(b.quantity)}</td>
         <td className="tabular p-3">{formatQuantity(b.availableQuantity)}</td>
+        <td className="tabular p-3">{formatPrice(v.prices.retail)}</td>
         {showCost && <td className="tabular p-3">{formatMoney(b.averageCostBaseAmount)}</td>}
         {showCost && <td className="tabular p-3">{formatMoney(b.valueBaseAmount)}</td>}
         <td className="p-2">

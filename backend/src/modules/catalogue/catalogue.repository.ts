@@ -1,6 +1,6 @@
-import type { Prisma } from '@prisma/client';
+import type { PriceList, Prisma } from '@prisma/client';
 import type { Queryable, Tx } from '../../shared/db.js';
-import type { OptionGroupView, VariantView } from './catalogue.types.js';
+import type { OptionGroupView, PriceView, VariantView } from './catalogue.types.js';
 
 const variantSelect = {
   id: true,
@@ -17,6 +17,7 @@ const variantSelect = {
       isActive: true,
     },
   },
+  prices: { select: { list: true, amount: true, currency: true } },
   optionValues: {
     select: {
       groupId: true,
@@ -49,8 +50,14 @@ function toView(row: VariantRow): VariantView {
     options,
     title: options.map((o) => o.value).join(' · '),
     size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
+    prices: { retail: priceOn(row, 'RETAIL'), wholesale: priceOn(row, 'WHOLESALE') },
     product: row.product,
   };
+}
+
+function priceOn(row: VariantRow, list: PriceList): PriceView | null {
+  const price = row.prices.find((p) => p.list === list);
+  return price ? { amount: price.amount, currency: price.currency } : null;
 }
 
 /**
