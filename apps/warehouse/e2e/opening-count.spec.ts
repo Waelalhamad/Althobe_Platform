@@ -71,7 +71,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
 
   // ── One product: its sizes and their barcodes ───────────────────────────────────────────
   await page.getByRole('link', { name: 'قطني · أبيض' }).click();
-  await expect(page.getByRole('heading', { name: 'المقاسات' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'المقاسات', exact: true })).toBeVisible();
   const barcodes = await page.locator('tbody tr td:nth-child(3)').allInnerTexts();
   expect(barcodes).toHaveLength(2);
   for (const b of barcodes) expect(b.trim()).toMatch(/^200\d{10}$/);

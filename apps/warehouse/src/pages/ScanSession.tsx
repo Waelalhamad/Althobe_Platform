@@ -13,6 +13,7 @@ import { sound } from '@althobe/ui/sound';
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
+import { isTransient, sendScan } from '../scan-retry';
 import { api, ApiError, type Currency, type ScanLine, type ScanSession } from '../api';
 import {
   errorText,
@@ -76,14 +77,24 @@ export function ScanSessionPage() {
     setPending((n) => n + 1);
     queue.current = queue.current.then(async () => {
       try {
-        const result = await api.scan(sessionId, code, scanId);
+        // Resent while the connection fails; the scanId makes a resend count once.
+        const { result, resent } = await sendScan(async () => api.scan(sessionId, code, scanId));
+        // A resend that finds its own first attempt already counted is not a double scan.
+        const duplicate = result.duplicate && !resent;
         updateLine(result.line);
-        if (result.duplicate) sound.dup();
+        if (duplicate) sound.dup();
         else sound.ok();
-        setLast({ status: result.duplicate ? 'dup' : 'ok', line: result.line });
+        setLast({ status: duplicate ? 'dup' : 'ok', line: result.line });
       } catch (error) {
         sound.bad();
-        setLast({ status: 'bad', code, message: errorText(error) });
+        setLast({
+          status: 'bad',
+          code,
+          // Still no connection after every resend: say so, so the piece is scanned again.
+          message: isTransient(error)
+            ? 'لم تُرسل هذه المسحة (لا اتصال) — امسح القطعة مرة أخرى'
+            : errorText(error),
+        });
       } finally {
         setPending((n) => n - 1);
       }

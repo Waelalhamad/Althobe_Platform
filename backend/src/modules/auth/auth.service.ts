@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import { z } from 'zod';
 import { writeAudit } from '../../shared/audit.js';
-import type { Db } from '../../shared/db.js';
+import { inTransaction, type Db } from '../../shared/db.js';
 import { DomainError, NotFoundError } from '../../shared/errors.js';
 import {
   assertPermission,
@@ -154,7 +154,7 @@ export function createAuthService(db: Db) {
 
       const token = randomBytes(32).toString('base64url');
       const expiresAt = new Date(Date.now() + SESSION_IDLE_MS);
-      await db.$transaction(async (tx) => {
+      await inTransaction(db, async (tx) => {
         await tx.session.create({
           data: {
             userId: user.id,
@@ -235,7 +235,7 @@ export function createAuthService(db: Db) {
       }
       const password = randomBytes(12).toString('base64url');
       const passwordHash = await hash(password);
-      const user = await db.$transaction(async (tx) => {
+      const user = await inTransaction(db, async (tx) => {
         const created = await tx.user.create({
           data: { email: data.email, nameAr: data.nameAr, roles: data.roles, passwordHash },
           select: accountSelect,
@@ -259,7 +259,7 @@ export function createAuthService(db: Db) {
     ): Promise<AccountView> {
       assertPermission(ctx, PERMISSIONS.admin.users);
       const data = parse(updateUserSchema, input);
-      return db.$transaction(async (tx) => {
+      return inTransaction(db, async (tx) => {
         const before = await tx.user.findUnique({ where: { id: userId }, select: accountSelect });
         if (!before) throw new NotFoundError('user', userId);
 
@@ -314,7 +314,7 @@ export function createAuthService(db: Db) {
       assertPermission(ctx, PERMISSIONS.admin.users);
       const password = randomBytes(12).toString('base64url');
       const passwordHash = await hash(password);
-      await db.$transaction(async (tx) => {
+      await inTransaction(db, async (tx) => {
         const user = await tx.user.findUnique({ where: { id: userId } });
         if (!user?.passwordHash) throw new NotFoundError('user', userId);
         await tx.user.update({ where: { id: userId }, data: { passwordHash } });
@@ -344,7 +344,7 @@ export function createAuthService(db: Db) {
         throw new InvalidCredentialsError();
       }
       const passwordHash = await hash(data.newPassword);
-      await db.$transaction(async (tx) => {
+      await inTransaction(db, async (tx) => {
         await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
         await tx.session.updateMany({
           where: { userId: user.id, revokedAt: null, tokenHash: { not: sha256(currentToken) } },

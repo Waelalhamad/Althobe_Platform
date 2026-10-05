@@ -117,6 +117,9 @@ Rules for any scanning screen:
 - Treat rapid keystrokes ending in `Enter` as a scan; debounce a few tens of milliseconds.
 - Resolve the barcode, then show the variant with a distinct sound and colour for found,
   not-found, and wrong-item.
+- A scan whose request fails for lack of connection is **resent automatically** (backing off to
+  about 40 s in total). The scanId makes a resend count once. Only if every resend fails does the
+  screen say «لم تُرسل هذه المسحة — امسح القطعة مرة أخرى»; a scan is never dropped silently.
 - Never block the next scan on a network round-trip finishing. Queue, then confirm.
 - Every scan that results in a stock change carries an idempotency key, because a double
   trigger pull is a real and frequent event.
