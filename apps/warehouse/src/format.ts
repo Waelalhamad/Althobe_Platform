@@ -1,4 +1,4 @@
-import { ApiError, type Currency, type LocationKind, type SessionKind } from './api';
+import { ApiError, type Currency, type LocationKind, type SessionKind, type Variant } from './api';
 
 // Arabic copy keyed by the API's stable error codes (docs/api.md: clients switch on `code`).
 const ERRORS: Record<string, string> = {
@@ -21,6 +21,12 @@ const ERRORS: Record<string, string> = {
   INSUFFICIENT_AVAILABLE_STOCK: 'الكمية المتاحة غير كافية (جزء منها محجوز)',
   PRODUCT_CODE_TAKEN: 'رمز المنتج مستخدم مسبقاً',
   PRODUCT_INACTIVE: 'المنتج موقوف',
+  OPTION_GROUP_TAKEN: 'يوجد نوع خيار بهذا الاسم',
+  OPTION_VALUE_TAKEN: 'هذه القيمة موجودة مسبقاً',
+  INVALID_OPTION_GROUPS: 'نوع خيار غير معروف أو موقوف',
+  OPTION_GROUP_IN_USE: 'لا يمكن إزالة هذا النوع: أصناف هذا المنتج تستخدمه',
+  INVALID_SELECTION: 'اختر قيمة واحدة على الأقل لكل نوع، من القيم المفعّلة فقط',
+  TOO_MANY_COMBINATIONS: 'عدد كبير جداً من الأصناف دفعة واحدة (الحد 500)',
   STOCKTAKE_INVALID_STATE: 'حالة الجرد لا تسمح بهذا الإجراء',
   STOCKTAKE_UNCOUNTED_LINES: 'بعض الأصناف لم تُعدّ بعد',
   STOCKTAKE_VARIANT_OUT_OF_SCOPE: 'هذا الصنف ليس ضمن هذا الجرد',
@@ -107,4 +113,16 @@ export function fromMinorUnits(minor: string): string {
   return cents === 0n
     ? (value / 100n).toString()
     : `${value / 100n}.${cents.toString().padStart(2, '0')}`;
+}
+
+/** "قطني، كتان , صوف" → ['قطني', 'كتان', 'صوف'] — Arabic and Latin commas both work. */
+export const splitList = (text: string) =>
+  text
+    .split(/[,،]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/** "ثوب عربي · سعودية · ملكي · 56" — the product name plus every chosen option. */
+export function variantName(v: Pick<Variant, 'title' | 'product'>): string {
+  return v.title ? `${v.product.nameAr} · ${v.title}` : v.product.nameAr;
 }

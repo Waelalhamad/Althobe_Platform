@@ -118,6 +118,28 @@ export function PageTitle({ children, actions }: { children: ReactNode; actions?
   );
 }
 
+/** A tappable choice; selected chips are filled. Finger-sized for tablets in the warehouse. */
+export function Chip({
+  selected = false,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      {...props}
+      className={cx(
+        'min-h-10 rounded-full border px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        selected
+          ? 'border-brand bg-brand text-white'
+          : 'border-stone bg-white text-ink hover:bg-blush',
+        className,
+      )}
+    />
+  );
+}
+
 /** Barcodes and SKUs read left-to-right even inside RTL text. */
 export function Code({ children }: { children: ReactNode }) {
   return (

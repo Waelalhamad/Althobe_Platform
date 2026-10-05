@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
 import { BARCODE_ENTITY, buildInternalBarcode, isMisreadEan13 } from '../../shared/barcode.js';
-import { inTransaction, type Db, type Queryable } from '../../shared/db.js';
+import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { assertPermission, PERMISSIONS, type ActorContext } from '../../shared/permissions.js';
 import { parse } from '../../shared/validation.js';
@@ -9,23 +9,76 @@ import {
   BarcodeNotFoundError,
   BarcodeTakenError,
   InvalidBarcodeError,
+  InvalidOptionGroupsError,
+  InvalidSelectionError,
+  OptionGroupInUseError,
+  OptionGroupTakenError,
+  OptionValueTakenError,
   ProductCodeTakenError,
   ProductInactiveError,
+  TooManyCombinationsError,
 } from './catalogue.errors.js';
 import * as repo from './catalogue.repository.js';
 import {
+  addOptionValueSchema,
+  createOptionGroupSchema,
   createProductSchema,
   generateVariantsSchema,
   registerExternalBarcodeSchema,
   searchVariantsSchema,
+  setVariantActiveSchema,
+  updateOptionGroupSchema,
+  updateOptionValueSchema,
+  updateProductSchema,
+  type AddOptionValueInput,
+  type CreateOptionGroupInput,
   type CreateProductInput,
   type GenerateVariantsInput,
   type RegisterExternalBarcodeInput,
   type SearchVariantsInput,
+  type SetVariantActiveInput,
+  type UpdateOptionGroupInput,
+  type UpdateOptionValueInput,
+  type UpdateProductInput,
 } from './catalogue.schema.js';
-import type { ProductView, VariantView } from './catalogue.types.js';
+import type {
+  OptionGroupView,
+  OptionValueView,
+  ProductView,
+  VariantView,
+} from './catalogue.types.js';
 
-export type { ProductView, VariantView } from './catalogue.types.js';
+export type {
+  OptionGroupView,
+  OptionValueView,
+  ProductView,
+  VariantOption,
+  VariantView,
+} from './catalogue.types.js';
+
+/** One request may create at most this many variants; more is almost certainly a mistake. */
+export const MAX_COMBINATIONS = 500;
+
+const productSelect = {
+  id: true,
+  code: true,
+  nameAr: true,
+  nameEn: true,
+  unitOfMeasure: true,
+  isActive: true,
+  optionGroups: { select: { groupId: true, group: { select: { sortOrder: true } } } },
+} satisfies Prisma.ProductSelect;
+
+type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+
+function toProductView({ optionGroups, ...product }: ProductRow): ProductView {
+  return {
+    ...product,
+    groupIds: [...optionGroups]
+      .sort((a, b) => a.group.sortOrder - b.group.sortOrder)
+      .map((g) => g.groupId),
+  };
+}
 
 export function createCatalogueService(db: Db) {
   return {
@@ -34,22 +87,19 @@ export function createCatalogueService(db: Db) {
       const data = parse(createProductSchema, input);
       try {
         return await inTransaction(db, async (tx) => {
-          const product = await tx.product.create({
-            data: {
-              code: data.code,
-              nameAr: data.nameAr,
-              nameEn: data.nameEn ?? null,
-              unitOfMeasure: data.unitOfMeasure,
-            },
-            select: {
-              id: true,
-              code: true,
-              nameAr: true,
-              nameEn: true,
-              unitOfMeasure: true,
-              isActive: true,
-            },
-          });
+          const groupIds = await resolveGroups(tx, data.groupIds);
+          const product = toProductView(
+            await tx.product.create({
+              data: {
+                code: data.code,
+                nameAr: data.nameAr,
+                nameEn: data.nameEn ?? null,
+                unitOfMeasure: data.unitOfMeasure,
+                optionGroups: { create: groupIds.map((groupId) => ({ groupId })) },
+              },
+              select: productSelect,
+            }),
+          );
           await writeAudit(tx, {
             actorId: ctx.userId,
             action: 'products.create',
@@ -66,9 +116,74 @@ export function createCatalogueService(db: Db) {
     },
 
     /**
-     * Creates every missing fabric × colour × size combination for a product. Existing
-     * combinations are left untouched, so running it again with an extra size only adds that size.
-     * Each new variant gets an EAN-13 barcode from the database sequence and an ASCII SKU.
+     * Renames, retires/restores, or changes which option types a product is made with. A type
+     * can be removed only while no variant of the product carries a value of it.
+     */
+    async updateProduct(
+      id: string,
+      input: UpdateProductInput,
+      ctx: ActorContext,
+    ): Promise<ProductView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(updateProductSchema, input);
+
+      return inTransaction(db, async (tx) => {
+        if (!(await repo.lockProduct(tx, id))) throw new NotFoundError('product', id);
+        const before = toProductView(
+          await tx.product.findUniqueOrThrow({ where: { id }, select: productSelect }),
+        );
+
+        if (data.groupIds) {
+          // A type the product already has stays allowed even if it was deactivated since.
+          const groupIds = await resolveGroups(tx, data.groupIds, new Set(before.groupIds));
+          const removed = before.groupIds.filter((g) => !groupIds.includes(g));
+          const added = groupIds.filter((g) => !before.groupIds.includes(g));
+          if (removed.length) {
+            const used = await tx.variantOptionValue.findMany({
+              where: { groupId: { in: removed }, variant: { productId: id } },
+              select: { groupId: true },
+              distinct: ['groupId'],
+            });
+            if (used.length) throw new OptionGroupInUseError(used.map((u) => u.groupId));
+            await tx.productOptionGroup.deleteMany({
+              where: { productId: id, groupId: { in: removed } },
+            });
+          }
+          if (added.length) {
+            await tx.productOptionGroup.createMany({
+              data: added.map((groupId) => ({ productId: id, groupId })),
+            });
+          }
+        }
+
+        const after = toProductView(
+          await tx.product.update({
+            where: { id },
+            data: {
+              ...(data.nameAr !== undefined ? { nameAr: data.nameAr } : {}),
+              ...(data.nameEn !== undefined ? { nameEn: data.nameEn } : {}),
+              ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+            },
+            select: productSelect,
+          }),
+        );
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: 'products.update',
+          entityType: 'product',
+          entityId: id,
+          before,
+          after,
+        });
+        return after;
+      });
+    },
+
+    /**
+     * Creates every missing combination of the chosen values — one list of values per option type
+     * of the product. Existing combinations are left untouched, so running it again with an extra
+     * colour only adds that colour. Each new variant gets an EAN-13 barcode from the database
+     * sequence and an ASCII SKU.
      */
     async generateVariants(
       input: GenerateVariantsInput,
@@ -82,30 +197,88 @@ export function createCatalogueService(db: Db) {
         if (!product) throw new NotFoundError('product', data.productId);
         if (!product.is_active) throw new ProductInactiveError(data.productId);
 
-        const current = await tx.productVariant.findMany({
-          where: { productId: data.productId, deletedAt: null },
-          select: { fabric: true, colour: true, size: true },
+        const productGroups = await tx.productOptionGroup.findMany({
+          where: { productId: data.productId },
+          select: { groupId: true },
         });
-        const taken = new Set(current.map((v) => comboKey(v.fabric, v.colour, v.size)));
+        const own = new Set(productGroups.map((g) => g.groupId));
+        const chosen = data.selections.map((s) => s.groupId);
+        const missing = [...own].filter((g) => !chosen.includes(g));
+        const extra = chosen.filter((g) => !own.has(g));
+        if (missing.length || extra.length || new Set(chosen).size !== chosen.length) {
+          throw new InvalidSelectionError(
+            'Choose values for every option type of the product, each once, and only those',
+            { missing, extra },
+          );
+        }
 
-        const wanted = data.fabrics.flatMap((fabric) =>
-          data.colours.flatMap((colour) => data.sizes.map((size) => ({ fabric, colour, size }))),
+        const values = await tx.optionValue.findMany({
+          where: { id: { in: data.selections.flatMap((s) => s.valueIds) } },
+          select: {
+            id: true,
+            groupId: true,
+            isActive: true,
+            group: { select: { isActive: true } },
+          },
+        });
+        const byId = new Map(values.map((v) => [v.id, v]));
+        const invalid = data.selections.flatMap((s) =>
+          s.valueIds.filter((valueId) => {
+            const v = byId.get(valueId);
+            return !v || v.groupId !== s.groupId || !v.isActive || !v.group.isActive;
+          }),
         );
-        const missing = wanted.filter((c) => !taken.has(comboKey(c.fabric, c.colour, c.size)));
+        if (invalid.length) {
+          throw new InvalidSelectionError('Unknown, inactive, or misplaced option values', {
+            valueIds: invalid,
+          });
+        }
 
-        const sequences = missing.length ? await repo.nextBarcodeSequences(tx, missing.length) : [];
-        const rows = missing.map((combo, i) => {
+        const count = data.selections.reduce((n, s) => n * s.valueIds.length, 1);
+        if (count > MAX_COMBINATIONS) throw new TooManyCombinationsError(count, MAX_COMBINATIONS);
+
+        // Every key ever used by this product, retired variants included: a combination keeps its
+        // barcode for life and is restored, never recreated.
+        const taken = new Set(
+          (
+            await tx.productVariant.findMany({
+              where: { productId: data.productId },
+              select: { optionKey: true },
+            })
+          ).map((v) => v.optionKey),
+        );
+        const fresh = cartesian(data.selections.map((s) => s.valueIds)).filter(
+          (combo) => !taken.has(optionKey(combo)),
+        );
+
+        const sequences = fresh.length ? await repo.nextBarcodeSequences(tx, fresh.length) : [];
+        const rows = fresh.map((combo, i) => {
           const sequence = sequences[i]!;
           return {
             productId: data.productId,
-            ...combo,
+            optionKey: optionKey(combo),
             barcode: buildInternalBarcode(BARCODE_ENTITY.variant, sequence),
-            // Human-readable, ASCII, unique. Attributes live in their own columns (they may be
-            // Arabic), so the SKU does not try to encode them.
+            // Human-readable, ASCII, unique. Options live in their own tables (they are Arabic),
+            // so the SKU does not try to encode them.
             sku: `${product.code}-${sequence.toString().padStart(6, '0')}`,
           };
         });
-        if (rows.length) await tx.productVariant.createMany({ data: rows });
+        if (rows.length) {
+          const inserted = await tx.productVariant.createManyAndReturn({
+            data: rows,
+            select: { id: true, optionKey: true },
+          });
+          const idByKey = new Map(inserted.map((v) => [v.optionKey, v.id]));
+          await tx.variantOptionValue.createMany({
+            data: fresh.flatMap((combo) =>
+              combo.map((valueId, j) => ({
+                variantId: idByKey.get(optionKey(combo))!,
+                groupId: data.selections[j]!.groupId,
+                valueId,
+              })),
+            ),
+          });
+        }
 
         const all = await repo.searchVariants(tx, { productId: data.productId, limit: 10_000 });
         const createdBarcodes = new Set(rows.map((r) => r.barcode));
@@ -123,6 +296,201 @@ export function createCatalogueService(db: Db) {
         }
         return { created, existing };
       });
+    },
+
+    /** Retires a variant (no longer received or sold) or restores it. Its history stays. */
+    async setVariantActive(
+      id: string,
+      input: SetVariantActiveInput,
+      ctx: ActorContext,
+    ): Promise<VariantView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(setVariantActiveSchema, input);
+
+      return inTransaction(db, async (tx) => {
+        const [before] = await repo.findVariantsByIds(tx, [id]);
+        if (!before) throw new NotFoundError('variant', id);
+        await tx.productVariant.update({ where: { id }, data: { isActive: data.isActive } });
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: data.isActive ? 'products.variant.restore' : 'products.variant.retire',
+          entityType: 'variant',
+          entityId: id,
+          before: { isActive: before.isActive },
+          after: { isActive: data.isActive },
+        });
+        return { ...before, isActive: data.isActive };
+      });
+    },
+
+    // ── Option types and values (القصة، الزر، …) ────────────────────────────────────────────
+
+    async listOptionGroups(ctx: ActorContext): Promise<OptionGroupView[]> {
+      assertPermission(ctx, PERMISSIONS.products.read);
+      return repo.listOptionGroups(db);
+    },
+
+    async createOptionGroup(
+      input: CreateOptionGroupInput,
+      ctx: ActorContext,
+    ): Promise<OptionGroupView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(createOptionGroupSchema, input);
+      try {
+        return await inTransaction(db, async (tx) => {
+          const last = await tx.optionGroup.aggregate({ _max: { sortOrder: true } });
+          const group = await tx.optionGroup.create({
+            data: { nameAr: data.nameAr, sortOrder: (last._max.sortOrder ?? 0) + 10 },
+            select: { id: true, key: true, nameAr: true, sortOrder: true, isActive: true },
+          });
+          await writeAudit(tx, {
+            actorId: ctx.userId,
+            action: 'options.group.create',
+            entityType: 'option_group',
+            entityId: group.id,
+            after: group,
+          });
+          return { ...group, values: [] };
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new OptionGroupTakenError(data.nameAr);
+        throw error;
+      }
+    },
+
+    /** Rename, deactivate/restore, or move one place up or down. */
+    async updateOptionGroup(
+      id: string,
+      input: UpdateOptionGroupInput,
+      ctx: ActorContext,
+    ): Promise<OptionGroupView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(updateOptionGroupSchema, input);
+      try {
+        return await inTransaction(db, async (tx) => {
+          const before = await tx.optionGroup.findUnique({ where: { id } });
+          if (!before) throw new NotFoundError('option_group', id);
+
+          if (data.move) {
+            const siblings = await tx.optionGroup.findMany({
+              orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
+              select: { id: true },
+            });
+            for (const [i, siblingId] of moved(siblings, id, data.move).entries()) {
+              await tx.optionGroup.update({
+                where: { id: siblingId },
+                data: { sortOrder: (i + 1) * 10 },
+              });
+            }
+          }
+          await tx.optionGroup.update({
+            where: { id },
+            data: {
+              ...(data.nameAr !== undefined ? { nameAr: data.nameAr } : {}),
+              ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+            },
+          });
+          await writeAudit(tx, {
+            actorId: ctx.userId,
+            action: 'options.group.update',
+            entityType: 'option_group',
+            entityId: id,
+            before: { nameAr: before.nameAr, isActive: before.isActive },
+            after: data,
+          });
+          return (await repo.listOptionGroups(tx)).find((g) => g.id === id)!;
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new OptionGroupTakenError(data.nameAr ?? '');
+        throw error;
+      }
+    },
+
+    async addOptionValue(input: AddOptionValueInput, ctx: ActorContext): Promise<OptionValueView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(addOptionValueSchema, input);
+      try {
+        return await inTransaction(db, async (tx) => {
+          const group = await tx.optionGroup.findUnique({ where: { id: data.groupId } });
+          if (!group) throw new NotFoundError('option_group', data.groupId);
+          const last = await tx.optionValue.aggregate({
+            where: { groupId: data.groupId },
+            _max: { sortOrder: true },
+          });
+          const value = await tx.optionValue.create({
+            data: {
+              groupId: data.groupId,
+              valueAr: data.valueAr,
+              sortOrder: (last._max.sortOrder ?? 0) + 10,
+            },
+            select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+          });
+          await writeAudit(tx, {
+            actorId: ctx.userId,
+            action: 'options.value.create',
+            entityType: 'option_value',
+            entityId: value.id,
+            after: { groupId: data.groupId, ...value },
+          });
+          return value;
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new OptionValueTakenError(data.valueAr);
+        throw error;
+      }
+    },
+
+    /**
+     * Rename, deactivate/restore, or move one place. A rename shows everywhere at once; labels
+     * already printed keep the old text. A deactivated value is hidden from new variants only.
+     */
+    async updateOptionValue(
+      id: string,
+      input: UpdateOptionValueInput,
+      ctx: ActorContext,
+    ): Promise<OptionValueView> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(updateOptionValueSchema, input);
+      try {
+        return await inTransaction(db, async (tx) => {
+          const before = await tx.optionValue.findUnique({ where: { id } });
+          if (!before) throw new NotFoundError('option_value', id);
+
+          if (data.move) {
+            const siblings = await tx.optionValue.findMany({
+              where: { groupId: before.groupId },
+              orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
+              select: { id: true },
+            });
+            for (const [i, siblingId] of moved(siblings, id, data.move).entries()) {
+              await tx.optionValue.update({
+                where: { id: siblingId },
+                data: { sortOrder: (i + 1) * 10 },
+              });
+            }
+          }
+          const value = await tx.optionValue.update({
+            where: { id },
+            data: {
+              ...(data.valueAr !== undefined ? { valueAr: data.valueAr } : {}),
+              ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+            },
+            select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+          });
+          await writeAudit(tx, {
+            actorId: ctx.userId,
+            action: 'options.value.update',
+            entityType: 'option_value',
+            entityId: id,
+            before: { valueAr: before.valueAr, isActive: before.isActive },
+            after: data,
+          });
+          return value;
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) throw new OptionValueTakenError(data.valueAr ?? '');
+        throw error;
+      }
     },
 
     /** Attaches a barcode that arrived printed on the goods (manufacturer GTIN or supplier code). */
@@ -169,16 +537,14 @@ export function createCatalogueService(db: Db) {
         where: { deletedAt: null },
         orderBy: { code: 'asc' },
         select: {
-          id: true,
-          code: true,
-          nameAr: true,
-          nameEn: true,
-          unitOfMeasure: true,
-          isActive: true,
+          ...productSelect,
           _count: { select: { variants: { where: { deletedAt: null } } } },
         },
       });
-      return rows.map(({ _count, ...product }) => ({ ...product, variantCount: _count.variants }));
+      return rows.map(({ _count, ...product }) => ({
+        ...toProductView(product),
+        variantCount: _count.variants,
+      }));
     },
 
     async getVariant(id: string, ctx: ActorContext): Promise<VariantView> {
@@ -224,8 +590,61 @@ export function createCatalogueService(db: Db) {
 
 export type CatalogueService = ReturnType<typeof createCatalogueService>;
 
-function comboKey(fabric: string, colour: string, size: string): string {
-  return JSON.stringify([fabric, colour, size]);
+/**
+ * The option types a product is made with: the given ones (each must exist and be active, unless
+ * the product already has it), or by default every active type.
+ */
+async function resolveGroups(
+  tx: Tx,
+  groupIds: string[] | undefined,
+  alreadyOnProduct: ReadonlySet<string> = new Set(),
+): Promise<string[]> {
+  if (!groupIds) {
+    const active = await tx.optionGroup.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true },
+    });
+    if (!active.length) throw new InvalidOptionGroupsError([]);
+    return active.map((g) => g.id);
+  }
+  const unique = [...new Set(groupIds)];
+  const found = await tx.optionGroup.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, isActive: true },
+  });
+  const usable = new Set(
+    found.filter((g) => g.isActive || alreadyOnProduct.has(g.id)).map((g) => g.id),
+  );
+  const invalid = unique.filter((id) => !usable.has(id));
+  if (invalid.length) throw new InvalidOptionGroupsError(invalid);
+  return unique;
+}
+
+/**
+ * The duplicate guard for a combination: its value ids sorted by code point and joined. The
+ * migration builds existing keys with COLLATE "C", which sorts the same way.
+ */
+export function optionKey(valueIds: readonly string[]): string {
+  return [...valueIds].sort().join(',');
+}
+
+/** [[a, b], [x]] → [[a, x], [b, x]]: one entry per list, in list order. */
+export function cartesian(lists: readonly (readonly string[])[]): string[][] {
+  return lists.reduce<string[][]>(
+    (combos, list) => combos.flatMap((combo) => list.map((item) => [...combo, item])),
+    [[]],
+  );
+}
+
+/** The ids in their new order after moving `id` one place up or down (no-op at the ends). */
+export function moved(items: readonly { id: string }[], id: string, move: 'up' | 'down'): string[] {
+  const ids = items.map((i) => i.id);
+  const from = ids.indexOf(id);
+  const to = move === 'up' ? from - 1 : from + 1;
+  if (from < 0 || to < 0 || to >= ids.length) return ids;
+  [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+  return ids;
 }
 
 /** GTIN-8/12/13/14 mod-10 check: weights 3,1,3,… from the rightmost data digit. */

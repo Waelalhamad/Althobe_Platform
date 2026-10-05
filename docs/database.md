@@ -70,7 +70,11 @@ Column pairs always use the `<name>_amount` / `<name>_currency` suffix so they a
 
 ```
 products              (unit_of_measure: PIECE | BOX | METER | KG)
-product_variants      (fabric, colour, size, sku, barcode)
+product_variants      (sku, barcode, option_key)
+option_groups         (option types: القصة، الزر، … — ADR-008)
+option_values         (their values; deactivated, never deleted)
+product_option_groups (which types a product is made with)
+variant_option_values (one value per type per variant)
 variant_barcodes      (external GTIN / supplier barcodes)
 categories            (later)
 ```

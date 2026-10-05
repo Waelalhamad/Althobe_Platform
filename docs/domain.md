@@ -42,21 +42,20 @@ Words to avoid because they are ambiguous: *item*, *stock item*, *piece*, *order
 This is the modelling decision everything else rests on.
 
 - A **Product** is the design: "Classic Saudi Thobe", "Emirati Kandura Cut".
-- A **ProductVariant** is what actually exists on a shelf: that design, in a specific fabric,
-  colour, and size.
+- A **ProductVariant** is what actually exists on a shelf: that design, with one value of each
+  of its option types — cut, buttons, zipper, sleeve, fabric, colour, size (ADR-008).
 - Stock, barcodes, SKUs, prices, and costs attach to the **variant**, never to the product.
 
 ```
-Product: Classic Saudi Thobe
+Product: ثوب
 └── Variants
-    ├── Cotton / White / 56
-    ├── Cotton / White / 58
-    ├── Cotton / Beige / 58
-    └── Wool blend / Black / 60
+    ├── سعودية · ملكي · مدفون · سنارة · جوخ هندي · أبيض · 56
+    ├── سعودية · ملكي · مدفون · سنارة · جوخ هندي · أبيض · 58
+    └── خليجية · معدن · مدفون · فلت/كويتي · تويوبو صيني · بيج · 58
 ```
 
-Variant axes for this business: **fabric, colour, size**. Optional later: fit, sleeve style,
-collar style. Adding an axis means a migration — decide before Phase 2 ends.
+Option types are **data** (ADR-008): the owner adds values and whole types (e.g. a collar) on the
+Options page, and chooses per product which types it is made with. No migration is needed.
 
 ## Core aggregates
 

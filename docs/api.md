@@ -39,8 +39,17 @@ stock endpoints arriving in Phase 3 will require it.
 | `GET` | `/auth/me` | authenticated |
 | `GET` | `/locations` | `inventory.view` |
 | `GET` / `POST` | `/products` | `products.read` / `products.write` |
-| `POST` | `/products/:id/variants/generate` | `products.write` |
-| `GET` | `/variants?q=` | `products.read` |
+| `PATCH` | `/products/:id` (name, option types, retire / restore) | `products.write` |
+| `POST` | `/products/:id/variants/generate` — `{ selections: [{ groupId, valueIds }] }` | `products.write` |
+| `GET` | `/variants?q=&productId=` | `products.read` |
+| `PATCH` | `/variants/:id` — `{ isActive }` (retire / restore) | `products.write` |
+| `GET` | `/option-groups` (types with their values) | `products.read` |
+| `POST` | `/option-groups` · `/option-groups/:id/values` | `products.write` |
+| `PATCH` | `/option-groups/:id` · `/option-values/:id` — rename, `isActive`, `move: up/down` | `products.write` |
+
+A variant is returned with `options: [{ groupId, groupKey, group, valueId, value }]` (in type
+order), `title` (the values joined with « · ») and `size` (the `SIZE` value or null). Until
+2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).
 | `GET` | `/barcodes/:code` | `inventory.view` |
 | `GET` | `/inventory/balances?locationId=&q=` | `inventory.view` |
 | `GET` | `/inventory/movements?variantId=&locationId=` | `inventory.view` |

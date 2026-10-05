@@ -18,6 +18,10 @@ export const locationsQuery = queryOptions({
   staleTime: 60_000,
 });
 export const productsQuery = queryOptions({ queryKey: ['products'], queryFn: api.products });
+export const optionGroupsQuery = queryOptions({
+  queryKey: ['option-groups'],
+  queryFn: api.optionGroups,
+});
 
 export const variantsQuery = (productId: string) =>
   queryOptions({

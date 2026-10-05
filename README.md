@@ -74,7 +74,7 @@ pnpm install
 cp .env.example backend/.env                  # fill in the Neon URLs
 pnpm --filter @althobe/backend db:generate
 pnpm db:migrate                               # applies migrations (never resets anything)
-pnpm db:seed                                  # locations + a sample product; no stock
+pnpm db:seed                                  # locations; no products, no stock
 pnpm --filter @althobe/backend user:create --email you@example.com --name "الاسم" --roles owner
 
 pnpm dev                                      # API on :3000 + warehouse app on http://localhost:5180

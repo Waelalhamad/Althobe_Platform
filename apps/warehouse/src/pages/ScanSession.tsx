@@ -286,9 +286,7 @@ function LastScanPanel({ last, pending }: { last: LastScan | null; pending: numb
     >
       <div>
         <div className="text-xl font-bold">{variant.product.nameAr}</div>
-        <div className="text-lg">
-          {variant.fabric} · {variant.colour} · مقاس {variant.size}
-        </div>
+        <div className="text-lg">{variant.title}</div>
         {last.status === 'dup' && (
           <div className="text-sm text-warn">مسحة مكررة — لم تُحتسب مرتين</div>
         )}
@@ -354,9 +352,7 @@ function LineRow({
     <tr className={`border-t border-stone ${highlight ? 'bg-bad-soft' : ''}`}>
       <td className="p-3">
         <div className="font-medium">{variant.product.nameAr}</div>
-        <div className="text-sm text-ink-muted">
-          {variant.fabric} · {variant.colour} · مقاس {variant.size}
-        </div>
+        <div className="text-sm text-ink-muted">{variant.title}</div>
         {error && <div className="text-sm text-bad">{error}</div>}
       </td>
       <td className="p-3">

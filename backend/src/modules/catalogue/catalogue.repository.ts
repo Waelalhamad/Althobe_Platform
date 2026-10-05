@@ -1,14 +1,11 @@
 import type { Prisma } from '@prisma/client';
 import type { Queryable, Tx } from '../../shared/db.js';
-import type { VariantView } from './catalogue.types.js';
+import type { OptionGroupView, VariantView } from './catalogue.types.js';
 
 const variantSelect = {
   id: true,
   sku: true,
   barcode: true,
-  fabric: true,
-  colour: true,
-  size: true,
   isActive: true,
   product: {
     select: {
@@ -20,15 +17,68 @@ const variantSelect = {
       isActive: true,
     },
   },
+  optionValues: {
+    select: {
+      groupId: true,
+      group: { select: { key: true, nameAr: true, sortOrder: true } },
+      value: { select: { id: true, valueAr: true, sortOrder: true } },
+    },
+  },
 } satisfies Prisma.ProductVariantSelect;
 
+type VariantRow = Prisma.ProductVariantGetPayload<{ select: typeof variantSelect }>;
+
 const live = { deletedAt: null } as const;
+
+function toView(row: VariantRow): VariantView {
+  const sorted = [...row.optionValues].sort(
+    (a, b) => a.group.sortOrder - b.group.sortOrder || a.group.nameAr.localeCompare(b.group.nameAr),
+  );
+  const options = sorted.map((o) => ({
+    groupId: o.groupId,
+    groupKey: o.group.key,
+    group: o.group.nameAr,
+    valueId: o.value.id,
+    value: o.value.valueAr,
+  }));
+  return {
+    id: row.id,
+    sku: row.sku,
+    barcode: row.barcode,
+    isActive: row.isActive,
+    options,
+    title: options.map((o) => o.value).join(' · '),
+    size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
+    product: row.product,
+  };
+}
+
+/**
+ * Within one product: by each type's value order (القصة, then الزر, …), so a table of variants
+ * reads like the option lists. Across products: by product code.
+ */
+function compareVariants(a: VariantRow, b: VariantRow): number {
+  if (a.product.code !== b.product.code) return a.product.code < b.product.code ? -1 : 1;
+  const order = (row: VariantRow) =>
+    [...row.optionValues]
+      .sort((x, y) => x.group.sortOrder - y.group.sortOrder)
+      .map((o) => o.value.sortOrder);
+  const [x, y] = [order(a), order(b)];
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    if (x[i] !== y[i]) return x[i]! - y[i]!;
+  }
+  return x.length - y.length || (a.sku < b.sku ? -1 : 1);
+}
 
 export async function findVariantByBarcode(
   q: Queryable,
   barcode: string,
 ): Promise<VariantView | null> {
-  return q.productVariant.findFirst({ where: { barcode, ...live }, select: variantSelect });
+  const row = await q.productVariant.findFirst({
+    where: { barcode, ...live },
+    select: variantSelect,
+  });
+  return row ? toView(row) : null;
 }
 
 export async function findVariantByExternalBarcode(
@@ -39,15 +89,20 @@ export async function findVariantByExternalBarcode(
     where: { barcode },
     select: { variant: { select: variantSelect } },
   });
-  return row?.variant ?? null;
+  return row ? toView(row.variant) : null;
 }
 
 export async function findVariantBySku(q: Queryable, sku: string): Promise<VariantView | null> {
-  return q.productVariant.findFirst({ where: { sku, ...live }, select: variantSelect });
+  const row = await q.productVariant.findFirst({ where: { sku, ...live }, select: variantSelect });
+  return row ? toView(row) : null;
 }
 
 export async function findVariantsByIds(q: Queryable, ids: string[]): Promise<VariantView[]> {
-  return q.productVariant.findMany({ where: { id: { in: ids }, ...live }, select: variantSelect });
+  const rows = await q.productVariant.findMany({
+    where: { id: { in: ids }, ...live },
+    select: variantSelect,
+  });
+  return rows.map(toView);
 }
 
 export async function searchVariants(
@@ -55,7 +110,7 @@ export async function searchVariants(
   args: { q?: string | undefined; productId?: string | undefined; limit: number },
 ): Promise<VariantView[]> {
   const text = args.q;
-  return q.productVariant.findMany({
+  const rows = await q.productVariant.findMany({
     where: {
       ...live,
       ...(args.productId ? { productId: args.productId } : {}),
@@ -64,16 +119,33 @@ export async function searchVariants(
             OR: [
               { sku: { contains: text, mode: 'insensitive' } },
               { barcode: { startsWith: text } },
-              { fabric: { contains: text, mode: 'insensitive' } },
-              { colour: { contains: text, mode: 'insensitive' } },
               { product: { nameAr: { contains: text, mode: 'insensitive' } } },
+              { optionValues: { some: { value: { valueAr: { contains: text } } } } },
             ],
           }
         : {}),
     },
     select: variantSelect,
-    orderBy: [{ product: { code: 'asc' } }, { fabric: 'asc' }, { colour: 'asc' }, { size: 'asc' }],
+    orderBy: [{ product: { code: 'asc' } }, { sku: 'asc' }],
     take: args.limit,
+  });
+  return rows.sort(compareVariants).map(toView);
+}
+
+export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]> {
+  return q.optionGroup.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
+    select: {
+      id: true,
+      key: true,
+      nameAr: true,
+      sortOrder: true,
+      isActive: true,
+      values: {
+        orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
+        select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+      },
+    },
   });
 }
 

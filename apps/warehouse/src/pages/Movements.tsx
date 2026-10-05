@@ -1,7 +1,7 @@
 import { Card, Code, Field, PageTitle, Select } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
-import { formatQuantity, MOVEMENT_TYPE } from '../format';
+import { formatQuantity, MOVEMENT_TYPE, variantName } from '../format';
 import { locationsQuery, movementsQuery } from '../queries';
 
 const route = getRouteApi('/app/movements');
@@ -47,10 +47,7 @@ export function MovementsPage() {
               void navigate({ to: '/movements', search: { variantId: undefined, locationId } })
             }
           >
-            {filteredVariant
-              ? `الصنف: ${filteredVariant.product.nameAr} · ${filteredVariant.fabric} · ${filteredVariant.colour} · ${filteredVariant.size}`
-              : 'صنف محدد'}{' '}
-            — عرض الكل
+            {filteredVariant ? `الصنف: ${variantName(filteredVariant)}` : 'صنف محدد'} — عرض الكل
           </button>
         )}
         <span className="ms-auto text-sm text-ink-muted">آخر 50 حركة</span>
@@ -82,7 +79,7 @@ export function MovementsPage() {
                     <>
                       <div className="font-medium">{v.product.nameAr}</div>
                       <div className="text-sm text-ink-muted">
-                        {v.fabric} · {v.colour} · {v.size} · <Code>{v.sku}</Code>
+                        {v.title} · <Code>{v.sku}</Code>
                       </div>
                     </>
                   ) : (

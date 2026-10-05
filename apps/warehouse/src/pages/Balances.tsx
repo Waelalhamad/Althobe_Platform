@@ -25,7 +25,7 @@ export function BalancesPage() {
   const needle = filter.trim().toLowerCase();
   const visible = needle
     ? rows.filter(({ variant: v }) =>
-        [v.product.nameAr, v.product.code, v.sku, v.barcode, v.fabric, v.colour, v.size].some((f) =>
+        [v.product.nameAr, v.product.code, v.sku, v.barcode, v.title].some((f) =>
           f.toLowerCase().includes(needle),
         ),
       )
@@ -131,9 +131,7 @@ function BalanceRow({
     <>
       <tr className="border-t border-stone">
         <td className="p-3 font-medium">{v.product.nameAr}</td>
-        <td className="p-3">
-          {v.fabric} · {v.colour} · {v.size}
-        </td>
+        <td className="p-3">{v.title}</td>
         <td className="p-3">
           <Code>{v.barcode}</Code>
         </td>

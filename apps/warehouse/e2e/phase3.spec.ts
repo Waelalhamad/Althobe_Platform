@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { api, productWithSizes } from './setup';
 
 // Phase 3 screens: transfer, damage, stocktake, adjustment → history, report, users.
 // Setup goes through the API (same session cookie) to keep the run short on a slow network.
@@ -10,17 +11,6 @@ const shots = 'e2e/screenshots/phase3';
 async function scan(page: Page, barcode: string) {
   await page.keyboard.type(barcode, { delay: 5 });
   await page.keyboard.press('Enter');
-}
-
-async function api<T>(
-  request: APIRequestContext,
-  method: 'GET' | 'POST' | 'PATCH',
-  url: string,
-  data?: object,
-) {
-  const res = await request.fetch(`/api/v1${url}`, { method, ...(data ? { data } : {}) });
-  expect(res.ok(), `${method} ${url} → ${res.status()} ${await res.text()}`).toBe(true);
-  return ((await res.json()) as { data: T }).data;
 }
 
 test('phase 3: transfer, damage, stocktake, adjust, history, report, users', async ({ page }) => {
@@ -37,16 +27,7 @@ test('phase 3: transfer, damage, stocktake, adjust, history, report, users', asy
   const rq = page.request;
   const locations = await api<{ id: string; code: string }[]>(rq, 'GET', '/locations');
   const wh1 = locations.find((l) => l.code === 'WH1')!;
-  const product = await api<{ id: string }>(rq, 'POST', '/products', {
-    code,
-    nameAr: 'ثوب المرحلة الثالثة',
-  });
-  const { created } = await api<{ created: { id: string; barcode: string }[] }>(
-    rq,
-    'POST',
-    `/products/${product.id}/variants/generate`,
-    { fabrics: ['قطني'], colours: ['أبيض'], sizes: ['54', '56'] },
-  );
+  const created = await productWithSizes(rq, code, 'ثوب المرحلة الثالثة', ['54', '56']);
   const [a, b] = created as [{ id: string; barcode: string }, { id: string; barcode: string }];
   const opening = await api<{ id: string }>(rq, 'POST', '/scan-sessions', {
     kind: 'OPENING',

@@ -30,17 +30,30 @@ export interface Product {
   nameEn: string | null;
   unitOfMeasure: string;
   isActive: boolean;
+  /** The option types this product is made with, in type order. */
+  groupIds: string[];
   variantCount: number;
+}
+
+export interface VariantOption {
+  groupId: string;
+  groupKey: string | null;
+  group: string;
+  valueId: string;
+  value: string;
 }
 
 export interface Variant {
   id: string;
   sku: string;
   barcode: string;
-  fabric: string;
-  colour: string;
-  size: string;
   isActive: boolean;
+  /** One chosen value per option type, in type order. */
+  options: VariantOption[];
+  /** The values joined: "سعودية · ملكي · جوخ هندي · أبيض · 56". */
+  title: string;
+  /** The القياس value, printed large on labels. */
+  size: string | null;
   product: {
     id: string;
     code: string;
@@ -50,6 +63,25 @@ export interface Variant {
     isActive: boolean;
   };
 }
+
+export interface OptionValue {
+  id: string;
+  valueAr: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+/** An option type: القصة، الزر، السحاب، الكم، القماش، اللون، القياس, or one the owner added. */
+export interface OptionGroup {
+  id: string;
+  key: string | null;
+  nameAr: string;
+  sortOrder: number;
+  isActive: boolean;
+  values: OptionValue[];
+}
+
+export type Move = 'up' | 'down';
 
 export interface UnitCost {
   amount: string;
@@ -212,18 +244,44 @@ export const api = {
   locations: async () => get<Location[]>('/locations'),
 
   products: async () => get<Product[]>('/products'),
-  createProduct: async (input: { code: string; nameAr: string; nameEn?: string }) =>
-    post<Product>('/products', input),
+  createProduct: async (input: {
+    code: string;
+    nameAr: string;
+    nameEn?: string;
+    groupIds?: string[];
+  }) => post<Product>('/products', input),
+  updateProduct: async (
+    id: string,
+    patch: { nameAr?: string; nameEn?: string | null; isActive?: boolean; groupIds?: string[] },
+  ) => request<Product>('PATCH', `/products/${id}`, patch),
   generateVariants: async (
     productId: string,
-    input: { fabrics: string[]; colours: string[]; sizes: string[] },
+    input: { selections: { groupId: string; valueIds: string[] }[] },
   ) =>
     post<{ created: Variant[]; existing: Variant[] }>(
       `/products/${productId}/variants/generate`,
       input,
     ),
+  // One product's variants all at once (its page and its labels); a search shows the first 200.
   variants: async (params: { productId?: string; q?: string }) =>
-    get<Variant[]>(`/variants?${new URLSearchParams({ ...params, limit: '200' })}`),
+    get<Variant[]>(
+      `/variants?${new URLSearchParams({ ...params, limit: params.productId ? '2000' : '200' })}`,
+    ),
+  setVariantActive: async (id: string, isActive: boolean) =>
+    request<Variant>('PATCH', `/variants/${id}`, { isActive }),
+
+  optionGroups: async () => get<OptionGroup[]>('/option-groups'),
+  createOptionGroup: async (nameAr: string) => post<OptionGroup>('/option-groups', { nameAr }),
+  updateOptionGroup: async (
+    id: string,
+    patch: { nameAr?: string; isActive?: boolean; move?: Move },
+  ) => request<OptionGroup>('PATCH', `/option-groups/${id}`, patch),
+  addOptionValue: async (groupId: string, valueAr: string) =>
+    post<OptionValue>(`/option-groups/${groupId}/values`, { valueAr }),
+  updateOptionValue: async (
+    id: string,
+    patch: { valueAr?: string; isActive?: boolean; move?: Move },
+  ) => request<OptionValue>('PATCH', `/option-values/${id}`, patch),
 
   balances: async (locationId: string) =>
     get<{ variant: Variant; balance: Balance }[]>(`/inventory/balances?locationId=${locationId}`),

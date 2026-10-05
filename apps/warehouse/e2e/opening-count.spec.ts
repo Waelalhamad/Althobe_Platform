@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { ensureOptionType } from './setup';
 
 // Phase 2 done-criterion (PROJECT_STATUS / plan §7): someone logs in, creates a product, prints
 // its labels, scans an opening count at WH1, and sees the correct balance — in RTL Arabic.
@@ -32,16 +33,35 @@ test('opening count by scanner, end to end', async ({ page }) => {
   ).toBe(true);
   await page.screenshot({ path: `${shots}/2-home.png` });
 
-  // ── Create a product and its variants ───────────────────────────────────────────────────
+  // ── Create a product and its variants by tapping options ────────────────────────────────
+  const types = { القماش: ['قطني'], اللون: ['أبيض', 'أسود'], القياس: ['54', '56'] };
+  for (const [name, values] of Object.entries(types)) {
+    await ensureOptionType(page.request, name, values);
+  }
   await page.getByRole('link', { name: 'المنتجات' }).click();
   await page.getByLabel('رمز المنتج').fill(code);
   await page.getByLabel('اسم المنتج').fill('ثوب اختبار شامل');
+  // Only these three types, whatever else exists on the test database.
+  const form = page.locator('form').filter({ has: page.getByLabel('رمز المنتج') });
+  for (const chip of await form.locator('button[aria-pressed="true"]').all()) {
+    if (!((await chip.innerText()).trim() in types)) await chip.click();
+  }
+  for (const name of Object.keys(types)) {
+    const chip = form.getByRole('button', { name, exact: true });
+    if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
+  }
   await page.getByRole('button', { name: 'إضافة منتج' }).click();
   await expect(page.getByRole('heading', { name: /ثوب اختبار شامل/ })).toBeVisible();
 
-  await page.getByLabel('الأقمشة').fill('قطني');
-  await page.getByLabel('الألوان').fill('أبيض، أسود');
-  await page.getByLabel('القياسات').fill('54، 56');
+  for (const [name, values] of Object.entries(types)) {
+    for (const value of values) {
+      await page
+        .getByRole('group', { name })
+        .getByRole('button', { name: value, exact: true })
+        .click();
+    }
+  }
+  await expect(page.getByText('4 تركيبة')).toBeVisible();
   await page.getByRole('button', { name: 'إنشاء 4 صنف' }).click();
   await expect(page.getByText('أُنشئ 4 صنف جديد')).toBeVisible();
   const barcodes = await page.locator('tbody tr td:nth-child(5)').allInnerTexts();

@@ -92,6 +92,54 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.catalogue.createProduct(request.body as never, actorOf(request)),
     }));
 
+    priv.patch('/products/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.updateProduct(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
+    priv.patch('/variants/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.setVariantActive(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
+    // Option types (القصة، الزر، …) and their values.
+    priv.get('/option-groups', async (request) => ({
+      data: await s.catalogue.listOptionGroups(actorOf(request)),
+    }));
+
+    priv.post('/option-groups', async (request) => ({
+      data: await s.catalogue.createOptionGroup(request.body as never, actorOf(request)),
+    }));
+
+    priv.patch('/option-groups/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.updateOptionGroup(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
+    priv.post('/option-groups/:id/values', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.addOptionValue(
+        { ...(request.body as object), groupId: request.params.id } as never,
+        actorOf(request),
+      ),
+    }));
+
+    priv.patch('/option-values/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.updateOptionValue(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
     priv.post('/products/:id/variants/generate', async (request: Params<{ id: string }>) => ({
       data: await s.catalogue.generateVariants(
         { ...(request.body as object), productId: request.params.id } as never,

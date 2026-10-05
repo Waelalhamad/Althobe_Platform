@@ -13,6 +13,7 @@ import { BalancesPage } from './pages/Balances';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
 import { MovementsPage } from './pages/Movements';
+import { OptionsPage } from './pages/Options';
 import { ProductDetailPage } from './pages/ProductDetail';
 import { ProductsPage } from './pages/Products';
 import { ReportsPage } from './pages/Reports';
@@ -55,6 +56,7 @@ const appRoute = createRoute({
 const routes = [
   createRoute({ getParentRoute: () => appRoute, path: '/', component: HomePage }),
   createRoute({ getParentRoute: () => appRoute, path: '/products', component: ProductsPage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/options', component: OptionsPage }),
   createRoute({
     getParentRoute: () => appRoute,
     path: '/products/$productId',

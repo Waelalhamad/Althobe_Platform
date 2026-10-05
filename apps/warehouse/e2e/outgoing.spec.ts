@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { api, productWithSizes } from './setup';
 
 // Goods leaving to customers (إخراج / بيع) and coming back (مرتجع), at the store.
 
@@ -9,17 +10,6 @@ const shots = 'e2e/screenshots/outgoing';
 async function scan(page: Page, barcode: string) {
   await page.keyboard.type(barcode, { delay: 5 });
   await page.keyboard.press('Enter');
-}
-
-async function api<T>(
-  request: APIRequestContext,
-  method: 'GET' | 'POST' | 'PATCH',
-  url: string,
-  data?: object,
-) {
-  const res = await request.fetch(`/api/v1${url}`, { method, ...(data ? { data } : {}) });
-  expect(res.ok(), `${method} ${url} → ${res.status()} ${await res.text()}`).toBe(true);
-  return ((await res.json()) as { data: T }).data;
 }
 
 async function confirm(page: Page) {
@@ -44,16 +34,7 @@ test('sale and return at the store keep the balance true', async ({ page }) => {
   const locations = await api<{ id: string; code: string }[]>(rq, 'GET', '/locations');
   const wh1 = locations.find((l) => l.code === 'WH1')!;
   const store = locations.find((l) => l.code === 'STORE')!;
-  const product = await api<{ id: string }>(rq, 'POST', '/products', {
-    code,
-    nameAr: 'ثوب اختبار البيع',
-  });
-  const { created } = await api<{ created: { id: string; barcode: string }[] }>(
-    rq,
-    'POST',
-    `/products/${product.id}/variants/generate`,
-    { fabrics: ['قطني'], colours: ['أبيض'], sizes: ['56'] },
-  );
+  const created = await productWithSizes(rq, code, 'ثوب اختبار البيع', ['56']);
   const a = created[0]!;
   const opening = await api<{ id: string }>(rq, 'POST', '/scan-sessions', {
     kind: 'OPENING',

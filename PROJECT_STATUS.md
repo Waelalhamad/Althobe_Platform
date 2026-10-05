@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-09-28
+Last updated: 2026-10-05
 
 Read this first in every session. It is the only file that describes what actually exists.
 If it disagrees with the code, the code wins — and this file gets fixed in the same PR.
@@ -13,6 +13,11 @@ If it disagrees with the code, the code wins — and this file gets fixed in the
 Verification: **67 / 67 backend tests** (58 ledger + 9 API), **2 / 2 browser end-to-end tests**
 (opening count; transfer · damage · stocktake · adjustment · history · report · users),
 typecheck, lint, formatting, build.
+
+**Product options (2026-10-05, ADR-008):** products ثوب / كلابية are built by tapping values of
+editable option types — القصة، الزر، السحاب، الكم، القماش، اللون، القياس — on the new «الخيارات»
+page; products and variants can be edited, retired and restored. **Next for products:** prices,
+then photos (S3), then categories.
 
 **Practice mode:** `pnpm dev:practice` runs the app on a separate `althobe_practice` database with a
 yellow «وضع التدريب» banner — for learning the scanner and printer without touching real stock.
@@ -103,7 +108,7 @@ Scanner UI, then connect the store.
 | Front-end | Vite + React SPAs, not Next.js | ADR-005 |
 | Database host | Neon, Postgres 18, Frankfurt; WebSocket driver on port 443; tests in `althobe_test`; no local DB | ADR-006 |
 | Stock places | `Location` with kind WAREHOUSE / STORE: two warehouses, one store | inventory.md |
-| Variant | fabric + colour + size | domain.md |
+| Variant | One value per option type; types and values edited in the app (القصة، الزر، السحاب، الكم، القماش، اللون، القياس) | ADR-008 |
 | Opening stock | Start from zero; scanned `OPENING` count | inventory.md |
 | Costing | Moving weighted average, per variant per location, in SYP | inventory.md |
 | Stocktake | First-class, never an adjustment; second user approves | inventory.md |

@@ -31,3 +31,45 @@ export class BarcodeTakenError extends DomainError {
     super('BARCODE_TAKEN', 'This barcode is already assigned', { barcode: code });
   }
 }
+
+export class OptionGroupTakenError extends DomainError {
+  constructor(nameAr: string) {
+    super('OPTION_GROUP_TAKEN', 'An option type with this name already exists', { nameAr });
+  }
+}
+
+export class OptionValueTakenError extends DomainError {
+  constructor(valueAr: string) {
+    super('OPTION_VALUE_TAKEN', 'This value already exists in this option type', { valueAr });
+  }
+}
+
+/** Option types that are unknown or inactive, given to a product. */
+export class InvalidOptionGroupsError extends DomainError {
+  constructor(groupIds: string[]) {
+    super('INVALID_OPTION_GROUPS', 'Unknown or inactive option type', { groupIds });
+  }
+}
+
+/** A type removed from a product while some of its variants still carry a value of it. */
+export class OptionGroupInUseError extends DomainError {
+  constructor(groupIds: string[]) {
+    super('OPTION_GROUP_IN_USE', 'Variants of this product use this option type', { groupIds });
+  }
+}
+
+/** The chosen values must give one list of active values per option type of the product. */
+export class InvalidSelectionError extends DomainError {
+  constructor(reason: string, details: Record<string, unknown> = {}) {
+    super('INVALID_SELECTION', reason, details);
+  }
+}
+
+export class TooManyCombinationsError extends DomainError {
+  constructor(count: number, max: number) {
+    super('TOO_MANY_COMBINATIONS', `${count} combinations requested; at most ${max} at once`, {
+      count,
+      max,
+    });
+  }
+}

@@ -6,6 +6,7 @@ import { can, meQuery, modeQuery } from './queries';
 const NAV = [
   { to: '/', label: 'الرئيسية' },
   { to: '/products', label: 'المنتجات' },
+  { to: '/options', label: 'الخيارات' },
   { to: '/labels', label: 'طباعة الملصقات' },
   { to: '/balances', label: 'الأرصدة' },
   { to: '/stocktakes', label: 'الجرد' },

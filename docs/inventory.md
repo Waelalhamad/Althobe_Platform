@@ -22,7 +22,7 @@ argues about — purchasing, sales, the store, and accounting all read it. It ha
 | Concept | Meaning |
 | --- | --- |
 | **Product** | The design, e.g. "ثوب عربي كلاسيك". Not stockable. Has a unit of measure. |
-| **ProductVariant** | The stockable, sellable unit: fabric + colour + size. Carries SKU and barcode. |
+| **ProductVariant** | The stockable, sellable unit: one value per option type (cut, buttons, … fabric, colour, size — ADR-008). Carries SKU and barcode. |
 | **Location** | A physical place that holds stock, with a `kind`: `WAREHOUSE` or `STORE`. |
 | **InventoryMovement** | An immutable record of stock changing. The ledger, and the truth. |
 | **InventoryBalance** | Current quantity of one variant at one location. Derived, fast to read. |
@@ -229,7 +229,7 @@ Reads:
 getBalance({ variantId, locationId }, ctx)
 listBalances({ locationId, filter, page }, ctx)
 getMovements({ variantId, locationId, from, to, page }, ctx)
-resolveBarcode(code, ctx)   // -> variant with product, fabric, colour, size, SKU, UoM
+resolveBarcode(code, ctx)   // -> variant with product, options + title, size, SKU, UoM
 ```
 
 `ctx` is `{ userId, permissions, idempotencyKey? }`. Every write requires an `idempotencyKey`:
@@ -245,7 +245,7 @@ USB / Bluetooth scanner (HID keyboard wedge)
       -> browser input
       -> scan input component
       -> resolveBarcode()
-      -> ProductVariant (product, fabric, colour, size, SKU)
+      -> ProductVariant (product, options, SKU)
       -> ScanSession line  (+1 per scan)
       -> review
       -> commit  -> InventoryService -> movements

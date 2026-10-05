@@ -20,7 +20,9 @@ export interface World {
   wh1: LocationView;
   wh2: LocationView;
   store: LocationView;
-  /** Variants of one product: X, Y, Z. */
+  /** Option types القماش / اللون / القياس with a few values each. */
+  options: { fabric: OptionType; colour: OptionType; size: OptionType };
+  /** Variants of one product (قطني · أبيض · 54 / 56 / 58): X, Y, Z. */
   x: VariantView;
   y: VariantView;
   z: VariantView;
@@ -117,15 +119,69 @@ async function buildWorld(db: Db, services: Services): Promise<World> {
     db.location.create({ data: { code: 'STORE', nameAr: 'المتجر', kind: 'STORE' } }),
   ]);
 
+  const options = await createOptionTypes(db);
   const product = await services.catalogue.createProduct(
-    { code: 'THB-TEST', nameAr: 'ثوب تجريبي' },
+    { code: 'THB-TEST', nameAr: 'ثوب تجريبي', groupIds: Object.values(options).map((g) => g.id) },
     owner,
   );
   const { created } = await services.catalogue.generateVariants(
-    { productId: product.id, fabrics: ['قطني'], colours: ['أبيض'], sizes: ['54', '56', '58'] },
+    {
+      productId: product.id,
+      selections: [
+        pick(options.fabric, 'قطني'),
+        pick(options.colour, 'أبيض'),
+        pick(options.size, '54', '56', '58'),
+      ],
+    },
     owner,
   );
   const bySize = (size: string) => created.find((v) => v.size === size)!;
 
-  return { owner, approver, wh1, wh2, store, x: bySize('54'), y: bySize('56'), z: bySize('58') };
+  return {
+    owner,
+    approver,
+    wh1,
+    wh2,
+    store,
+    options,
+    x: bySize('54'),
+    y: bySize('56'),
+    z: bySize('58'),
+  };
+}
+
+export interface OptionType {
+  id: string;
+  values: { id: string; valueAr: string }[];
+}
+
+/** A selection for generateVariants: the named values of one option type. */
+export function pick(group: OptionType, ...names: string[]) {
+  return {
+    groupId: group.id,
+    valueIds: names.map((name) => {
+      const value = group.values.find((v) => v.valueAr === name);
+      if (!value) throw new Error(`no value ${name} in option type`);
+      return value.id;
+    }),
+  };
+}
+
+/** Fabric, colour and size, keyed like the built-in types the migration creates. */
+async function createOptionTypes(db: Db) {
+  const make = async (key: string, nameAr: string, sortOrder: number, values: string[]) =>
+    db.optionGroup.create({
+      data: {
+        key,
+        nameAr,
+        sortOrder,
+        values: { create: values.map((valueAr, i) => ({ valueAr, sortOrder: (i + 1) * 10 })) },
+      },
+      select: { id: true, values: { select: { id: true, valueAr: true } } },
+    });
+  return {
+    fabric: await make('FABRIC', 'القماش', 50, ['قطني', 'جوخ هندي']),
+    colour: await make('COLOUR', 'اللون', 60, ['أبيض', 'أسود']),
+    size: await make('SIZE', 'القياس', 70, ['54', '56', '58', '60']),
+  };
 }

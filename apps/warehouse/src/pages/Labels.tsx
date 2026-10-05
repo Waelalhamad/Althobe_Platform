@@ -207,9 +207,7 @@ export function LabelsPage() {
               <tbody>
                 {variants.map((v) => (
                   <tr key={v.id} className="border-t border-stone">
-                    <td className="p-3">
-                      {v.fabric} · {v.colour} · {v.size}
-                    </td>
+                    <td className="p-3">{v.title}</td>
                     <td className="p-3">
                       <Code>{v.barcode}</Code>
                     </td>
@@ -282,7 +280,8 @@ export function LabelsPage() {
 /**
  * One label, laid out in millimetres so it prints at exactly the chosen size. Everything scales
  * with the label (50 × 30 mm is the reference). The size is the largest text: it is what store
- * staff look for first.
+ * staff look for first; the other options (cut, buttons, fabric, colour, …) are listed under the
+ * product name.
  */
 const Label = memo(function Label({
   variant,
@@ -294,6 +293,10 @@ const Label = memo(function Label({
   border: boolean;
 }) {
   const k = Math.min(size.h / 30, size.w / 50) || 1;
+  const details = variant.options
+    .filter((o) => o.groupKey !== 'SIZE')
+    .map((o) => o.value)
+    .join(' · ');
   const mm = (n: number) => `${(n * k).toFixed(2)}mm`;
   const svg = useMemo(
     () =>
@@ -324,8 +327,9 @@ const Label = memo(function Label({
           <div className="truncate font-bold" style={{ fontSize: mm(2.6) }}>
             {variant.product.nameAr}
           </div>
-          <div className="mt-0.5 truncate" style={{ fontSize: mm(2.2) }}>
-            {variant.fabric} · {variant.colour}
+          {/* Every option but the size (printed large beside it), on at most two lines. */}
+          <div className="mt-0.5 line-clamp-2 leading-tight" style={{ fontSize: mm(2.3) }}>
+            {details}
           </div>
         </div>
         <div className="shrink-0 text-center font-bold leading-none" style={{ fontSize: mm(5.2) }}>
