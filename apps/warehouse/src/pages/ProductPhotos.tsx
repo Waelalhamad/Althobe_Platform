@@ -1,24 +1,14 @@
-import { Alert, Button, Card, Chip, ConfirmButton } from '@althobe/ui/components';
+import { Alert, Button, Card, ConfirmButton } from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { api, type OptionGroup, type Photo } from '../api';
-import { errorText, valueLabel } from '../format';
+import { api, type Photo } from '../api';
+import { errorText } from '../format';
 import { photoSrc, shrinkPhoto } from '../photo';
 import { modeQuery, photosQuery } from '../queries';
+import { useCatalogueRefresh } from './catalogue-parts';
 
-/**
- * The product's photos (ADR-010). A photo can be tagged with the option values it shows
- * (e.g. رسمي + كحلي); every variant then shows the photo that matches it best.
- */
-export function ProductPhotos({
-  productId,
-  groups,
-  canWrite,
-}: {
-  productId: string;
-  groups: OptionGroup[];
-  canWrite: boolean;
-}) {
+/** The product's photos (ADR-010, ADR-011): one design's photos; the first is the main one. */
+export function ProductPhotos({ productId, canWrite }: { productId: string; canWrite: boolean }) {
   const { data: mode } = useQuery(modeQuery);
   const { data: photos = [] } = useQuery(photosQuery(productId));
   const [selected, setSelected] = useState<string | null>(null);
@@ -41,8 +31,7 @@ export function ProductPhotos({
       </div>
       {canWrite && photos.length > 0 && (
         <p className="mb-3 text-sm text-ink-muted">
-          اضغط على صورة لتحديد ما تُظهره (مثلاً رسمي + كحلي): كل صنف يعرض الصورة الأقرب له. الصورة
-          الأولى هي الصورة الرئيسية للمنتج.
+          الصورة الأولى هي الصورة الرئيسية للمنتج. اضغط على صورة لترتيبها أو حذفها.
         </p>
       )}
       <div className="flex flex-wrap gap-3">
@@ -68,11 +57,6 @@ export function ProductPhotos({
                 رئيسية
               </span>
             )}
-            {p.valueIds.length > 0 && (
-              <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 text-xs text-white">
-                {tagNames(p, groups)}
-              </span>
-            )}
           </button>
         ))}
         {photos.length === 0 && <p className="text-ink-muted">لا توجد صور بعد</p>}
@@ -80,9 +64,7 @@ export function ProductPhotos({
       {canWrite && selectedPhoto && (
         <PhotoEditor
           key={selectedPhoto.id}
-          productId={productId}
           photo={selectedPhoto}
-          groups={groups}
           first={photos[0]?.id === selectedPhoto.id}
           last={photos.at(-1)?.id === selectedPhoto.id}
           onDeleted={() => setSelected(null)}
@@ -92,16 +74,10 @@ export function ProductPhotos({
   );
 }
 
-const tagNames = (photo: Photo, groups: OptionGroup[]) =>
-  groups
-    .flatMap((g) =>
-      g.values.filter((v) => photo.valueIds.includes(v.id)).map((v) => valueLabel(g, v)),
-    )
-    .join(' · ');
-
 /** Several photos at once, from the gallery or the phone camera; shrunk, then sent one by one. */
 function Uploader({ productId }: { productId: string }) {
   const queryClient = useQueryClient();
+  const refresh = useCatalogueRefresh();
   const input = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -123,9 +99,8 @@ function Uploader({ productId }: { productId: string }) {
     onSettled: async () => {
       setProgress(null);
       if (input.current) input.current.value = '';
-      // The main photo and each variant's photo may have changed.
-      await queryClient.invalidateQueries({ queryKey: ['variants', productId] });
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      // The main photo may have changed.
+      await refresh();
     },
   });
 
@@ -161,26 +136,17 @@ function Uploader({ productId }: { productId: string }) {
 }
 
 function PhotoEditor({
-  productId,
   photo,
-  groups,
   first,
   last,
   onDeleted,
 }: {
-  productId: string;
   photo: Photo;
-  groups: OptionGroup[];
   first: boolean;
   last: boolean;
   onDeleted: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['photos', productId] });
-    await queryClient.invalidateQueries({ queryKey: ['variants', productId] });
-    await queryClient.invalidateQueries({ queryKey: ['products'] });
-  };
+  const refresh = useCatalogueRefresh();
 
   const update = useMutation({
     mutationFn: async (patch: Parameters<typeof api.updatePhoto>[1]) =>
@@ -195,13 +161,6 @@ function PhotoEditor({
     },
   });
 
-  const toggleTag = (valueId: string) =>
-    update.mutate({
-      valueIds: photo.valueIds.includes(valueId)
-        ? photo.valueIds.filter((id) => id !== valueId)
-        : [...photo.valueIds, valueId],
-    });
-
   return (
     <div className="mt-4 grid gap-4 rounded-lg bg-blush p-3 md:grid-cols-[12rem_1fr]">
       <a href={photoSrc(photo.id, 'full')} target="_blank" rel="noreferrer">
@@ -212,24 +171,6 @@ function PhotoEditor({
         />
       </a>
       <div className="flex flex-col gap-3">
-        <span className="font-medium">ماذا تُظهر هذه الصورة؟ (اختياري)</span>
-        {groups.map((g) => (
-          <div key={g.id} className="flex flex-wrap items-center gap-2">
-            <span className="w-24 text-sm text-ink-muted">{g.nameAr}</span>
-            {g.values
-              .filter((v) => v.isActive || photo.valueIds.includes(v.id))
-              .map((v) => (
-                <Chip
-                  key={v.id}
-                  selected={photo.valueIds.includes(v.id)}
-                  disabled={update.isPending}
-                  onClick={() => toggleTag(v.id)}
-                >
-                  {valueLabel(g, v)}
-                </Chip>
-              ))}
-          </div>
-        ))}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"

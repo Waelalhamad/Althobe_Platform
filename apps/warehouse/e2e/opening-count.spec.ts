@@ -32,15 +32,15 @@ test('opening count by scanner, end to end', async ({ page }) => {
   ).toBe(true);
   await page.screenshot({ path: `${shots}/2-home.png` });
 
-  // ── Create a product and its variants by tapping options ────────────────────────────────
+  // ── A category, then its products by tapping options (ADR-011) ─────────────────────────
   const types = { القماش: ['قطني'], اللون: ['أبيض', 'أسود'], القياس: ['54', '56'] };
   for (const [name, values] of Object.entries(types)) {
     await ensureOptionType(page.request, name, values);
   }
   await page.getByRole('link', { name: 'المنتجات' }).click();
-  await page.getByLabel('اسم المنتج').fill('ثوب اختبار شامل');
+  await page.getByLabel('اسم التصنيف').fill('ثوب اختبار شامل');
   // Only these three types, whatever else exists on the test database.
-  const form = page.locator('form').filter({ has: page.getByLabel('اسم المنتج') });
+  const form = page.locator('form').filter({ has: page.getByLabel('اسم التصنيف') });
   // The type chips arrive with the option list; read them only once they are there.
   await expect(form.getByRole('button', { name: 'القياس', exact: true })).toBeVisible();
   for (;;) {
@@ -53,7 +53,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
     const chip = form.getByRole('button', { name, exact: true });
     if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click();
   }
-  await page.getByRole('button', { name: 'إضافة منتج' }).click();
+  await page.getByRole('button', { name: 'إضافة التصنيف' }).click();
   await expect(page.getByRole('heading', { name: /ثوب اختبار شامل/ })).toBeVisible();
 
   for (const [name, values] of Object.entries(types)) {
@@ -64,18 +64,22 @@ test('opening count by scanner, end to end', async ({ page }) => {
         .click();
     }
   }
-  await expect(page.getByText('4 تركيبة')).toBeVisible();
-  await page.getByRole('button', { name: 'إنشاء 4 صنف' }).click();
-  await expect(page.getByText('أُنشئ 4 صنف جديد')).toBeVisible();
-  const barcodes = await page.locator('tbody tr td:nth-child(5)').allInnerTexts();
-  expect(barcodes).toHaveLength(4);
-  for (const b of barcodes) expect(b.trim()).toMatch(/^200\d{10}$/);
+  await expect(page.getByText('2 تصميم × 2 مقاس')).toBeVisible();
+  await page.getByRole('button', { name: 'إنشاء 4 مقاس' }).click();
+  await expect(page.getByText('أُنشئ 4 مقاس في 2 منتج')).toBeVisible();
   await page.screenshot({ path: `${shots}/3-variants.png` });
+
+  // ── One product: its sizes and their barcodes ───────────────────────────────────────────
+  await page.getByRole('link', { name: 'قطني · أبيض' }).click();
+  await expect(page.getByRole('heading', { name: 'المقاسات' })).toBeVisible();
+  const barcodes = await page.locator('tbody tr td:nth-child(3)').allInnerTexts();
+  expect(barcodes).toHaveLength(2);
+  for (const b of barcodes) expect(b.trim()).toMatch(/^200\d{10}$/);
   const [first, second] = barcodes.map((b) => b.trim()) as [string, string];
 
   // ── Labels ──────────────────────────────────────────────────────────────────────────────
   await page.getByRole('button', { name: 'طباعة الملصقات' }).click();
-  await expect(page.getByRole('button', { name: 'طباعة 4 ملصق' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'طباعة 2 ملصق' })).toBeVisible();
   await expect(page.locator('svg').first()).toBeVisible();
   await page.screenshot({ path: `${shots}/4-labels.png` });
 

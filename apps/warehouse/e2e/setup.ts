@@ -39,7 +39,7 @@ export async function ensureOptionType(rq: APIRequestContext, nameAr: string, va
   };
 }
 
-/** A product made with one option type (القياس), and one variant per size. */
+/** A category made with one option type (القياس), one product, and one size variant per size. */
 export async function productWithSizes(
   rq: APIRequestContext,
   code: string,
@@ -47,7 +47,7 @@ export async function productWithSizes(
   sizes: string[],
 ) {
   const size = await ensureOptionType(rq, 'القياس', sizes);
-  const product = await api<{ id: string }>(rq, 'POST', '/products', {
+  const category = await api<{ id: string }>(rq, 'POST', '/categories', {
     code,
     nameAr,
     groupIds: [size.id],
@@ -55,7 +55,7 @@ export async function productWithSizes(
   const { created } = await api<{ created: { id: string; barcode: string }[] }>(
     rq,
     'POST',
-    `/products/${product.id}/variants/generate`,
+    `/categories/${category.id}/products/generate`,
     { selections: [{ groupId: size.id, valueIds: size.valueIds(...sizes) }] },
   );
   return created;

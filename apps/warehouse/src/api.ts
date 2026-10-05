@@ -23,16 +23,37 @@ export interface Location {
   isActive: boolean;
 }
 
-export interface Product {
+/** ثوب، طقم … in a tree up to three levels (ADR-011). */
+export interface Category {
   id: string;
   code: string;
   nameAr: string;
   nameEn: string | null;
-  unitOfMeasure: string;
+  parentId: string | null;
+  sortOrder: number;
   isActive: boolean;
-  /** The option types this product is made with, in type order. */
+  /** The option types its products are made with, in type order. */
   groupIds: string[];
-  /** The first photo, for lists. */
+  productCount: number;
+}
+
+export interface Prices {
+  retail: Money | null;
+  wholesale: Money | null;
+}
+
+/** One design in a category; its sizes are its variants. */
+export interface Product {
+  id: string;
+  /** SKU base, e.g. THB-SA-RY-MD-SN-JHST-WH. */
+  code: string;
+  isActive: boolean;
+  category: { id: string; code: string; nameAr: string; isActive: boolean };
+  /** One per non-size option type. */
+  options: VariantOption[];
+  /** "سعودية · ملكي · … · أبيض". */
+  title: string;
+  prices: Prices;
   mainPhotoId: string | null;
   variantCount: number;
 }
@@ -62,15 +83,21 @@ export interface Variant {
   title: string;
   /** The القياس value, printed large on labels. */
   size: string | null;
-  /** null = not priced yet. */
-  prices: { retail: Money | null; wholesale: Money | null };
-  /** The product photo that shows this variant best. */
+  /** This size's own price, else the product's; null = not priced yet. */
+  prices: Prices;
+  /** Which prices are this size's own. */
+  ownPrices: { retail: boolean; wholesale: boolean };
+  /** The product's main photo. */
   photoId: string | null;
   product: {
     id: string;
     code: string;
+    /** The category's name, e.g. ثوب. */
     nameAr: string;
     nameEn: string | null;
+    /** The design: "سعودية · ملكي · … · أبيض". */
+    title: string;
+    categoryId: string;
     unitOfMeasure: string;
     isActive: boolean;
   };
@@ -104,8 +131,6 @@ export interface Photo {
   width: number;
   height: number;
   sortOrder: number;
-  /** The option values it shows; [] = a general photo of the product. */
-  valueIds: string[];
 }
 
 export interface UnitCost {
@@ -268,40 +293,59 @@ export const api = {
 
   locations: async () => get<Location[]>('/locations'),
 
-  products: async () => get<Product[]>('/products'),
-  createProduct: async (input: {
-    code?: string;
+  categories: async () => get<Category[]>('/categories'),
+  createCategory: async (input: {
     nameAr: string;
-    nameEn?: string;
+    code?: string;
+    parentId?: string;
     groupIds?: string[];
-  }) => post<Product>('/products', input),
-  updateProduct: async (
+  }) => post<Category>('/categories', input),
+  updateCategory: async (
     id: string,
     patch: {
-      code?: string;
       nameAr?: string;
-      nameEn?: string | null;
-      isActive?: boolean;
+      code?: string;
+      parentId?: string | null;
       groupIds?: string[];
+      isActive?: boolean;
+      move?: Move;
     },
-  ) => request<Product>('PATCH', `/products/${id}`, patch),
-  generateVariants: async (
-    productId: string,
+  ) => request<Category>('PATCH', `/categories/${id}`, patch),
+  deleteCategory: async (id: string) => request<{ ok: true }>('DELETE', `/categories/${id}`),
+  generateProducts: async (
+    categoryId: string,
     input: {
       selections: { groupId: string; valueIds: string[] }[];
       prices?: { retail?: string; wholesale?: string };
     },
   ) =>
-    post<{ created: Variant[]; existing: Variant[] }>(
-      `/products/${productId}/variants/generate`,
+    post<{ products: Product[]; created: Variant[]; existing: Variant[] }>(
+      `/categories/${categoryId}/products/generate`,
       input,
     ),
-  // One product's variants all at once (its page and its labels); a search shows the first 200.
-  variants: async (params: { productId?: string; q?: string }) =>
+
+  products: async (categoryId?: string) =>
+    get<Product[]>(`/products${categoryId ? `?categoryId=${categoryId}` : ''}`),
+  product: async (id: string) => get<{ product: Product; variants: Variant[] }>(`/products/${id}`),
+  setProductActive: async (id: string, isActive: boolean) =>
+    request<Product>('PATCH', `/products/${id}`, { isActive }),
+  deleteProduct: async (id: string) => request<{ ok: true }>('DELETE', `/products/${id}`),
+  /** Same price for every listed product (all their sizes); null removes it. Minor units. */
+  setProductPrices: async (input: {
+    productIds: string[];
+    retail?: string | null;
+    wholesale?: string | null;
+  }) => post<Product[]>('/products/prices', input),
+
+  // One product's or category's sizes all at once; a search shows the first 200.
+  variants: async (params: { productId?: string; categoryId?: string; q?: string }) =>
     get<Variant[]>(
-      `/variants?${new URLSearchParams({ ...params, limit: params.productId ? '2000' : '200' })}`,
+      `/variants?${new URLSearchParams({
+        ...Object.fromEntries(Object.entries(params).filter(([, v]) => v)),
+        limit: params.productId || params.categoryId ? '2000' : '200',
+      })}`,
     ),
-  /** Same price for every listed variant; null removes it. Amounts in minor units. */
+  /** A size's own price, overriding the product's; null goes back to the product's. */
   setPrices: async (input: {
     variantIds: string[];
     retail?: string | null;
@@ -309,13 +353,14 @@ export const api = {
   }) => post<Variant[]>('/variants/prices', input),
   setVariantActive: async (id: string, isActive: boolean) =>
     request<Variant>('PATCH', `/variants/${id}`, { isActive }),
+  deleteVariant: async (id: string) => request<{ ok: true }>('DELETE', `/variants/${id}`),
 
   photos: async (productId: string) => get<Photo[]>(`/products/${productId}/photos`),
   uploadPhoto: async (
     productId: string,
     photo: { image: string; thumb: string; width: number; height: number },
   ) => post<Photo>(`/products/${productId}/photos`, photo),
-  updatePhoto: async (id: string, patch: { valueIds?: string[]; move?: Move | 'first' }) =>
+  updatePhoto: async (id: string, patch: { move: Move | 'first' }) =>
     request<Photo>('PATCH', `/photos/${id}`, patch),
   deletePhoto: async (id: string) => request<{ ok: true }>('DELETE', `/photos/${id}`),
 

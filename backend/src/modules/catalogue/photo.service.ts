@@ -6,11 +6,11 @@ import { DomainError, NotFoundError } from '../../shared/errors.js';
 import { assertPermission, PERMISSIONS, type ActorContext } from '../../shared/permissions.js';
 import type { PhotoStorage } from '../../shared/storage.js';
 import { parse } from '../../shared/validation.js';
-import { moved } from './catalogue.service.js';
+import { moved } from './options.service.js';
 
 // Product photos (ADR-010). The browser shrinks a photo before sending it (a full image and a
 // thumbnail); the server checks the bytes really are an image, stores both in S3, and records them.
-// A photo is tagged with the option values it shows; each variant shows its best match.
+// Photos belong to a product (one design, ADR-011); the first is its main photo.
 
 /** Full image after the browser shrinks it to 1600 px: a few hundred KB; 3 MB is a hard stop. */
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -32,17 +32,8 @@ export const uploadPhotoSchema = z.object({
   height: z.number().int().min(1).max(10_000),
 });
 
-export const updatePhotoSchema = z
-  .object({
-    /** The option values the photo shows; [] = a general photo of the product. */
-    valueIds: z
-      .array(z.uuid())
-      .max(30)
-      .transform((ids) => [...new Set(ids)])
-      .optional(),
-    move: z.enum(['up', 'down', 'first']).optional(),
-  })
-  .refine((v) => v.valueIds !== undefined || v.move !== undefined, 'Nothing to change');
+/** `first` makes it the product's main photo. */
+export const updatePhotoSchema = z.object({ move: z.enum(['up', 'down', 'first']) });
 
 export type UploadPhotoInput = z.input<typeof uploadPhotoSchema>;
 export type UpdatePhotoInput = z.input<typeof updatePhotoSchema>;
@@ -52,8 +43,6 @@ export interface PhotoView {
   width: number;
   height: number;
   sortOrder: number;
-  /** The option values the photo shows. */
-  valueIds: string[];
 }
 
 export class PhotosDisabledError extends DomainError {
@@ -71,14 +60,6 @@ export class InvalidImageError extends DomainError {
 export class ImageTooLargeError extends DomainError {
   constructor(bytes: number, max: number) {
     super('IMAGE_TOO_LARGE', 'The image is too large', { bytes, max });
-  }
-}
-
-export class InvalidPhotoTagsError extends DomainError {
-  constructor(valueIds: string[]) {
-    super('INVALID_PHOTO_TAGS', 'A photo can only show values of its product’s option types', {
-      valueIds,
-    });
   }
 }
 
@@ -103,23 +84,9 @@ export function sniffImage(bytes: Buffer): ImageType | null {
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-const photoSelect = {
-  id: true,
-  width: true,
-  height: true,
-  sortOrder: true,
-  values: { select: { valueId: true } },
-} as const;
+const photoSelect = { id: true, width: true, height: true, sortOrder: true } as const;
 
-function toView(row: {
-  id: string;
-  width: number;
-  height: number;
-  sortOrder: number;
-  values: { valueId: string }[];
-}): PhotoView {
-  return { ...row, valueIds: row.values.map((v) => v.valueId) };
-}
+const toView = (row: PhotoView): PhotoView => row;
 
 export function createPhotoService(db: Db, storage: PhotoStorage | null) {
   const store = () => {
@@ -210,7 +177,7 @@ export function createPhotoService(db: Db, storage: PhotoStorage | null) {
       }
     },
 
-    /** Tags (the option values shown) and order; `first` makes it the product's main photo. */
+    /** Order; `first` makes it the product's main photo. */
     async updatePhoto(id: string, input: UpdatePhotoInput, ctx: ActorContext): Promise<PhotoView> {
       assertPermission(ctx, PERMISSIONS.products.write);
       const data = parse(updatePhotoSchema, input);
@@ -218,44 +185,24 @@ export function createPhotoService(db: Db, storage: PhotoStorage | null) {
       return inTransaction(db, async (tx) => {
         const photo = await tx.productPhoto.findFirst({
           where: { id, deletedAt: null },
-          select: { id: true, productId: true, values: { select: { valueId: true } } },
+          select: { id: true, productId: true },
         });
         if (!photo) throw new NotFoundError('photo', id);
 
-        if (data.valueIds) {
-          const allowed = await tx.optionValue.findMany({
-            where: {
-              id: { in: data.valueIds },
-              group: { products: { some: { productId: photo.productId } } },
-            },
-            select: { id: true },
+        const siblings = await tx.productPhoto.findMany({
+          where: { productId: photo.productId, deletedAt: null },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          select: { id: true },
+        });
+        const order =
+          data.move === 'first'
+            ? [id, ...siblings.map((s) => s.id).filter((s) => s !== id)]
+            : moved(siblings, id, data.move);
+        for (const [i, siblingId] of order.entries()) {
+          await tx.productPhoto.update({
+            where: { id: siblingId },
+            data: { sortOrder: (i + 1) * 10 },
           });
-          const invalid = data.valueIds.filter((v) => !allowed.some((a) => a.id === v));
-          if (invalid.length) throw new InvalidPhotoTagsError(invalid);
-          await tx.productPhotoValue.deleteMany({ where: { photoId: id } });
-          if (data.valueIds.length) {
-            await tx.productPhotoValue.createMany({
-              data: data.valueIds.map((valueId) => ({ photoId: id, valueId })),
-            });
-          }
-        }
-
-        if (data.move) {
-          const siblings = await tx.productPhoto.findMany({
-            where: { productId: photo.productId, deletedAt: null },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            select: { id: true },
-          });
-          const order =
-            data.move === 'first'
-              ? [id, ...siblings.map((s) => s.id).filter((s) => s !== id)]
-              : moved(siblings, id, data.move);
-          for (const [i, siblingId] of order.entries()) {
-            await tx.productPhoto.update({
-              where: { id: siblingId },
-              data: { sortOrder: (i + 1) * 10 },
-            });
-          }
         }
 
         await writeAudit(tx, {
@@ -263,7 +210,6 @@ export function createPhotoService(db: Db, storage: PhotoStorage | null) {
           action: 'products.photo.update',
           entityType: 'product',
           entityId: photo.productId,
-          before: { photoId: id, valueIds: photo.values.map((v) => v.valueId) },
           after: { photoId: id, ...data },
         });
         return toView(

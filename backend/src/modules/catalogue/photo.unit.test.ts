@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { bestPhoto } from './catalogue.repository.js';
 import { sniffImage } from './photo.service.js';
 
 describe('sniffImage', () => {
@@ -12,27 +11,5 @@ describe('sniffImage', () => {
     expect(sniffImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">'))).toBeNull();
     expect(sniffImage(Buffer.from('GIF89a'))).toBeNull();
     expect(sniffImage(Buffer.alloc(0))).toBeNull();
-  });
-});
-
-describe('bestPhoto', () => {
-  const photo = (id: string, sortOrder: number, ...valueIds: string[]) => ({
-    id,
-    sortOrder,
-    values: valueIds.map((valueId) => ({ valueId })),
-  });
-
-  it('prefers the photo matching most of the variant’s values, then the earlier one', () => {
-    const photos = [
-      photo('general', 10),
-      photo('white', 20, 'white'),
-      photo('white-56', 30, 'white', '56'),
-      photo('black', 5, 'black'),
-    ];
-    expect(bestPhoto(photos, ['cotton', 'white', '56'])).toBe('white-56');
-    expect(bestPhoto(photos, ['cotton', 'white', '58'])).toBe('white');
-    expect(bestPhoto(photos, ['cotton', 'grey', '58'])).toBe('general');
-    expect(bestPhoto([photo('a', 20), photo('b', 10)], [])).toBe('b');
-    expect(bestPhoto([photo('black', 1, 'black')], ['white'])).toBeNull();
   });
 });

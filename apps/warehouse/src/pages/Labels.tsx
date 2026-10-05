@@ -4,7 +4,8 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { toSVG } from 'bwip-js/browser';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { Variant } from '../api';
-import { productsQuery, variantsQuery } from '../queries';
+import { categoriesQuery, productsQuery, variantsQuery } from '../queries';
+import { categoryPath, categoryTree } from './Categories';
 
 const route = getRouteApi('/app/labels');
 
@@ -60,12 +61,17 @@ const sizeKey = (s: Size) => `${s.w}x${s.h}`;
 const validMm = (n: number) => Number.isFinite(n) && n >= 15 && n <= 120;
 
 export function LabelsPage() {
-  const { productId } = route.useSearch();
+  const { categoryId, productId } = route.useSearch();
   const navigate = useNavigate();
-  const { data: products = [] } = useQuery(productsQuery);
+  const { data: categories = [] } = useQuery(categoriesQuery);
+  const { data: products = [] } = useQuery({
+    ...productsQuery(categoryId),
+    enabled: Boolean(categoryId),
+  });
+  // One product's sizes, or every size of the category.
   const { data: variants = [] } = useQuery({
-    ...variantsQuery(productId ?? ''),
-    enabled: Boolean(productId),
+    ...variantsQuery(productId ? { productId } : { categoryId: categoryId ?? '' }),
+    enabled: Boolean(productId ?? categoryId),
   });
   const [copies, setCopies] = useState<Record<string, number>>({});
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -107,17 +113,39 @@ export function LabelsPage() {
         </PageTitle>
 
         <Card className="grid gap-3 md:grid-cols-2">
+          <Field label="التصنيف">
+            <Select
+              value={categoryId ?? ''}
+              onChange={(e) =>
+                void navigate({
+                  to: '/labels',
+                  search: { categoryId: e.target.value || undefined, productId: undefined },
+                })
+              }
+            >
+              <option value="">اختر تصنيفاً…</option>
+              {categoryTree(categories).map(({ category: c }) => (
+                <option key={c.id} value={c.id}>
+                  {categoryPath(categories, c.id)}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="المنتج">
             <Select
               value={productId ?? ''}
+              disabled={!categoryId}
               onChange={(e) =>
-                void navigate({ to: '/labels', search: { productId: e.target.value || undefined } })
+                void navigate({
+                  to: '/labels',
+                  search: { categoryId, productId: e.target.value || undefined },
+                })
               }
             >
-              <option value="">اختر منتجاً…</option>
+              <option value="">كل منتجات التصنيف</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.nameAr} ({p.code})
+                  {p.title || p.category.nameAr} ({p.code})
                 </option>
               ))}
             </Select>

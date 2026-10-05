@@ -3,6 +3,8 @@ import { isValidEan13 } from '../../shared/barcode.js';
 import { PERMISSIONS } from '../../shared/permissions.js';
 import { actorWith, createTestContext, pick, stock, type World } from '../../../test/helpers.js';
 
+// ADR-011: category → product (one design) → variant (one size).
+
 const t = createTestContext();
 const catalogue = t.services.catalogue;
 let w: World;
@@ -22,16 +24,57 @@ async function addType(nameAr: string, values: string[]) {
   return { id: group.id, values: created };
 }
 
-describe('catalogue — variants from option types', () => {
-  it('generates every chosen combination with valid, unique barcodes and ASCII SKUs', async () => {
-    const product = await catalogue.createProduct({ code: 'thb-new', nameAr: 'ثوب جديد' }, w.owner);
-    expect(product.code).toBe('THB-NEW');
-    // No types given: every active type, in type order.
-    expect(product.groupIds).toEqual([w.options.fabric.id, w.options.colour.id, w.options.size.id]);
+const whiteCotton = (...sizes: string[]) => [
+  pick(w.options.fabric, 'قطني'),
+  pick(w.options.colour, 'أبيض'),
+  pick(w.options.size, ...sizes),
+];
 
-    const { created } = await catalogue.generateVariants(
+describe('categories make products by design, each with its sizes', () => {
+  it('one product per design, one variant per size, with readable codes and valid barcodes', async () => {
+    const category = await catalogue.createCategory(
+      { code: 'thb-new', nameAr: 'ثوب جديد' },
+      w.owner,
+    );
+    expect(category.code).toBe('THB-NEW');
+    // No types given: every active type, in type order.
+    expect(category.groupIds).toEqual([
+      w.options.fabric.id,
+      w.options.colour.id,
+      w.options.size.id,
+    ]);
+
+    const first = await catalogue.generateProducts(
       {
-        productId: product.id,
+        categoryId: category.id,
+        selections: [
+          pick(w.options.fabric, 'قطني'),
+          pick(w.options.colour, 'أبيض', 'أسود'),
+          pick(w.options.size, '54', '56'),
+        ],
+      },
+      w.owner,
+    );
+    expect(first.products.map((p) => [p.code, p.title, p.variantCount])).toEqual([
+      ['THB-NEW-QTN-ABY', 'قطني · أبيض', 2],
+      ['THB-NEW-QTN-ASW', 'قطني · أسود', 2],
+    ]);
+    expect(first.created.map((v) => [v.sku, v.title, v.size])).toEqual([
+      ['THB-NEW-QTN-ABY-54', 'قطني · أبيض · 54', '54'],
+      ['THB-NEW-QTN-ABY-56', 'قطني · أبيض · 56', '56'],
+      ['THB-NEW-QTN-ASW-54', 'قطني · أسود · 54', '54'],
+      ['THB-NEW-QTN-ASW-56', 'قطني · أسود · 56', '56'],
+    ]);
+    for (const v of first.created) {
+      expect(isValidEan13(v.barcode)).toBe(true);
+      expect(v.product.nameAr).toBe('ثوب جديد');
+    }
+    expect(first.created[0]!.product.title).toBe('قطني · أبيض');
+
+    // Again with an extra size: only the new size is added, to the same two products.
+    const again = await catalogue.generateProducts(
+      {
+        categoryId: category.id,
         selections: [
           pick(w.options.fabric, 'قطني'),
           pick(w.options.colour, 'أبيض', 'أسود'),
@@ -40,110 +83,78 @@ describe('catalogue — variants from option types', () => {
       },
       w.owner,
     );
-    expect(created).toHaveLength(6);
-    expect(new Set(created.map((v) => v.barcode)).size).toBe(6);
-    for (const v of created) {
-      expect(isValidEan13(v.barcode)).toBe(true);
-      expect(v.barcode.startsWith('200')).toBe(true);
-    }
-    // Readable SKU: the product code, then each value's code in type order.
-    expect(created.map((v) => v.sku)).toEqual([
-      'THB-NEW-QTN-ABY-54',
-      'THB-NEW-QTN-ABY-56',
-      'THB-NEW-QTN-ABY-58',
-      'THB-NEW-QTN-ASW-54',
-      'THB-NEW-QTN-ASW-56',
-      'THB-NEW-QTN-ASW-58',
-    ]);
-    // Listed in option order; each variant reads in type order.
-    expect(created.map((v) => v.title)).toEqual([
-      'قطني · أبيض · 54',
-      'قطني · أبيض · 56',
-      'قطني · أبيض · 58',
-      'قطني · أسود · 54',
-      'قطني · أسود · 56',
-      'قطني · أسود · 58',
-    ]);
-    expect(created[0]!.size).toBe('54');
-    expect(created[0]!.options.map((o) => o.group)).toEqual(['القماش', 'اللون', 'القياس']);
+    expect(again.created.map((v) => v.sku)).toEqual(['THB-NEW-QTN-ABY-58', 'THB-NEW-QTN-ASW-58']);
+    expect(again.existing).toHaveLength(4);
+    expect(again.products.map((p) => p.id)).toEqual(first.products.map((p) => p.id));
+    const listed = await catalogue.listProducts({ categoryId: category.id }, w.owner);
+    expect(listed.map((p) => p.variantCount)).toEqual([3, 3]);
+  });
 
-    // Running again with one extra size adds only what is missing.
-    const again = await catalogue.generateVariants(
-      {
-        productId: product.id,
-        selections: [
-          pick(w.options.fabric, 'قطني'),
-          pick(w.options.colour, 'أبيض', 'أسود'),
-          pick(w.options.size, '54', '56', '58', '60'),
-        ],
-      },
+  it('a category without sizes: one variant per product, with the product’s code as its SKU', async () => {
+    const category = await catalogue.createCategory(
+      { code: 'SHL', nameAr: 'شال', groupIds: [w.options.colour.id] },
       w.owner,
     );
-    expect(again.created.map((v) => v.size)).toEqual(['60', '60']);
-    expect(again.existing).toHaveLength(6);
+    const { created } = await catalogue.generateProducts(
+      { categoryId: category.id, selections: [pick(w.options.colour, 'أبيض', 'أسود')] },
+      w.owner,
+    );
+    expect(created.map((v) => [v.sku, v.size])).toEqual([
+      ['SHL-ABY', null],
+      ['SHL-ASW', null],
+    ]);
   });
 
   it('handles any number of types; a new type and its order are data, not code', async () => {
     const cut = await addType('القصة', ['سعودية', 'خليجية']);
-    const button = await addType('الزر', ['ملكي', 'معدن', 'بلاستيك']);
-    const product = await catalogue.createProduct({ code: 'KLB', nameAr: 'كلابية' }, w.owner);
-    expect(product.groupIds).toHaveLength(5);
-
-    const { created } = await catalogue.generateVariants(
+    const category = await catalogue.createCategory({ code: 'KLB', nameAr: 'كلابية' }, w.owner);
+    expect(category.groupIds).toHaveLength(4);
+    const { created } = await catalogue.generateProducts(
       {
-        productId: product.id,
+        categoryId: category.id,
         selections: [
           { groupId: cut.id, valueIds: cut.values.map((v) => v.id) },
-          { groupId: button.id, valueIds: [button.values[0]!.id] },
           pick(w.options.fabric, 'جوخ هندي'),
           pick(w.options.colour, 'أبيض'),
-          pick(w.options.size, '56', '58'),
+          pick(w.options.size, '56'),
         ],
       },
       w.owner,
     );
-    expect(created).toHaveLength(4);
     // New types come last until moved.
-    expect(created[0]!.title).toBe('جوخ هندي · أبيض · 56 · سعودية · ملكي');
-
-    // Move القصة and الزر to the front: every variant now reads cut first.
-    for (let i = 0; i < 3; i++) {
-      await catalogue.updateOptionGroup(cut.id, { move: 'up' }, w.owner);
-    }
-    for (let i = 0; i < 4; i++) {
-      await catalogue.updateOptionGroup(button.id, { move: 'up' }, w.owner);
-    }
-    await catalogue.updateOptionGroup(cut.id, { move: 'up' }, w.owner);
-    const [first] = await catalogue.searchVariants({ productId: product.id }, w.owner);
-    expect(first!.title).toBe('سعودية · ملكي · جوخ هندي · أبيض · 56');
-    const groups = await catalogue.listOptionGroups(w.owner);
-    expect(groups.map((g) => g.nameAr)).toEqual(['القصة', 'الزر', 'القماش', 'اللون', 'القياس']);
+    expect(created[0]!.title).toBe('جوخ هندي · أبيض · 56 · سعودية');
+    for (let i = 0; i < 3; i++) await catalogue.updateOptionGroup(cut.id, { move: 'up' }, w.owner);
+    const [first] = await catalogue.searchVariants({ categoryId: category.id }, w.owner);
+    expect(first!.title).toBe('سعودية · جوخ هندي · أبيض · 56');
   });
 
-  it('refuses a missing type, a value from another type, an inactive value, and too many combinations', async () => {
-    const productId = (await catalogue.createProduct({ code: 'P1', nameAr: 'منتج' }, w.owner)).id;
-    const fabric = pick(w.options.fabric, 'قطني');
-    const colour = pick(w.options.colour, 'أبيض');
-    const size = pick(w.options.size, '56');
+  it('refuses a missing type, a value from another type, an inactive value, a heading, too many', async () => {
+    const categoryId = w.category.id;
+    const [fabric, colour, size] = whiteCotton('56');
+    const fails = async (selections: { groupId: string; valueIds: string[] }[]) =>
+      expect(catalogue.generateProducts({ categoryId, selections }, w.owner)).rejects.toMatchObject(
+        { code: 'INVALID_SELECTION' },
+      );
 
-    await expect(
-      catalogue.generateVariants({ productId, selections: [fabric, colour] }, w.owner),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
-    await expect(
-      catalogue.generateVariants(
-        { productId, selections: [fabric, { ...colour, valueIds: size.valueIds }, size] },
-        w.owner,
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
-
-    await catalogue.updateOptionValue(colour.valueIds[0]!, { isActive: false }, w.owner);
-    await expect(
-      catalogue.generateVariants({ productId, selections: [fabric, colour, size] }, w.owner),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
-    // Hidden from new variants only: the existing ones still resolve and show it.
+    await fails([fabric!, colour!]);
+    await fails([fabric!, { ...colour!, valueIds: size!.valueIds }, size!]);
+    await catalogue.updateOptionValue(colour!.valueIds[0]!, { isActive: false }, w.owner);
+    await fails([fabric!, colour!, size!]);
+    // Hidden from new products only: existing ones still resolve and show it.
     expect((await catalogue.getVariant(w.x.id, w.owner)).title).toBe('قطني · أبيض · 54');
 
-    // 2 fabrics × 8 colours × 34 sizes = 544 > 500.
+    const jokh = w.options.fabric.values.find((v) => v.valueAr === 'جوخ هندي')!;
+    await catalogue.addOptionValue(
+      { groupId: w.options.fabric.id, parentId: jokh.id, valueAr: 'مشخط' },
+      w.owner,
+    );
+    await fails([
+      { groupId: w.options.fabric.id, valueIds: [jokh.id] },
+      pick(w.options.colour, 'أسود'),
+      size!,
+    ]);
+
+    // 1 fabric × 16 colours × 34 sizes = 544 > 500.
     const many = async (groupId: string, prefix: string, count: number) => {
       await t.db.optionValue.createMany({
         data: Array.from({ length: count }, (_, i) => ({
@@ -157,14 +168,14 @@ describe('catalogue — variants from option types', () => {
         await t.db.optionValue.findMany({ where: { groupId, valueAr: { startsWith: prefix } } })
       ).map((v) => v.id);
     };
-    const colours = await many(w.options.colour.id, 'C', 8);
+    const colours = await many(w.options.colour.id, 'C', 16);
     const sizes = await many(w.options.size.id, 'S', 30);
     await expect(
-      catalogue.generateVariants(
+      catalogue.generateProducts(
         {
-          productId,
+          categoryId,
           selections: [
-            pick(w.options.fabric, 'قطني', 'جوخ هندي'),
+            pick(w.options.fabric, 'قطني'),
             { groupId: w.options.colour.id, valueIds: colours },
             {
               groupId: w.options.size.id,
@@ -177,25 +188,154 @@ describe('catalogue — variants from option types', () => {
     ).rejects.toMatchObject({ code: 'TOO_MANY_COMBINATIONS' });
   });
 
-  it('two people generating the same combinations at once create each variant once', async () => {
-    const productId = (await catalogue.createProduct({ code: 'P2', nameAr: 'منتج' }, w.owner)).id;
+  it('two people generating the same products at once create each once', async () => {
     const input = {
-      productId,
+      categoryId: w.category.id,
       selections: [
-        pick(w.options.fabric, 'قطني'),
+        pick(w.options.fabric, 'جوخ هندي'),
         pick(w.options.colour, 'أبيض', 'أسود'),
         pick(w.options.size, '54', '56'),
       ],
     };
     await Promise.all([
-      catalogue.generateVariants(input, w.owner),
-      catalogue.generateVariants(input, w.approver),
+      catalogue.generateProducts(input, w.owner),
+      catalogue.generateProducts(input, w.approver),
     ]);
-    expect(await catalogue.searchVariants({ productId }, w.owner)).toHaveLength(4);
+    const products = await catalogue.listProducts({ categoryId: w.category.id }, w.owner);
+    expect(products.map((p) => p.variantCount).sort()).toEqual([2, 2, 3]);
   });
 });
 
-describe('catalogue — editing lists, products and variants', () => {
+describe('categories are a tree, and editable', () => {
+  it('nests three levels at most, never into itself; a sub-category starts with its parent’s types', async () => {
+    const summer = await catalogue.createCategory(
+      { nameAr: 'صيفي', parentId: w.category.id },
+      w.owner,
+    );
+    expect(summer.groupIds).toEqual(w.category.groupIds);
+    expect(summer.code).toMatch(/^[A-Z0-9]+$/);
+    const light = await catalogue.createCategory({ nameAr: 'خفيف', parentId: summer.id }, w.owner);
+    await expect(
+      catalogue.createCategory({ nameAr: 'رابع', parentId: light.id }, w.owner),
+    ).rejects.toMatchObject({ code: 'CATEGORY_TOO_DEEP' });
+    await expect(
+      catalogue.updateCategory(w.category.id, { parentId: light.id }, w.owner),
+    ).rejects.toMatchObject({ code: 'CATEGORY_TOO_DEEP' });
+
+    // Moved to the top level, renamed and recoded.
+    const moved = await catalogue.updateCategory(
+      light.id,
+      { parentId: null, nameAr: 'خفيف جداً', code: 'LT' },
+      w.owner,
+    );
+    expect([moved.parentId, moved.nameAr, moved.code]).toEqual([null, 'خفيف جداً', 'LT']);
+    await expect(
+      catalogue.updateCategory(summer.id, { code: 'LT' }, w.owner),
+    ).rejects.toMatchObject({ code: 'CATEGORY_CODE_TAKEN' });
+    await expect(
+      catalogue.createCategory({ nameAr: 'مكرر', code: 'THB-TEST' }, w.owner),
+    ).rejects.toMatchObject({ code: 'CATEGORY_CODE_TAKEN' });
+  });
+
+  it('changes types only while no product uses a removed one; a stopped category stops its sizes', async () => {
+    const all = [w.options.fabric.id, w.options.colour.id, w.options.size.id];
+    await expect(
+      catalogue.updateCategory(w.category.id, { groupIds: [w.options.fabric.id] }, w.owner),
+    ).rejects.toMatchObject({ code: 'OPTION_GROUP_IN_USE' });
+
+    const sleeve = await addType('الكم', ['سنارة']);
+    const updated = await catalogue.updateCategory(
+      w.category.id,
+      { nameAr: 'ثوب معدل', groupIds: [...all, sleeve.id] },
+      w.owner,
+    );
+    expect(updated.groupIds).toEqual([...all, sleeve.id]);
+    // The new type is now required for new products.
+    await expect(
+      catalogue.generateProducts(
+        { categoryId: w.category.id, selections: whiteCotton('60') },
+        w.owner,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
+    expect((await catalogue.getVariant(w.x.id, w.owner)).product.nameAr).toBe('ثوب معدل');
+
+    await catalogue.updateCategory(w.category.id, { isActive: false }, w.owner);
+    await expect(stock(t.services, w, w.x, w.wh1, 1)).rejects.toMatchObject({
+      code: 'VARIANT_INACTIVE',
+    });
+    await expect(
+      catalogue.generateProducts(
+        {
+          categoryId: w.category.id,
+          selections: [
+            ...whiteCotton('60'),
+            { groupId: sleeve.id, valueIds: [sleeve.values[0]!.id] },
+          ],
+        },
+        w.owner,
+      ),
+    ).rejects.toMatchObject({ code: 'CATEGORY_INACTIVE' });
+  });
+});
+
+describe('stopping and deleting', () => {
+  it('a stopped size cannot receive stock, keeps its barcode, and is restarted, not recreated', async () => {
+    await catalogue.setVariantActive(w.x.id, { isActive: false }, w.owner);
+    await expect(stock(t.services, w, w.x, w.wh1, 1)).rejects.toMatchObject({
+      code: 'VARIANT_INACTIVE',
+    });
+    const again = await catalogue.generateProducts(
+      { categoryId: w.category.id, selections: whiteCotton('54') },
+      w.owner,
+    );
+    expect(again.created).toHaveLength(0);
+    await catalogue.setVariantActive(w.x.id, { isActive: true }, w.owner);
+    await stock(t.services, w, w.x, w.wh1, 1);
+
+    await catalogue.setProductActive(w.x.product.id, { isActive: false }, w.owner);
+    await expect(stock(t.services, w, w.y, w.wh1, 1)).rejects.toMatchObject({
+      code: 'VARIANT_INACTIVE',
+    });
+  });
+
+  it('deletes what never had stock; generating it again restores the same barcode', async () => {
+    await catalogue.deleteVariant(w.z.id, w.owner);
+    expect(await catalogue.searchVariants({ productId: w.x.product.id }, w.owner)).toHaveLength(2);
+    const { created } = await catalogue.generateProducts(
+      { categoryId: w.category.id, selections: whiteCotton('58') },
+      w.owner,
+    );
+    expect(created.map((v) => v.barcode)).toEqual([w.z.barcode]);
+
+    await catalogue.deleteProduct(w.x.product.id, w.owner);
+    expect(await catalogue.listProducts({ categoryId: w.category.id }, w.owner)).toEqual([]);
+    await expect(t.services.inventory.resolveBarcode(w.x.barcode, w.owner)).rejects.toMatchObject({
+      code: 'BARCODE_NOT_FOUND',
+    });
+  });
+
+  it('never deletes what had stock, nor a category with sub-categories', async () => {
+    await stock(t.services, w, w.x, w.wh1, 2);
+    const hasStock = { code: 'HAS_STOCK' };
+    await expect(catalogue.deleteVariant(w.x.id, w.owner)).rejects.toMatchObject(hasStock);
+    await expect(catalogue.deleteProduct(w.x.product.id, w.owner)).rejects.toMatchObject(hasStock);
+    await expect(catalogue.deleteCategory(w.category.id, w.owner)).rejects.toMatchObject(hasStock);
+
+    const parent = await catalogue.createCategory({ nameAr: 'أب', code: 'PAR' }, w.owner);
+    const child = await catalogue.createCategory(
+      { nameAr: 'ابن', code: 'CHI', parentId: parent.id },
+      w.owner,
+    );
+    await expect(catalogue.deleteCategory(parent.id, w.owner)).rejects.toMatchObject({
+      code: 'CATEGORY_HAS_CHILDREN',
+    });
+    await catalogue.deleteCategory(child.id, w.owner);
+    await catalogue.deleteCategory(parent.id, w.owner);
+    expect((await catalogue.listCategories(w.owner)).map((c) => c.code)).toEqual(['THB-TEST']);
+  });
+});
+
+describe('editing option lists', () => {
   it('renames a value everywhere; duplicates are refused, spacing ignored', async () => {
     const white = w.options.colour.values.find((v) => v.valueAr === 'أبيض')!;
     await catalogue.updateOptionValue(white.id, { valueAr: 'أبيض ثلجي' }, w.owner);
@@ -212,101 +352,7 @@ describe('catalogue — editing lists, products and variants', () => {
     });
   });
 
-  it('changes a product’s types only while no variant uses a removed type', async () => {
-    const productId = w.x.product.id;
-    const all = [w.options.fabric.id, w.options.colour.id, w.options.size.id];
-    await expect(
-      catalogue.updateProduct(productId, { groupIds: [w.options.fabric.id] }, w.owner),
-    ).rejects.toMatchObject({ code: 'OPTION_GROUP_IN_USE' });
-
-    const sleeve = await addType('الكم', ['سنارة']);
-    const updated = await catalogue.updateProduct(
-      productId,
-      { nameAr: 'ثوب معدل', groupIds: [...all, sleeve.id] },
-      w.owner,
-    );
-    expect(updated.nameAr).toBe('ثوب معدل');
-    expect(updated.groupIds).toEqual([...all, sleeve.id]);
-    // The new type is now required for new variants.
-    await expect(
-      catalogue.generateVariants(
-        {
-          productId,
-          selections: [
-            pick(w.options.fabric, 'قطني'),
-            pick(w.options.colour, 'أسود'),
-            pick(w.options.size, '54'),
-          ],
-        },
-        w.owner,
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
-
-    await catalogue.updateProduct(productId, { isActive: false }, w.owner);
-    await expect(stock(t.services, w, w.x, w.wh1, 1)).rejects.toMatchObject({
-      code: 'VARIANT_INACTIVE',
-    });
-  });
-
-  it('a retired variant cannot receive stock, keeps its barcode, and is restored, not recreated', async () => {
-    await catalogue.setVariantActive(w.x.id, { isActive: false }, w.owner);
-    await expect(stock(t.services, w, w.x, w.wh1, 1)).rejects.toMatchObject({
-      code: 'VARIANT_INACTIVE',
-    });
-
-    const again = await catalogue.generateVariants(
-      {
-        productId: w.x.product.id,
-        selections: [
-          pick(w.options.fabric, 'قطني'),
-          pick(w.options.colour, 'أبيض'),
-          pick(w.options.size, '54'),
-        ],
-      },
-      w.owner,
-    );
-    expect(again.created).toHaveLength(0);
-
-    await catalogue.setVariantActive(w.x.id, { isActive: true }, w.owner);
-    await stock(t.services, w, w.x, w.wh1, 1);
-  });
-
-  it('only products.write may change products, types or values; anyone with products.read may list', async () => {
-    const staff = actorWith(w.owner, [PERMISSIONS.products.read]);
-    const denied = { code: 'PERMISSION_DENIED' };
-    const valueId = w.options.colour.values[0]!.id;
-
-    expect(await catalogue.listOptionGroups(staff)).toHaveLength(3);
-    await expect(catalogue.createOptionGroup({ nameAr: 'الياقة' }, staff)).rejects.toMatchObject(
-      denied,
-    );
-    await expect(
-      catalogue.updateOptionGroup(w.options.colour.id, { nameAr: 'x' }, staff),
-    ).rejects.toMatchObject(denied);
-    await expect(
-      catalogue.addOptionValue({ groupId: w.options.colour.id, valueAr: 'رمادي' }, staff),
-    ).rejects.toMatchObject(denied);
-    await expect(
-      catalogue.updateOptionValue(valueId, { isActive: false }, staff),
-    ).rejects.toMatchObject(denied);
-    await expect(
-      catalogue.updateProduct(w.x.product.id, { nameAr: 'x' }, staff),
-    ).rejects.toMatchObject(denied);
-    await expect(
-      catalogue.setVariantActive(w.x.id, { isActive: false }, staff),
-    ).rejects.toMatchObject(denied);
-  });
-});
-
-describe('catalogue — codes and barcodes', () => {
-  it('generates product codes P-0001, P-0002…, skipping one already used by hand', async () => {
-    await catalogue.createProduct({ code: 'P-0002', nameAr: 'يدوي' }, w.owner);
-    const first = await catalogue.createProduct({ nameAr: 'ثوب' }, w.owner);
-    const second = await catalogue.createProduct({ nameAr: 'كلابية' }, w.owner);
-    expect([first.code, second.code]).toEqual(['P-0001', 'P-0003']);
-  });
-
-  it('suggests a code for a new value, refuses a taken one, and keeps SKUs unique', async () => {
+  it('suggests a code for a new value, refuses a taken one, and keeps codes unique', async () => {
     const navy = await catalogue.addOptionValue(
       { groupId: w.options.colour.id, valueAr: 'كحلي' },
       w.owner,
@@ -318,16 +364,12 @@ describe('catalogue — codes and barcodes', () => {
         w.owner,
       ),
     ).rejects.toMatchObject({ code: 'OPTION_CODE_TAKEN' });
-    await expect(
-      catalogue.updateOptionValue(navy.id, { code: 'ABY' }, w.owner),
-    ).rejects.toMatchObject({ code: 'OPTION_CODE_TAKEN' });
 
-    // The product code renamed to something meaningful: new SKUs use it, existing ones stay.
-    const product = await catalogue.updateProduct(w.x.product.id, { code: 'thb' }, w.owner);
-    expect(product.code).toBe('THB');
-    const { created } = await catalogue.generateVariants(
+    // A renamed category code is used for new products; existing SKUs stay as printed.
+    await catalogue.updateCategory(w.category.id, { code: 'THB' }, w.owner);
+    const { created } = await catalogue.generateProducts(
       {
-        productId: w.x.product.id,
+        categoryId: w.category.id,
         selections: [
           pick(w.options.fabric, 'قطني'),
           { groupId: w.options.colour.id, valueIds: [navy.id] },
@@ -339,15 +381,15 @@ describe('catalogue — codes and barcodes', () => {
     expect(created[0]!.sku).toBe('THB-QTN-KHL-56');
     expect((await catalogue.getVariant(w.x.id, w.owner)).sku).toBe(w.x.sku);
 
-    // A code renamed and then reused would repeat a SKU: the new one gets -2.
+    // A code renamed and then reused would repeat a code: the new product gets -2.
     await catalogue.updateOptionValue(navy.id, { code: 'NV' }, w.owner);
     const indigo = await catalogue.addOptionValue(
       { groupId: w.options.colour.id, valueAr: 'نيلي', code: 'KHL' },
       w.owner,
     );
-    const again = await catalogue.generateVariants(
+    const again = await catalogue.generateProducts(
       {
-        productId: w.x.product.id,
+        categoryId: w.category.id,
         selections: [
           pick(w.options.fabric, 'قطني'),
           { groupId: w.options.colour.id, valueIds: [indigo.id] },
@@ -356,10 +398,11 @@ describe('catalogue — codes and barcodes', () => {
       },
       w.owner,
     );
-    expect(again.created[0]!.sku).toBe('THB-QTN-KHL-56-2');
+    expect(again.products[0]!.code).toBe('THB-QTN-KHL-2');
+    expect(again.created[0]!.sku).toBe('THB-QTN-KHL-2-56');
   });
 
-  it('values can have details: the variant picks a detail, and reads and codes the whole path', async () => {
+  it('values can have details: a product picks a detail, and reads and codes the whole path', async () => {
     const jokh = w.options.fabric.values.find((v) => v.valueAr === 'جوخ هندي')!;
     const cotton = w.options.fabric.values.find((v) => v.valueAr === 'قطني')!;
     const detail = async (parentId: string, valueAr: string) =>
@@ -367,49 +410,64 @@ describe('catalogue — codes and barcodes', () => {
     await detail(jokh.id, 'مونس');
     const striped = await detail(jokh.id, 'مشخط');
     await detail(jokh.id, 'ساده');
-    // The same name under another fabric is fine; twice under one is not.
     await detail(cotton.id, 'ساده');
     await expect(detail(jokh.id, 'ساده')).rejects.toMatchObject({ code: 'OPTION_VALUE_TAKEN' });
 
-    const selections = (fabricValueId: string) => [
-      { groupId: w.options.fabric.id, valueIds: [fabricValueId] },
-      pick(w.options.colour, 'أبيض'),
-      pick(w.options.size, '54'),
-    ];
-    // جوخ هندي now has details: it is a heading, not something a piece is made of.
-    await expect(
-      catalogue.generateVariants(
-        { productId: w.x.product.id, selections: selections(jokh.id) },
-        w.owner,
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
-
-    const { created } = await catalogue.generateVariants(
-      { productId: w.x.product.id, selections: selections(striped.id) },
+    const { created } = await catalogue.generateProducts(
+      {
+        categoryId: w.category.id,
+        selections: [
+          { groupId: w.options.fabric.id, valueIds: [striped.id] },
+          pick(w.options.colour, 'أبيض'),
+          pick(w.options.size, '54'),
+        ],
+      },
       w.owner,
     );
     expect(created[0]!.title).toBe('جوخ هندي مشخط · أبيض · 54');
     expect(created[0]!.sku).toBe(`THB-TEST-JH${striped.code}-ABY-54`);
     expect(await catalogue.searchVariants({ q: 'جوخ' }, w.owner)).toHaveLength(1);
 
-    // Three levels at most.
     const fine = await detail(striped.id, 'رفيع');
     await expect(detail(fine.id, 'جداً')).rejects.toMatchObject({ code: 'OPTION_VALUE_TOO_DEEP' });
-    const groups = await catalogue.listOptionGroups(w.owner);
-    expect(
-      groups.find((g) => g.id === w.options.fabric.id)!.values.find((v) => v.id === fine.id)!
-        .parentId,
-    ).toBe(striped.id);
   });
+});
 
-  it('refuses a duplicate product code and units other than PIECE', async () => {
+describe('permissions', () => {
+  it('only products.write changes categories, products, sizes, types or values; products.read sees', async () => {
+    const staff = actorWith(w.owner, [PERMISSIONS.products.read]);
+    const denied = { code: 'PERMISSION_DENIED' };
+    const valueId = w.options.colour.values[0]!.id;
+
+    expect(await catalogue.listOptionGroups(staff)).toHaveLength(3);
+    expect(await catalogue.listCategories(staff)).toHaveLength(1);
+    expect(await catalogue.listProducts({}, staff)).toHaveLength(1);
+    const attempts = [
+      async () => catalogue.createCategory({ nameAr: 'ممنوع' }, staff),
+      async () => catalogue.updateCategory(w.category.id, { nameAr: 'x' }, staff),
+      async () => catalogue.deleteCategory(w.category.id, staff),
+      async () =>
+        catalogue.generateProducts(
+          { categoryId: w.category.id, selections: whiteCotton('60') },
+          staff,
+        ),
+      async () => catalogue.setProductActive(w.x.product.id, { isActive: false }, staff),
+      async () => catalogue.deleteProduct(w.x.product.id, staff),
+      async () => catalogue.setVariantActive(w.x.id, { isActive: false }, staff),
+      async () => catalogue.deleteVariant(w.x.id, staff),
+      async () => catalogue.createOptionGroup({ nameAr: 'الياقة' }, staff),
+      async () =>
+        catalogue.addOptionValue({ groupId: w.options.colour.id, valueAr: 'رمادي' }, staff),
+      async () => catalogue.updateOptionValue(valueId, { isActive: false }, staff),
+    ];
+    for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject(denied);
+  });
+});
+
+describe('codes and barcodes', () => {
+  it('refuses units other than PIECE', async () => {
     await expect(
-      catalogue.createProduct({ code: 'THB-TEST', nameAr: 'مكرر' }, w.owner),
-    ).rejects.toMatchObject({
-      code: 'PRODUCT_CODE_TAKEN',
-    });
-    await expect(
-      catalogue.createProduct(
+      catalogue.createCategory(
         { code: 'FABRIC-ROLL', nameAr: 'قماش', unitOfMeasure: 'METER' as 'PIECE' },
         w.owner,
       ),
@@ -426,7 +484,6 @@ describe('catalogue — codes and barcodes', () => {
       w.owner,
     );
     expect((await t.services.inventory.resolveBarcode('4006381333931', w.owner)).id).toBe(w.y.id);
-
     expect((await t.services.inventory.resolveBarcode(w.z.sku, w.owner)).id).toBe(w.z.id);
   });
 

@@ -17,7 +17,17 @@ export const locationsQuery = queryOptions({
   queryFn: api.locations,
   staleTime: 60_000,
 });
-export const productsQuery = queryOptions({ queryKey: ['products'], queryFn: api.products });
+export const categoriesQuery = queryOptions({ queryKey: ['categories'], queryFn: api.categories });
+
+/** All products, or one category's. */
+export const productsQuery = (categoryId?: string) =>
+  queryOptions({
+    queryKey: ['products', categoryId ?? 'all'],
+    queryFn: async () => api.products(categoryId),
+  });
+
+export const productQuery = (id: string) =>
+  queryOptions({ queryKey: ['product', id], queryFn: async () => api.product(id) });
 export const photosQuery = (productId: string) =>
   queryOptions({ queryKey: ['photos', productId], queryFn: async () => api.photos(productId) });
 
@@ -26,10 +36,11 @@ export const optionGroupsQuery = queryOptions({
   queryFn: api.optionGroups,
 });
 
-export const variantsQuery = (productId: string) =>
+/** One product's sizes, or a whole category's. */
+export const variantsQuery = (params: { productId?: string; categoryId?: string }) =>
   queryOptions({
-    queryKey: ['variants', productId],
-    queryFn: async () => api.variants({ productId }),
+    queryKey: ['variants', params],
+    queryFn: async () => api.variants(params),
   });
 
 export const balancesQuery = (locationId: string) =>

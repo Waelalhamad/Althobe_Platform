@@ -69,15 +69,17 @@ Column pairs always use the `<name>_amount` / `<name>_currency` suffix so they a
 **Catalogue**
 
 ```
-products              (unit_of_measure: PIECE | BOX | METER | KG)
+categories            (tree up to 3 levels; code; unit_of_measure — ADR-011)
+category_option_groups (the option types a category's products use)
+products              (one design in a category: code = SKU base, style_key)
+product_style_values  (one value per non-size type per product)
+product_prices        (RETAIL / WHOLESALE per product, USD minor units)
 product_variants      (sku, barcode, option_key)
 option_groups         (option types: القصة، الزر، … — ADR-008)
 option_values         (their values; deactivated, never deleted)
-product_option_groups (which types a product is made with)
-variant_option_values (one value per type per variant)
-variant_prices        (RETAIL / WHOLESALE price per variant, USD minor units — ADR-009)
+variant_option_values (the size of a variant)
+variant_prices        (a size's own price, overriding its product's — ADR-009)
 product_photos        (S3 keys of image + thumbnail, size, order; soft-deleted — ADR-010)
-product_photo_values  (the option values a photo shows)
 variant_barcodes      (external GTIN / supplier barcodes)
 categories            (later)
 ```

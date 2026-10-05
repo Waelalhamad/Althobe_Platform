@@ -348,7 +348,8 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
           locationId: b.locationId,
           productId: product.id,
           productCode: product.code,
-          productNameAr: product.nameAr,
+          // The category and the design: "ثوب · سعودية · ملكي · … · أبيض" (ADR-011).
+          productNameAr: product.title ? `${product.nameAr} · ${product.title}` : product.nameAr,
           variants: 0,
           quantity: 0,
           valueBaseAmount: 0n,

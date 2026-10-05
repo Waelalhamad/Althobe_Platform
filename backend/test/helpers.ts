@@ -10,7 +10,7 @@ import {
   type Permission,
   type WriteContext,
 } from '../src/shared/permissions.js';
-import type { VariantView } from '../src/modules/catalogue/catalogue.service.js';
+import type { CategoryView, VariantView } from '../src/modules/catalogue/catalogue.service.js';
 import type { LocationView } from '../src/modules/locations/locations.service.js';
 import { createServices, type Services } from '../src/services.js';
 
@@ -24,7 +24,9 @@ export interface World {
   store: LocationView;
   /** Option types القماش / اللون / القياس with a few values each. */
   options: { fabric: OptionType; colour: OptionType; size: OptionType };
-  /** Variants of one product (قطني · أبيض · 54 / 56 / 58): X, Y, Z. */
+  /** Category ثوب تجريبي (THB-TEST), made of القماش, اللون, القياس. */
+  category: CategoryView;
+  /** The sizes 54 / 56 / 58 of one product (قطني · أبيض): X, Y, Z. */
   x: VariantView;
   y: VariantView;
   z: VariantView;
@@ -110,7 +112,6 @@ async function wipe(db: Db) {
   // TRUNCATE is not UPDATE/DELETE, so the append-only triggers do not block test cleanup.
   await db.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
   await db.$executeRawUnsafe(`ALTER SEQUENCE variant_barcode_seq RESTART WITH 1`);
-  await db.$executeRawUnsafe(`ALTER SEQUENCE product_code_seq RESTART WITH 1`);
 }
 
 async function buildWorld(db: Db, services: Services): Promise<World> {
@@ -128,13 +129,13 @@ async function buildWorld(db: Db, services: Services): Promise<World> {
   ]);
 
   const options = await createOptionTypes(db);
-  const product = await services.catalogue.createProduct(
+  const category = await services.catalogue.createCategory(
     { code: 'THB-TEST', nameAr: 'ثوب تجريبي', groupIds: Object.values(options).map((g) => g.id) },
     owner,
   );
-  const { created } = await services.catalogue.generateVariants(
+  const { created } = await services.catalogue.generateProducts(
     {
-      productId: product.id,
+      categoryId: category.id,
       selections: [
         pick(options.fabric, 'قطني'),
         pick(options.colour, 'أبيض'),
@@ -152,6 +153,7 @@ async function buildWorld(db: Db, services: Services): Promise<World> {
     wh2,
     store,
     options,
+    category,
     x: bySize('54'),
     y: bySize('56'),
     z: bySize('58'),
@@ -163,7 +165,7 @@ export interface OptionType {
   values: { id: string; valueAr: string }[];
 }
 
-/** A selection for generateVariants: the named values of one option type. */
+/** A selection for generateProducts: the named values of one option type. */
 export function pick(group: OptionType, ...names: string[]) {
   return {
     groupId: group.id,

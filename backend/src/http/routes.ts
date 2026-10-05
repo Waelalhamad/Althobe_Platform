@@ -84,23 +84,67 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.locations.listLocations(actorOf(request)),
     }));
 
-    priv.get('/products', async (request) => ({
-      data: await s.catalogue.listProducts(actorOf(request)),
+    // ── Categories → products → sizes (ADR-011) ─────────────────────────────────────────────
+    priv.get('/categories', async (request) => ({
+      data: await s.catalogue.listCategories(actorOf(request)),
     }));
 
-    priv.post('/products', async (request) => ({
-      data: await s.catalogue.createProduct(request.body as never, actorOf(request)),
+    priv.post('/categories', async (request) => ({
+      data: await s.catalogue.createCategory(request.body as never, actorOf(request)),
     }));
 
-    priv.patch('/products/:id', async (request: Params<{ id: string }>) => ({
-      data: await s.catalogue.updateProduct(
+    priv.patch('/categories/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.updateCategory(
         request.params.id,
         request.body as never,
         actorOf(request),
       ),
     }));
 
-    // One variant or a filtered list at once: { variantIds, retail?, wholesale? }.
+    priv.delete('/categories/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.deleteCategory(request.params.id, actorOf(request)),
+    }));
+
+    // Every chosen design × size of a category: { selections, prices? }.
+    priv.post('/categories/:id/products/generate', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.generateProducts(
+        { ...(request.body as object), categoryId: request.params.id } as never,
+        actorOf(request),
+      ),
+    }));
+
+    priv.get(
+      '/products',
+      async (request: FastifyRequest<{ Querystring: { categoryId?: string } }>) => ({
+        data: await s.catalogue.listProducts(
+          { categoryId: request.query.categoryId },
+          actorOf(request),
+        ),
+      }),
+    );
+
+    // One product or a filtered list at once: { productIds, retail?, wholesale? }.
+    priv.post('/products/prices', async (request) => ({
+      data: await s.catalogue.setProductPrices(request.body as never, actorOf(request)),
+    }));
+
+    priv.get('/products/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.getProduct(request.params.id, actorOf(request)),
+    }));
+
+    priv.patch('/products/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.setProductActive(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
+    priv.delete('/products/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.deleteProduct(request.params.id, actorOf(request)),
+    }));
+
+    // A size's own price, overriding its product's: { variantIds, retail?, wholesale? }.
     priv.post('/variants/prices', async (request) => ({
       data: await s.catalogue.setPrices(request.body as never, actorOf(request)),
     }));
@@ -111,6 +155,10 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
         request.body as never,
         actorOf(request),
       ),
+    }));
+
+    priv.delete('/variants/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.deleteVariant(request.params.id, actorOf(request)),
     }));
 
     // ── Product photos (ADR-010) ─────────────────────────────────────────────────────────────
@@ -184,24 +232,17 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       ),
     }));
 
-    priv.post('/products/:id/variants/generate', async (request: Params<{ id: string }>) => ({
-      data: await s.catalogue.generateVariants(
-        { ...(request.body as object), productId: request.params.id } as never,
-        actorOf(request),
-      ),
-    }));
-
     priv.get(
       '/variants',
       async (
         request: FastifyRequest<{
-          Querystring: { q?: string; productId?: string; limit?: string };
+          Querystring: { q?: string; productId?: string; categoryId?: string; limit?: string };
         }>,
       ) => {
-        const { q, productId, limit } = request.query;
+        const { q, productId, categoryId, limit } = request.query;
         return {
           data: await s.catalogue.searchVariants(
-            { q, productId, limit: limit ? Number(limit) : undefined },
+            { q, productId, categoryId, limit: limit ? Number(limit) : undefined },
             actorOf(request),
           ),
         };

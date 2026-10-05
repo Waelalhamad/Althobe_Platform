@@ -38,27 +38,23 @@ stock endpoints arriving in Phase 3 will require it.
 | `POST` | `/auth/login` · `/auth/logout` | — |
 | `GET` | `/auth/me` | authenticated |
 | `GET` | `/locations` | `inventory.view` |
-| `GET` / `POST` | `/products` | `products.read` / `products.write` |
-| `PATCH` | `/products/:id` (name, option types, retire / restore) | `products.write` |
-| `POST` | `/products/:id/variants/generate` — `{ selections: [{ groupId, valueIds }] }` | `products.write` |
-| `GET` | `/variants?q=&productId=` | `products.read` |
-| `PATCH` | `/variants/:id` — `{ isActive }` (retire / restore) | `products.write` |
+| `GET` / `POST` | `/categories` — `{ nameAr, code?, parentId?, groupIds? }` (ADR-011) | `products.read` / `products.write` |
+| `PATCH` / `DELETE` | `/categories/:id` — name, code, `parentId`, `groupIds`, `isActive`, `move`; delete only without stock | `products.write` |
+| `POST` | `/categories/:id/products/generate` — `{ selections: [{ groupId, valueIds }], prices? }` | `products.write` (+ `prices.write` with prices) |
+| `GET` | `/products?categoryId=` · `/products/:id` (with its sizes) | `products.read` |
+| `PATCH` / `DELETE` | `/products/:id` — `{ isActive }`; delete only without stock | `products.write` |
+| `POST` | `/products/prices` — `{ productIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
+| `GET` | `/variants?q=&productId=&categoryId=` | `products.read` |
+| `PATCH` / `DELETE` | `/variants/:id` — `{ isActive }`; delete only without stock | `products.write` |
+| `POST` | `/variants/prices` — a size's own price, overriding the product's; `null` goes back | `prices.write` |
 | `GET` | `/products/:id/photos` | `products.read` |
 | `POST` | `/products/:id/photos` — `{ image, thumb, width, height }` (base64; body ≤ 5 MB) | `products.write` |
-| `PATCH` | `/photos/:id` — `{ valueIds?, move?: up/down/first }` | `products.write` |
+| `PATCH` | `/photos/:id` — `{ move: up/down/first }` | `products.write` |
 | `DELETE` | `/photos/:id` | `products.write` |
 | `GET` | `/photos/:id?size=thumb\|full` → 302 to a signed S3 link (ADR-010) | `products.read` |
-| `POST` | `/variants/prices` — `{ variantIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
 | `GET` | `/option-groups` (types with their values) | `products.read` |
 | `POST` | `/option-groups` · `/option-groups/:id/values` | `products.write` |
 | `PATCH` | `/option-groups/:id` · `/option-values/:id` — rename, `isActive`, `move: up/down` | `products.write` |
-
-A variant is returned with `options: [{ groupId, groupKey, group, valueId, value }]` (in type
-order), `title` (the values joined with « · »), `size` (the `SIZE` value or null) and
-`photoId` (the best-matching photo, ADR-010), `prices: { retail, wholesale }`, each `{ amount, currency }` in USD minor units or null (ADR-009).
-`POST /products/:id/variants/generate` also takes optional `prices` for the variants it creates
-(needs `prices.write`). Until
-2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).
 | `GET` | `/barcodes/:code` | `inventory.view` |
 | `GET` | `/inventory/balances?locationId=&q=` | `inventory.view` |
 | `GET` | `/inventory/movements?variantId=&locationId=` | `inventory.view` |
@@ -68,6 +64,13 @@ order), `title` (the values joined with « · »), `size` (the `SIZE` value or n
 | `POST` | `/scan-sessions/:id/scans` | same as the session kind |
 | `PATCH` / `DELETE` | `/scan-sessions/:id/lines/:variantId` | same as the session kind |
 | `POST` | `/scan-sessions/:id/commit` · `/cancel` | same as the session kind |
+
+A variant (one size of a product) is returned with `options: [{ groupId, groupKey, group, valueId,
+value }]` (the product's design, then the size, in type order), `title` (the values joined with
+« · »), `size`, `prices: { retail, wholesale }` (its own price, else the product's; each
+`{ amount, currency }` in USD minor units or null — ADR-009), `ownPrices`, `photoId` (the product's
+main photo) and `product: { id, code, nameAr (the category), title (the design), categoryId }`
+(ADR-011). Until 2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).
 
 Labels are rendered in the browser (bwip-js), not by the API. Transfers and damage use the
 scan-session endpoints above (`kind: TRANSFER` with `toLocationId`, `kind: DAMAGE` with `reason`).

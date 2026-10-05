@@ -28,6 +28,11 @@ PC (shrunk in the browser), tagged with the option values they show; every varia
 and the scan screen show the best-matching photo. **Next for products:** categories, then display
 currency (SYP / LYD) by exchange rate.
 
+**Category → product → size (2026-10-11, ADR-011):** ثوب and طقم are categories (a tree, up to
+three levels); a product is one design (its options except the size) with its own photos and
+price; its sizes carry barcode, SKU and stock. Everything is editable; what never had stock can be
+deleted.
+
 **Practice mode:** `pnpm dev:practice` runs the app on a separate `althobe_practice` database with a
 yellow «وضع التدريب» banner — for learning the scanner and printer without touching real stock.
 

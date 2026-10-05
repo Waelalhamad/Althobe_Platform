@@ -204,21 +204,50 @@ model IdempotencyRecord {
 
 // ─── Catalogue ─────────────────────────────────────────────────────────────────────────────────
 
-model Product {
+// A category (ADR-011): ثوب، طقم … in a tree up to three levels deep. It names the option types
+// its products are made with. Its code starts SKUs (THB-…).
+model Category {
   id            String        @id @default(uuid(7)) @db.Uuid
-  code          String        @unique(map: "uq_products_code")
+  code          String        @unique(map: "uq_categories_code")
   nameAr        String        @map("name_ar")
   nameEn        String?       @map("name_en")
+  parentId      String?       @map("parent_id") @db.Uuid
+  sortOrder     Int           @default(0) @map("sort_order")
   unitOfMeasure UnitOfMeasure @default(PIECE) @map("unit_of_measure")
   isActive      Boolean       @default(true) @map("is_active")
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt     DateTime?     @map("deleted_at") @db.Timestamptz(3)
 
-  variants     ProductVariant[]
-  optionGroups ProductOptionGroup[]
-  photos       ProductPhoto[]
+  parent       Category?             @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]            @relation("CategoryTree")
+  products     Product[]
+  optionGroups CategoryOptionGroup[]
 
+  @@index([parentId], map: "idx_categories_parent_id")
+  @@map("categories")
+}
+
+// A product (ADR-011): one design in a category, with one value of each option type except the
+// size. Its sizes are its variants. The code is the SKU base (THB-SA-RY-…-WH).
+model Product {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  categoryId String    @map("category_id") @db.Uuid
+  code       String    @unique(map: "uq_products_code")
+  // The chosen non-size value ids, sorted and comma-joined: one product per design per category.
+  styleKey   String    @map("style_key")
+  isActive   Boolean   @default(true) @map("is_active")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  category    Category            @relation(fields: [categoryId], references: [id])
+  styleValues ProductStyleValue[]
+  variants    ProductVariant[]
+  prices      ProductPrice[]
+  photos      ProductPhoto[]
+
+  @@unique([categoryId, styleKey], map: "uq_products_category_style")
   @@map("products")
 }
 
@@ -235,7 +264,8 @@ model OptionGroup {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   values        OptionValue[]
-  products      ProductOptionGroup[]
+  categories    CategoryOptionGroup[]
+  styleValues   ProductStyleValue[]
   variantValues VariantOptionValue[]
 
   @@map("option_groups")
@@ -258,32 +288,47 @@ model OptionValue {
   // Composite: a detail always sits under a value of its own type.
   parent        OptionValue?         @relation("OptionValueDetails", fields: [parentId, groupId], references: [id, groupId])
   details       OptionValue[]        @relation("OptionValueDetails")
+  styleValues   ProductStyleValue[]
   variantValues VariantOptionValue[]
-  photoValues   ProductPhotoValue[]
 
   // NULLS NOT DISTINCT in the migration: two top-level values may not share a name or code.
   @@unique([groupId, parentId, valueAr], map: "uq_option_values_group_parent_value")
   @@unique([groupId, parentId, code], map: "uq_option_values_group_parent_code")
-  // Target of the composite foreign key that keeps a variant's value under the right type.
+  // Target of the composite foreign keys that keep a value under the right type.
   @@unique([id, groupId], map: "uq_option_values_id_group")
   @@index([parentId], map: "idx_option_values_parent_id")
   @@map("option_values")
 }
 
-// Which option types a product is made with.
-model ProductOptionGroup {
+// Which option types a category's products are made with.
+model CategoryOptionGroup {
+  categoryId String @map("category_id") @db.Uuid
+  groupId    String @map("group_id") @db.Uuid
+
+  category Category    @relation(fields: [categoryId], references: [id])
+  group    OptionGroup @relation(fields: [groupId], references: [id])
+
+  @@id([categoryId, groupId])
+  @@index([groupId], map: "idx_category_option_groups_group_id")
+  @@map("category_option_groups")
+}
+
+// A product's design: one value per non-size option type.
+model ProductStyleValue {
   productId String @map("product_id") @db.Uuid
   groupId   String @map("group_id") @db.Uuid
+  valueId   String @map("value_id") @db.Uuid
 
   product Product     @relation(fields: [productId], references: [id])
   group   OptionGroup @relation(fields: [groupId], references: [id])
+  value   OptionValue @relation(fields: [valueId, groupId], references: [id, groupId])
 
   @@id([productId, groupId])
-  @@index([groupId], map: "idx_product_option_groups_group_id")
-  @@map("product_option_groups")
+  @@index([valueId], map: "idx_product_style_values_value_id")
+  @@map("product_style_values")
 }
 
-// One chosen value per option type per variant.
+// A variant's size (the only option held on the variant itself since ADR-011).
 model VariantOptionValue {
   variantId String @map("variant_id") @db.Uuid
   groupId   String @map("group_id") @db.Uuid
@@ -298,12 +343,13 @@ model VariantOptionValue {
   @@map("variant_option_values")
 }
 
+// One size of a product: its own barcode, SKU and stock.
 model ProductVariant {
   id        String    @id @default(uuid(7)) @db.Uuid
   productId String    @map("product_id") @db.Uuid
   sku       String    @unique(map: "uq_product_variants_sku")
   barcode   String    @unique(map: "uq_product_variants_barcode") @db.Char(13)
-  // The chosen value ids, sorted and comma-joined: one variant per combination per product.
+  // The size value id ('' for a category without sizes): one variant per size per product.
   optionKey String    @map("option_key")
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -327,8 +373,23 @@ model ProductVariant {
   @@map("product_variants")
 }
 
-// A variant's selling price on one list, in minor units of its currency (ADR-004, ADR-009).
-// No row = not priced yet.
+// A product's selling price on one list (ADR-009), for all its sizes.
+model ProductPrice {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  productId String    @map("product_id") @db.Uuid
+  list      PriceList
+  amount    BigInt
+  currency  String    @db.Char(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([productId, list], map: "uq_product_prices_product_list")
+  @@map("product_prices")
+}
+
+// A price for one size that differs from its product's (e.g. size 64 costs more).
 model VariantPrice {
   id        String    @id @default(uuid(7)) @db.Uuid
   variantId String    @map("variant_id") @db.Uuid
@@ -344,9 +405,8 @@ model VariantPrice {
   @@map("variant_prices")
 }
 
-// A product photo in S3 (ADR-010): a full image and a thumbnail. Tagged with the option values it
-// shows (e.g. رسمي + كحلي); a variant shows the photo whose tags it matches best. Soft-deleted;
-// the S3 objects are removed when the photo is deleted.
+// A product photo in S3 (ADR-010): a full image and a thumbnail. The first is the product's main
+// photo. Soft-deleted; the S3 objects are removed when the photo is deleted.
 model ProductPhoto {
   id          String    @id @default(uuid(7)) @db.Uuid
   productId   String    @map("product_id") @db.Uuid
@@ -361,24 +421,11 @@ model ProductPhoto {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  product   Product             @relation(fields: [productId], references: [id])
-  createdBy User                @relation(fields: [createdById], references: [id])
-  values    ProductPhotoValue[]
+  product   Product @relation(fields: [productId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
 
   @@index([productId], map: "idx_product_photos_product_id")
   @@map("product_photos")
-}
-
-model ProductPhotoValue {
-  photoId String @map("photo_id") @db.Uuid
-  valueId String @map("value_id") @db.Uuid
-
-  photo ProductPhoto @relation(fields: [photoId], references: [id])
-  value OptionValue  @relation(fields: [valueId], references: [id])
-
-  @@id([photoId, valueId])
-  @@index([valueId], map: "idx_product_photo_values_value_id")
-  @@map("product_photo_values")
 }
 
 // Barcodes that arrive printed on goods: manufacturer GTINs and supplier codes.

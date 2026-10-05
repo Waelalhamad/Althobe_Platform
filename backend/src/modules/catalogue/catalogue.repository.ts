@@ -1,8 +1,24 @@
 import type { PriceList, Prisma } from '@prisma/client';
 import type { Queryable, Tx } from '../../shared/db.js';
-import type { OptionGroupView, PriceView, VariantView } from './catalogue.types.js';
+import type {
+  CategoryView,
+  OptionGroupView,
+  PriceView,
+  Prices,
+  ProductView,
+  VariantOption,
+  VariantView,
+} from './catalogue.types.js';
+
+// ─── Option values: a value and up to two levels above it (جوخ هندي → مشخط) ──────────────────
 
 const valueFields = { id: true, valueAr: true, sortOrder: true } as const;
+const valueWithPath = {
+  select: {
+    ...valueFields,
+    parent: { select: { ...valueFields, parent: { select: valueFields } } },
+  },
+} as const;
 
 interface ValueNode {
   id: string;
@@ -18,35 +34,91 @@ function pathOf(value: ValueNode): ValueNode[] {
   return path;
 }
 
+const optionRowSelect = {
+  groupId: true,
+  group: { select: { key: true, nameAr: true, sortOrder: true } },
+  value: valueWithPath,
+} as const;
+
+interface OptionRow {
+  groupId: string;
+  group: { key: string | null; nameAr: string; sortOrder: number };
+  value: ValueNode;
+}
+
+const byType = (a: OptionRow, b: OptionRow) =>
+  a.group.sortOrder - b.group.sortOrder || a.group.nameAr.localeCompare(b.group.nameAr);
+
+function toOptions(rows: readonly OptionRow[]): VariantOption[] {
+  return [...rows].sort(byType).map((o) => ({
+    groupId: o.groupId,
+    groupKey: o.group.key,
+    group: o.group.nameAr,
+    valueId: o.value.id,
+    // A detail reads with what it details: "جوخ هندي مشخط".
+    value: pathOf(o.value)
+      .map((v) => v.valueAr)
+      .join(' '),
+  }));
+}
+
+/** Sort key: each type's value order, details after their heading. */
+const orderOf = (rows: readonly OptionRow[]) =>
+  [...rows].sort(byType).flatMap((o) => pathOf(o.value).map((v) => v.sortOrder));
+
+function compareKeys(x: number[], y: number[]): number {
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    if (x[i] !== y[i]) return x[i]! - y[i]!;
+  }
+  return x.length - y.length;
+}
+
+const priceSelect = { select: { list: true, amount: true, currency: true } } as const;
+
+type PriceRow = { list: PriceList; amount: bigint; currency: string };
+
+function priceOn(prices: readonly PriceRow[], list: PriceList): PriceView | null {
+  const price = prices.find((p) => p.list === list);
+  return price ? { amount: price.amount, currency: price.currency } : null;
+}
+
+const pricesOf = (rows: readonly PriceRow[]): Prices => ({
+  retail: priceOn(rows, 'RETAIL'),
+  wholesale: priceOn(rows, 'WHOLESALE'),
+});
+
+const firstPhoto = {
+  where: { deletedAt: null },
+  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+  take: 1,
+  select: { id: true },
+} satisfies Prisma.Product$photosArgs;
+
+// ─── Variants ────────────────────────────────────────────────────────────────────────────────
+
 const variantSelect = {
   id: true,
   sku: true,
   barcode: true,
   isActive: true,
+  prices: priceSelect,
+  optionValues: { select: optionRowSelect },
   product: {
     select: {
       id: true,
       code: true,
-      nameAr: true,
-      nameEn: true,
-      unitOfMeasure: true,
       isActive: true,
-      photos: {
-        where: { deletedAt: null },
-        select: { id: true, sortOrder: true, values: { select: { valueId: true } } },
-      },
-    },
-  },
-  prices: { select: { list: true, amount: true, currency: true } },
-  optionValues: {
-    select: {
-      groupId: true,
-      group: { select: { key: true, nameAr: true, sortOrder: true } },
-      // The value and up to two levels above it (جوخ هندي → مشخط).
-      value: {
+      prices: priceSelect,
+      photos: firstPhoto,
+      styleValues: { select: optionRowSelect },
+      category: {
         select: {
-          ...valueFields,
-          parent: { select: { ...valueFields, parent: { select: valueFields } } },
+          id: true,
+          code: true,
+          nameAr: true,
+          nameEn: true,
+          unitOfMeasure: true,
+          isActive: true,
         },
       },
     },
@@ -58,75 +130,44 @@ type VariantRow = Prisma.ProductVariantGetPayload<{ select: typeof variantSelect
 const live = { deletedAt: null } as const;
 
 function toView(row: VariantRow): VariantView {
-  const { photos, ...product } = row.product;
-  const sorted = [...row.optionValues].sort(
-    (a, b) => a.group.sortOrder - b.group.sortOrder || a.group.nameAr.localeCompare(b.group.nameAr),
-  );
-  const options = sorted.map((o) => {
-    const path = pathOf(o.value);
-    return {
-      groupId: o.groupId,
-      groupKey: o.group.key,
-      group: o.group.nameAr,
-      valueId: o.value.id,
-      // A detail reads with what it details: "جوخ هندي مشخط".
-      value: path.map((v) => v.valueAr).join(' '),
-      pathIds: path.map((v) => v.id),
-    };
-  });
+  const { product } = row;
+  const design = toOptions(product.styleValues);
+  const options = toOptions([...product.styleValues, ...row.optionValues]);
+  const own = pricesOf(row.prices);
+  const base = pricesOf(product.prices);
   return {
     id: row.id,
     sku: row.sku,
     barcode: row.barcode,
     isActive: row.isActive,
-    options: options.map(({ pathIds: _, ...option }) => option),
+    options,
     title: options.map((o) => o.value).join(' · '),
     size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
-    prices: { retail: priceOn(row, 'RETAIL'), wholesale: priceOn(row, 'WHOLESALE') },
-    // A photo tagged جوخ هندي shows every جوخ هندي detail.
-    photoId: bestPhoto(
-      photos,
-      options.flatMap((o) => o.pathIds),
-    ),
-    product,
+    prices: { retail: own.retail ?? base.retail, wholesale: own.wholesale ?? base.wholesale },
+    ownPrices: { retail: own.retail !== null, wholesale: own.wholesale !== null },
+    photoId: product.photos[0]?.id ?? null,
+    product: {
+      id: product.id,
+      code: product.code,
+      nameAr: product.category.nameAr,
+      nameEn: product.category.nameEn,
+      title: design.map((o) => o.value).join(' · '),
+      categoryId: product.category.id,
+      unitOfMeasure: product.category.unitOfMeasure,
+      isActive: product.isActive && product.category.isActive,
+    },
   };
 }
 
-/**
- * The photo that shows this variant best (ADR-010): among photos whose every tag is one of the
- * variant's values, the one with the most tags; ties go to the earlier photo. Untagged photos are
- * general photos of the product and match every variant.
- */
-export function bestPhoto(
-  photos: readonly { id: string; sortOrder: number; values: readonly { valueId: string }[] }[],
-  variantValueIds: readonly string[],
-): string | null {
-  const own = new Set(variantValueIds);
-  const matching = photos.filter((p) => p.values.every((v) => own.has(v.valueId)));
-  matching.sort((a, b) => b.values.length - a.values.length || a.sortOrder - b.sortOrder);
-  return matching[0]?.id ?? null;
-}
-
-function priceOn(row: VariantRow, list: PriceList): PriceView | null {
-  const price = row.prices.find((p) => p.list === list);
-  return price ? { amount: price.amount, currency: price.currency } : null;
-}
-
-/**
- * Within one product: by each type's value order (القصة, then الزر, …), so a table of variants
- * reads like the option lists. Across products: by product code.
- */
+/** By category code, then the design's option order, then size. */
 function compareVariants(a: VariantRow, b: VariantRow): number {
-  if (a.product.code !== b.product.code) return a.product.code < b.product.code ? -1 : 1;
-  const order = (row: VariantRow) =>
-    [...row.optionValues]
-      .sort((x, y) => x.group.sortOrder - y.group.sortOrder)
-      .flatMap((o) => pathOf(o.value).map((v) => v.sortOrder));
-  const [x, y] = [order(a), order(b)];
-  for (let i = 0; i < Math.min(x.length, y.length); i++) {
-    if (x[i] !== y[i]) return x[i]! - y[i]!;
-  }
-  return x.length - y.length || (a.sku < b.sku ? -1 : 1);
+  const [ca, cb] = [a.product.category.code, b.product.category.code];
+  if (ca !== cb) return ca < cb ? -1 : 1;
+  return (
+    compareKeys(orderOf(a.product.styleValues), orderOf(b.product.styleValues)) ||
+    compareKeys(orderOf(a.optionValues), orderOf(b.optionValues)) ||
+    (a.sku < b.sku ? -1 : 1)
+  );
 }
 
 export async function findVariantByBarcode(
@@ -164,33 +205,38 @@ export async function findVariantsByIds(q: Queryable, ids: string[]): Promise<Va
   return rows.map(toView);
 }
 
+const valueMatches = (text: string) => ({
+  value: {
+    OR: [{ valueAr: { contains: text } }, { parent: { valueAr: { contains: text } } }],
+  },
+});
+
 export async function searchVariants(
   q: Queryable,
-  args: { q?: string | undefined; productId?: string | undefined; limit: number },
+  args: {
+    q?: string | undefined;
+    productId?: string | undefined;
+    categoryId?: string | undefined;
+    limit: number;
+  },
 ): Promise<VariantView[]> {
   const text = args.q;
   const rows = await q.productVariant.findMany({
     where: {
       ...live,
+      product: {
+        deletedAt: null,
+        ...(args.categoryId ? { categoryId: args.categoryId } : {}),
+      },
       ...(args.productId ? { productId: args.productId } : {}),
       ...(text
         ? {
             OR: [
               { sku: { contains: text, mode: 'insensitive' } },
               { barcode: { startsWith: text } },
-              { product: { nameAr: { contains: text, mode: 'insensitive' } } },
-              {
-                optionValues: {
-                  some: {
-                    value: {
-                      OR: [
-                        { valueAr: { contains: text } },
-                        { parent: { valueAr: { contains: text } } },
-                      ],
-                    },
-                  },
-                },
-              },
+              { product: { category: { nameAr: { contains: text, mode: 'insensitive' } } } },
+              { product: { styleValues: { some: valueMatches(text) } } },
+              { optionValues: { some: valueMatches(text) } },
             ],
           }
         : {}),
@@ -200,6 +246,86 @@ export async function searchVariants(
     take: args.limit,
   });
   return rows.sort(compareVariants).map(toView);
+}
+
+// ─── Products ────────────────────────────────────────────────────────────────────────────────
+
+const productSelect = {
+  id: true,
+  code: true,
+  isActive: true,
+  prices: priceSelect,
+  photos: firstPhoto,
+  styleValues: { select: optionRowSelect },
+  category: { select: { id: true, code: true, nameAr: true, isActive: true } },
+  _count: { select: { variants: { where: live } } },
+} satisfies Prisma.ProductSelect;
+
+type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+
+function toProductView(row: ProductRow): ProductView {
+  const options = toOptions(row.styleValues);
+  return {
+    id: row.id,
+    code: row.code,
+    isActive: row.isActive,
+    category: row.category,
+    options,
+    title: options.map((o) => o.value).join(' · '),
+    prices: pricesOf(row.prices),
+    mainPhotoId: row.photos[0]?.id ?? null,
+    variantCount: row._count.variants,
+  };
+}
+
+export async function listProducts(
+  q: Queryable,
+  args: { categoryId?: string | undefined; ids?: string[] | undefined },
+): Promise<ProductView[]> {
+  const rows = await q.product.findMany({
+    where: {
+      ...live,
+      category: live,
+      ...(args.categoryId ? { categoryId: args.categoryId } : {}),
+      ...(args.ids ? { id: { in: args.ids } } : {}),
+    },
+    select: productSelect,
+  });
+  return rows
+    .sort((a, b) => {
+      const [ca, cb] = [a.category.code, b.category.code];
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      return compareKeys(orderOf(a.styleValues), orderOf(b.styleValues));
+    })
+    .map(toProductView);
+}
+
+// ─── Categories and option types ─────────────────────────────────────────────────────────────
+
+export async function listCategories(q: Queryable): Promise<CategoryView[]> {
+  const rows = await q.category.findMany({
+    where: live,
+    orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
+    select: {
+      id: true,
+      code: true,
+      nameAr: true,
+      nameEn: true,
+      parentId: true,
+      sortOrder: true,
+      isActive: true,
+      unitOfMeasure: true,
+      optionGroups: { select: { groupId: true, group: { select: { sortOrder: true } } } },
+      _count: { select: { products: { where: live } } },
+    },
+  });
+  return rows.map(({ optionGroups, _count, ...category }) => ({
+    ...category,
+    groupIds: [...optionGroups]
+      .sort((a, b) => a.group.sortOrder - b.group.sortOrder)
+      .map((g) => g.groupId),
+    productCount: _count.products,
+  }));
 }
 
 export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]> {
@@ -226,27 +352,13 @@ export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]>
   });
 }
 
-/** Serialises concurrent variant generation for the same product. */
-export async function lockProduct(tx: Tx, productId: string) {
+/** Serialises concurrent product generation in the same category. */
+export async function lockCategory(tx: Tx, categoryId: string) {
   const rows = await tx.$queryRaw<{ id: string; code: string; is_active: boolean }[]>`
-    SELECT id, code, is_active FROM products
-    WHERE id = ${productId}::uuid AND deleted_at IS NULL
+    SELECT id, code, is_active FROM categories
+    WHERE id = ${categoryId}::uuid AND deleted_at IS NULL
     FOR UPDATE`;
   return rows[0] ?? null;
-}
-
-/**
- * The next generated product code, P-0001, P-0002, … from the database sequence. Skips a number
- * someone already used by hand, so a generated code never collides.
- */
-export async function nextProductCode(tx: Tx): Promise<string> {
-  for (;;) {
-    const [row] = await tx.$queryRaw<
-      { value: bigint }[]
-    >`SELECT nextval('product_code_seq') AS value`;
-    const code = `P-${row!.value.toString().padStart(4, '0')}`;
-    if (!(await tx.product.findUnique({ where: { code }, select: { id: true } }))) return code;
-  }
 }
 
 /** Allocates barcode sequence numbers from the database — never from application code. */

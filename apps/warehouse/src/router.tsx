@@ -15,7 +15,8 @@ import { LoginPage } from './pages/Login';
 import { MovementsPage } from './pages/Movements';
 import { OptionsPage } from './pages/Options';
 import { ProductDetailPage } from './pages/ProductDetail';
-import { ProductsPage } from './pages/Products';
+import { CategoriesPage } from './pages/Categories';
+import { CategoryPage } from './pages/Category';
 import { ReportsPage } from './pages/Reports';
 import { ScanSessionPage } from './pages/ScanSession';
 import { StocktakePage } from './pages/Stocktake';
@@ -55,7 +56,12 @@ const appRoute = createRoute({
 
 const routes = [
   createRoute({ getParentRoute: () => appRoute, path: '/', component: HomePage }),
-  createRoute({ getParentRoute: () => appRoute, path: '/products', component: ProductsPage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/products', component: CategoriesPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/categories/$categoryId',
+    component: CategoryPage,
+  }),
   createRoute({ getParentRoute: () => appRoute, path: '/options', component: OptionsPage }),
   createRoute({
     getParentRoute: () => appRoute,
@@ -66,6 +72,7 @@ const routes = [
     getParentRoute: () => appRoute,
     path: '/labels',
     validateSearch: (search: Record<string, unknown>) => ({
+      categoryId: optionalString(search.categoryId),
       productId: optionalString(search.productId),
     }),
     // Loaded on demand: the barcode renderer is ~1 MB and only this page needs it.

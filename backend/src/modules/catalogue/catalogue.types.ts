@@ -1,12 +1,15 @@
 import type { UnitOfMeasure } from '@prisma/client';
 
-/** One chosen option of a variant, e.g. القصة: سعودية. */
+// ADR-011: category (ثوب) → product (one design) → variant (one size of it).
+
+/** One chosen option of a product or variant, e.g. القصة: سعودية. */
 export interface VariantOption {
   groupId: string;
   /** Built-in types only (CUT, BUTTON, ZIPPER, SLEEVE, FABRIC, COLOUR, SIZE); null for added types. */
   groupKey: string | null;
   group: string;
   valueId: string;
+  /** With what it details: "جوخ هندي مشخط". */
   value: string;
 }
 
@@ -16,43 +19,72 @@ export interface PriceView {
   currency: string;
 }
 
-/** Everything a scan screen needs to show about a variant. */
+export interface Prices {
+  retail: PriceView | null;
+  wholesale: PriceView | null;
+}
+
+/** Everything a scan screen needs to show about a variant (one size of a product). */
 export interface VariantView {
   id: string;
   sku: string;
   barcode: string;
   isActive: boolean;
-  /** In the order of the option types: القصة, الزر, … القياس. */
+  /** The product's design options, then the size; in type order. */
   options: VariantOption[];
-  /** The option values joined: "سعودية · ملكي · جوخ هندي · أبيض · 56". */
+  /** The option values joined: "سعودية · ملكي · جوخ هندي مشخط · أبيض · 56". */
   title: string;
-  /** The SIZE value, printed large on labels; null if the product has no size type. */
+  /** The SIZE value, printed large on labels; null if the category has no size type. */
   size: string | null;
-  /** Selling prices (ADR-009); null = not priced yet. */
-  prices: { retail: PriceView | null; wholesale: PriceView | null };
-  /** The product photo that shows this variant best (ADR-010); null if the product has none. */
+  /** Effective selling prices: this size's own price, else the product's (ADR-009). */
+  prices: Prices;
+  /** Which of `prices` are this size's own rather than the product's. */
+  ownPrices: { retail: boolean; wholesale: boolean };
+  /** The product's main photo (ADR-010); null if it has none. */
   photoId: string | null;
   product: {
     id: string;
+    /** The product's SKU base, e.g. THB-SA-RY-MD-SN-JHST-WH. */
     code: string;
+    /** The category's name, e.g. ثوب. */
     nameAr: string;
     nameEn: string | null;
+    /** The design: "سعودية · ملكي · … · أبيض". */
+    title: string;
+    categoryId: string;
     unitOfMeasure: UnitOfMeasure;
+    /** False when the product or its category is stopped. */
     isActive: boolean;
   };
+}
+
+export interface CategoryView {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string | null;
+  parentId: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  unitOfMeasure: UnitOfMeasure;
+  /** The option types its products are made with, in type order. */
+  groupIds: string[];
+  productCount: number;
 }
 
 export interface ProductView {
   id: string;
   code: string;
-  nameAr: string;
-  nameEn: string | null;
-  unitOfMeasure: UnitOfMeasure;
   isActive: boolean;
-  /** The option types this product is made with, in type order. */
-  groupIds: string[];
-  /** The first photo, shown in product lists; null if none. */
+  category: { id: string; code: string; nameAr: string; isActive: boolean };
+  /** One per non-size option type, in type order. */
+  options: VariantOption[];
+  /** "سعودية · ملكي · … · أبيض". */
+  title: string;
+  prices: Prices;
   mainPhotoId: string | null;
+  /** Sizes (variants) not deleted. */
+  variantCount: number;
 }
 
 export interface OptionValueView {

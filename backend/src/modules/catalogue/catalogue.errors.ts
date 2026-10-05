@@ -85,3 +85,37 @@ export class TooManyCombinationsError extends DomainError {
     });
   }
 }
+
+export class CategoryCodeTakenError extends DomainError {
+  constructor(code: string) {
+    super('CATEGORY_CODE_TAKEN', 'A category with this code already exists', { code });
+  }
+}
+
+export class CategoryInactiveError extends DomainError {
+  constructor(categoryId: string) {
+    super('CATEGORY_INACTIVE', 'Category is stopped', { categoryId });
+  }
+}
+
+export class CategoryTooDeepError extends DomainError {
+  constructor() {
+    super(
+      'CATEGORY_TOO_DEEP',
+      'Categories nest three levels deep at most, and never in themselves',
+    );
+  }
+}
+
+export class CategoryHasChildrenError extends DomainError {
+  constructor() {
+    super('CATEGORY_HAS_CHILDREN', 'Delete or move its sub-categories first');
+  }
+}
+
+/** The ledger keeps every movement for good: what ever had stock is stopped, not deleted. */
+export class HasStockError extends DomainError {
+  constructor() {
+    super('HAS_STOCK', 'It has stock movements: stop it instead of deleting it');
+  }
+}
