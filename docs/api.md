@@ -43,6 +43,11 @@ stock endpoints arriving in Phase 3 will require it.
 | `POST` | `/products/:id/variants/generate` — `{ selections: [{ groupId, valueIds }] }` | `products.write` |
 | `GET` | `/variants?q=&productId=` | `products.read` |
 | `PATCH` | `/variants/:id` — `{ isActive }` (retire / restore) | `products.write` |
+| `GET` | `/products/:id/photos` | `products.read` |
+| `POST` | `/products/:id/photos` — `{ image, thumb, width, height }` (base64; body ≤ 5 MB) | `products.write` |
+| `PATCH` | `/photos/:id` — `{ valueIds?, move?: up/down/first }` | `products.write` |
+| `DELETE` | `/photos/:id` | `products.write` |
+| `GET` | `/photos/:id?size=thumb\|full` → 302 to a signed S3 link (ADR-010) | `products.read` |
 | `POST` | `/variants/prices` — `{ variantIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
 | `GET` | `/option-groups` (types with their values) | `products.read` |
 | `POST` | `/option-groups` · `/option-groups/:id/values` | `products.write` |
@@ -50,7 +55,7 @@ stock endpoints arriving in Phase 3 will require it.
 
 A variant is returned with `options: [{ groupId, groupKey, group, valueId, value }]` (in type
 order), `title` (the values joined with « · »), `size` (the `SIZE` value or null) and
-`prices: { retail, wholesale }`, each `{ amount, currency }` in USD minor units or null (ADR-009).
+`photoId` (the best-matching photo, ADR-010), `prices: { retail, wholesale }`, each `{ amount, currency }` in USD minor units or null (ADR-009).
 `POST /products/:id/variants/generate` also takes optional `prices` for the variants it creates
 (needs `prices.write`). Until
 2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).

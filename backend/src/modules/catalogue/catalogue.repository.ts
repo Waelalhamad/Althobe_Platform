@@ -15,6 +15,10 @@ const variantSelect = {
       nameEn: true,
       unitOfMeasure: true,
       isActive: true,
+      photos: {
+        where: { deletedAt: null },
+        select: { id: true, sortOrder: true, values: { select: { valueId: true } } },
+      },
     },
   },
   prices: { select: { list: true, amount: true, currency: true } },
@@ -32,6 +36,7 @@ type VariantRow = Prisma.ProductVariantGetPayload<{ select: typeof variantSelect
 const live = { deletedAt: null } as const;
 
 function toView(row: VariantRow): VariantView {
+  const { photos, ...product } = row.product;
   const sorted = [...row.optionValues].sort(
     (a, b) => a.group.sortOrder - b.group.sortOrder || a.group.nameAr.localeCompare(b.group.nameAr),
   );
@@ -51,8 +56,27 @@ function toView(row: VariantRow): VariantView {
     title: options.map((o) => o.value).join(' · '),
     size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
     prices: { retail: priceOn(row, 'RETAIL'), wholesale: priceOn(row, 'WHOLESALE') },
-    product: row.product,
+    photoId: bestPhoto(
+      photos,
+      options.map((o) => o.valueId),
+    ),
+    product,
   };
+}
+
+/**
+ * The photo that shows this variant best (ADR-010): among photos whose every tag is one of the
+ * variant's values, the one with the most tags; ties go to the earlier photo. Untagged photos are
+ * general photos of the product and match every variant.
+ */
+export function bestPhoto(
+  photos: readonly { id: string; sortOrder: number; values: readonly { valueId: string }[] }[],
+  variantValueIds: readonly string[],
+): string | null {
+  const own = new Set(variantValueIds);
+  const matching = photos.filter((p) => p.values.every((v) => own.has(v.valueId)));
+  matching.sort((a, b) => b.values.length - a.values.length || a.sortOrder - b.sortOrder);
+  return matching[0]?.id ?? null;
 }
 
 function priceOn(row: VariantRow, list: PriceList): PriceView | null {

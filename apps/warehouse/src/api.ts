@@ -32,6 +32,8 @@ export interface Product {
   isActive: boolean;
   /** The option types this product is made with, in type order. */
   groupIds: string[];
+  /** The first photo, for lists. */
+  mainPhotoId: string | null;
   variantCount: number;
 }
 
@@ -62,6 +64,8 @@ export interface Variant {
   size: string | null;
   /** null = not priced yet. */
   prices: { retail: Money | null; wholesale: Money | null };
+  /** The product photo that shows this variant best. */
+  photoId: string | null;
   product: {
     id: string;
     code: string;
@@ -90,6 +94,15 @@ export interface OptionGroup {
 }
 
 export type Move = 'up' | 'down';
+
+export interface Photo {
+  id: string;
+  width: number;
+  height: number;
+  sortOrder: number;
+  /** The option values it shows; [] = a general photo of the product. */
+  valueIds: string[];
+}
 
 export interface UnitCost {
   amount: string;
@@ -244,7 +257,7 @@ const get = async <T>(path: string) => request<T>('GET', path);
 const post = async <T>(path: string, body: unknown = {}) => request<T>('POST', path, body);
 
 export const api = {
-  mode: async () => get<{ practice: boolean }>('/mode'),
+  mode: async () => get<{ practice: boolean; photos: boolean }>('/mode'),
   login: async (email: string, password: string) => post<User>('/auth/login', { email, password }),
   logout: async () => post<{ ok: true }>('/auth/logout'),
   me: async () => get<User>('/auth/me'),
@@ -286,6 +299,15 @@ export const api = {
   }) => post<Variant[]>('/variants/prices', input),
   setVariantActive: async (id: string, isActive: boolean) =>
     request<Variant>('PATCH', `/variants/${id}`, { isActive }),
+
+  photos: async (productId: string) => get<Photo[]>(`/products/${productId}/photos`),
+  uploadPhoto: async (
+    productId: string,
+    photo: { image: string; thumb: string; width: number; height: number },
+  ) => post<Photo>(`/products/${productId}/photos`, photo),
+  updatePhoto: async (id: string, patch: { valueIds?: string[]; move?: Move | 'first' }) =>
+    request<Photo>('PATCH', `/photos/${id}`, patch),
+  deletePhoto: async (id: string) => request<{ ok: true }>('DELETE', `/photos/${id}`),
 
   optionGroups: async () => get<OptionGroup[]>('/option-groups'),
   createOptionGroup: async (nameAr: string) => post<OptionGroup>('/option-groups', { nameAr }),

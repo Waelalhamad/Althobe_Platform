@@ -23,6 +23,7 @@ import {
   SESSION_KIND,
   toMinorUnits,
 } from '../format';
+import { PhotoThumb } from '../photo';
 import { balancesQuery, locationsQuery, sessionQuery } from '../queries';
 
 const route = getRouteApi('/app/sessions/$sessionId');
@@ -285,16 +286,20 @@ function LastScanPanel({ last, pending }: { last: LastScan | null; pending: numb
     <div
       className={`flex items-center justify-between rounded-xl p-4 ${last.status === 'ok' ? 'bg-ok-soft' : 'bg-warn-soft'}`}
     >
-      <div>
-        <div className="text-xl font-bold">{variant.product.nameAr}</div>
-        <div className="text-lg">{variant.title}</div>
-        <div className="tabular text-sm text-ink-muted">
-          مفرق {formatPrice(variant.prices.retail)} · جملة {formatPrice(variant.prices.wholesale)}
+      <div className="flex items-center gap-4">
+        {/* The piece in hand should look like this: a quick check before counting it. */}
+        {variant.photoId && <PhotoThumb id={variant.photoId} size={96} />}
+        <div>
+          <div className="text-xl font-bold">{variant.product.nameAr}</div>
+          <div className="text-lg">{variant.title}</div>
+          <div className="tabular text-sm text-ink-muted">
+            مفرق {formatPrice(variant.prices.retail)} · جملة {formatPrice(variant.prices.wholesale)}
+          </div>
+          {last.status === 'dup' && (
+            <div className="text-sm text-warn">مسحة مكررة — لم تُحتسب مرتين</div>
+          )}
+          {pending > 0 && <div className="text-sm text-ink-muted">جارٍ إرسال {pending}…</div>}
         </div>
-        {last.status === 'dup' && (
-          <div className="text-sm text-warn">مسحة مكررة — لم تُحتسب مرتين</div>
-        )}
-        {pending > 0 && <div className="text-sm text-ink-muted">جارٍ إرسال {pending}…</div>}
       </div>
       <div className="text-end">
         <div className="tabular text-5xl font-bold">{formatQuantity(quantity)}</div>

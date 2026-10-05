@@ -134,7 +134,9 @@ before (jsonb), after (jsonb), ip, user_agent, created_at
   templates — never string concatenation.
 - React escapes by default; `dangerouslySetInnerHTML` is forbidden without a written reason.
 - File uploads: allowlist of extensions and MIME types, size cap, stored outside the web root,
-  served through an authorized endpoint, never executed.
+  served through an authorized endpoint, never executed. Product photos (ADR-010): type read from
+  the bytes (JPEG / WebP / PNG, never SVG), 3 MB cap, keys made by the server, private S3 bucket,
+  read through `/api/v1/photos/:id` (session checked) → a short-lived signed link.
 - CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
 - CSRF protection on all cookie-authenticated state changes.
 

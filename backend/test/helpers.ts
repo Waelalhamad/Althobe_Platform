@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { inject } from 'vitest';
 import { createDb, type Db } from '../src/shared/db.js';
+import { createMemoryStorage } from '../src/shared/storage.js';
 import type { UnitCostInput } from '../src/shared/money.js';
 import {
   ALL_PERMISSIONS,
@@ -31,6 +32,8 @@ export interface World {
 export interface TestContext {
   db: Db;
   services: Services;
+  /** Photo storage in memory, in place of S3. */
+  storage: ReturnType<typeof createMemoryStorage>;
   url: string;
   /** Wipes the test database and builds a fresh world. Call in beforeEach. */
   reset(): Promise<World>;
@@ -40,14 +43,17 @@ export interface TestContext {
 export function createTestContext(): TestContext {
   const url = inject('databaseUrl');
   const db = createDb(url);
-  const services = createServices(db);
+  const storage = createMemoryStorage();
+  const services = createServices(db, { storage });
 
   return {
     db,
     services,
+    storage,
     url,
     async reset() {
       await wipe(db);
+      storage.objects.clear();
       return buildWorld(db, services);
     },
     close: async () => db.$disconnect(),

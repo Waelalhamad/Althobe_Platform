@@ -72,13 +72,20 @@ const productSelect = {
   unitOfMeasure: true,
   isActive: true,
   optionGroups: { select: { groupId: true, group: { select: { sortOrder: true } } } },
+  photos: {
+    where: { deletedAt: null },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    take: 1,
+    select: { id: true },
+  },
 } satisfies Prisma.ProductSelect;
 
 type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
 
-function toProductView({ optionGroups, ...product }: ProductRow): ProductView {
+function toProductView({ optionGroups, photos, ...product }: ProductRow): ProductView {
   return {
     ...product,
+    mainPhotoId: photos[0]?.id ?? null,
     groupIds: [...optionGroups]
       .sort((a, b) => a.group.sortOrder - b.group.sortOrder)
       .map((g) => g.groupId),

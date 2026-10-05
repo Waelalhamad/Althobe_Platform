@@ -30,6 +30,8 @@ export interface VariantView {
   size: string | null;
   /** Selling prices (ADR-009); null = not priced yet. */
   prices: { retail: PriceView | null; wholesale: PriceView | null };
+  /** The product photo that shows this variant best (ADR-010); null if the product has none. */
+  photoId: string | null;
   product: {
     id: string;
     code: string;
@@ -49,6 +51,8 @@ export interface ProductView {
   isActive: boolean;
   /** The option types this product is made with, in type order. */
   groupIds: string[];
+  /** The first photo, shown in product lists; null if none. */
+  mainPhotoId: string | null;
 }
 
 export interface OptionValueView {

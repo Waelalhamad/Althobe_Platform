@@ -90,7 +90,9 @@ export async function buildServer(options: ServerOptions) {
       .send({ error: { code: 'INTERNAL', message: 'Unexpected server error' } });
   });
 
-  app.get('/api/v1/mode', () => ({ data: { practice: options.practice ?? false } }));
+  app.get('/api/v1/mode', () => ({
+    data: { practice: options.practice ?? false, photos: options.services.photos.enabled },
+  }));
 
   // The host's health check (Railway): a release goes live only once it can reach the database.
   app.get('/api/v1/health', async (request, reply) => {

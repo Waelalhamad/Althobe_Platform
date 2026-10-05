@@ -395,3 +395,35 @@ describe('adjustments, history and summary over HTTP', () => {
     expect(hidden[0]!.valueBaseAmount).toBeNull();
   });
 });
+
+describe('product photos over HTTP', () => {
+  it('uploads as JSON beyond the default body limit; the image link needs a session', async () => {
+    const shop = await login('shop@test.local');
+    const boss = await login('boss@test.local');
+    // ~1.5 MB of JPEG, base64 in JSON: over the 1 MB default, under the photo route's limit.
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1_500_000, 7)]);
+    const thumb = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(1000, 7)]);
+    const body = {
+      image: jpeg.toString('base64'),
+      thumb: thumb.toString('base64'),
+      width: 1200,
+      height: 1600,
+    };
+
+    expect((await call(shop, 'POST', `/products/${w.x.product.id}/photos`, body)).statusCode).toBe(
+      403,
+    );
+    const res = await call(boss, 'POST', `/products/${w.x.product.id}/photos`, body);
+    expect(res.statusCode).toBe(200);
+    const { id } = dataOf<{ id: string }>(res);
+
+    const anonymous = await app.inject({ method: 'GET', url: `/api/v1/photos/${id}?size=thumb` });
+    expect(anonymous.statusCode).toBe(401);
+    const link = await call(shop, 'GET', `/photos/${id}?size=thumb`);
+    expect(link.statusCode).toBe(302);
+    expect(link.headers.location).toMatch(/^memory:\/\/products\/.*-thumb\.jpg$/);
+
+    const mode = await call(shop, 'GET', '/mode');
+    expect(dataOf<{ photos: boolean }>(mode).photos).toBe(true);
+  });
+});

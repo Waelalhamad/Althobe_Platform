@@ -15,7 +15,9 @@ import { getRouteApi, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { api, type Money, type OptionGroup, type Product, type Variant } from '../api';
 import { errorText, formatPrice, fromMinorUnits, toMinorUnits } from '../format';
+import { PhotoThumb } from '../photo';
 import { can, meQuery, optionGroupsQuery, productsQuery, variantsQuery } from '../queries';
+import { ProductPhotos } from './ProductPhotos';
 
 const route = getRouteApi('/app/products/$productId');
 
@@ -64,6 +66,7 @@ export function ProductDetailPage() {
           canPrice={canPrice}
         />
       )}
+      <ProductPhotos productId={productId} groups={productGroups} canWrite={canWrite} />
       <VariantTable
         groups={productGroups}
         variants={variants}
@@ -399,6 +402,7 @@ function VariantTable({
   const [filters, setFilters] = useState<Record<string, string>>({});
   const valueOf = (v: Variant, groupId: string) =>
     v.options.find((o) => o.groupId === groupId)?.value ?? '—';
+  const withPhotos = variants.some((v) => v.photoId);
   const visible = variants.filter((v) =>
     Object.entries(filters).every(([groupId, value]) => !value || valueOf(v, groupId) === value),
   );
@@ -451,6 +455,7 @@ function VariantTable({
             <th className="p-3 text-start">الباركود</th>
             <th className="p-3 text-start">المفرق</th>
             <th className="p-3 text-start">الجملة</th>
+            {withPhotos && <th className="p-3 text-start">الصورة</th>}
             {canWrite && <th className="p-3" />}
           </tr>
         </thead>
@@ -470,6 +475,11 @@ function VariantTable({
               </td>
               <PriceCell variant={v} list="retail" editable={canPrice} />
               <PriceCell variant={v} list="wholesale" editable={canPrice} />
+              {withPhotos && (
+                <td className="p-2">
+                  <PhotoThumb id={v.photoId} size={44} />
+                </td>
+              )}
               {canWrite && (
                 <td className="p-2 text-end">
                   <Button
@@ -485,7 +495,7 @@ function VariantTable({
           ))}
           {variants.length === 0 && (
             <tr>
-              <td colSpan={groups.length + 5} className="p-6 text-center text-ink-muted">
+              <td colSpan={groups.length + 6} className="p-6 text-center text-ink-muted">
                 لا توجد أصناف بعد
               </td>
             </tr>

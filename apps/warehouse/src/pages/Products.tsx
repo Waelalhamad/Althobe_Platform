@@ -4,6 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { errorText } from '../format';
+import { PhotoThumb } from '../photo';
 import { can, meQuery, optionGroupsQuery, productsQuery } from '../queries';
 
 export function ProductsPage() {
@@ -18,6 +19,7 @@ export function ProductsPage() {
         <table className="w-full text-start">
           <thead className="bg-blush text-sm text-ink-muted">
             <tr>
+              <th className="w-16 p-3" />
               <th className="p-3 text-start">الرمز</th>
               <th className="p-3 text-start">الاسم</th>
               <th className="p-3 text-start">عدد الأصناف</th>
@@ -30,6 +32,9 @@ export function ProductsPage() {
                 key={p.id}
                 className={`border-t border-stone hover:bg-surface ${p.isActive ? '' : 'opacity-60'}`}
               >
+                <td className="p-2">
+                  <PhotoThumb id={p.mainPhotoId} size={44} />
+                </td>
                 <td className="p-3">
                   <Link
                     to="/products/$productId"
@@ -47,14 +52,14 @@ export function ProductsPage() {
             ))}
             {isLoading && (
               <tr>
-                <td colSpan={4} className="p-6 text-center text-ink-muted">
+                <td colSpan={5} className="p-6 text-center text-ink-muted">
                   جارٍ التحميل…
                 </td>
               </tr>
             )}
             {!isLoading && products.length === 0 && (
               <tr>
-                <td colSpan={4} className="p-6 text-center text-ink-muted">
+                <td colSpan={5} className="p-6 text-center text-ink-muted">
                   لا توجد منتجات بعد
                 </td>
               </tr>

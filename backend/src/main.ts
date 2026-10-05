@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { buildServer } from './http/server.js';
 import { createServices } from './services.js';
 import { createDb, pingDb } from './shared/db.js';
+import { createS3Storage } from './shared/storage.js';
 
 const envFile = join(import.meta.dirname, '..', '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -22,7 +23,10 @@ const port = Number(process.env.PORT ?? 3000);
 
 const db = createDb();
 const app = await buildServer({
-  services: createServices(db),
+  // Practice photos go under practice/ in the same bucket, apart from the real ones.
+  services: createServices(db, {
+    storage: createS3Storage(process.env, practice ? 'practice/' : undefined),
+  }),
   staticDir: join(import.meta.dirname, '..', '..', 'apps', 'warehouse', 'dist'),
   secureCookies: production,
   practice,

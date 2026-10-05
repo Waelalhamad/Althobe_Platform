@@ -113,6 +113,45 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       ),
     }));
 
+    // ── Product photos (ADR-010) ─────────────────────────────────────────────────────────────
+    priv.get('/products/:id/photos', async (request: Params<{ id: string }>) => ({
+      data: await s.photos.listPhotos(request.params.id, actorOf(request)),
+    }));
+
+    // A full image (≤ 3 MB) and its thumbnail, base64 in JSON: larger than the 1 MB default.
+    priv.post(
+      '/products/:id/photos',
+      { bodyLimit: 5_000_000 },
+      async (request: Params<{ id: string }>) => ({
+        data: await s.photos.uploadPhoto(
+          { ...(request.body as object), productId: request.params.id } as never,
+          actorOf(request),
+        ),
+      }),
+    );
+
+    priv.patch('/photos/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.photos.updatePhoto(request.params.id, request.body as never, actorOf(request)),
+    }));
+
+    priv.delete('/photos/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.photos.deletePhoto(request.params.id, actorOf(request)),
+    }));
+
+    // <img src="/api/v1/photos/:id?size=thumb">: checks the session, then sends the browser to a
+    // short-lived signed S3 link. The bucket itself is private.
+    priv.get(
+      '/photos/:id',
+      async (
+        request: FastifyRequest<{ Params: { id: string }; Querystring: { size?: string } }>,
+        reply,
+      ) => {
+        const size = request.query.size === 'thumb' ? 'thumb' : 'full';
+        const url = await s.photos.photoUrl(request.params.id, size, actorOf(request));
+        return reply.header('cache-control', 'private, max-age=300').redirect(url, 302);
+      },
+    );
+
     // Option types (القصة، الزر، …) and their values.
     priv.get('/option-groups', async (request) => ({
       data: await s.catalogue.listOptionGroups(actorOf(request)),
