@@ -50,6 +50,12 @@ export class OptionCodeTakenError extends DomainError {
   }
 }
 
+export class OptionValueTooDeepError extends DomainError {
+  constructor() {
+    super('OPTION_VALUE_TOO_DEEP', 'Details go at most three levels deep');
+  }
+}
+
 /** Option types that are unknown or inactive, given to a product. */
 export class InvalidOptionGroupsError extends DomainError {
   constructor(groupIds: string[]) {

@@ -61,3 +61,11 @@ product code followed by its values' codes in type order: `THB-SA-RY-MD-SN-JH-WH
 - A SKU is fixed when the variant is created (it is printed on labels): renaming a code changes the
   SKUs of variants created afterwards only. If a SKU would repeat, `-2`, `-3`, … is appended.
 - The barcode stays a plain database sequence with no meaning (ADR-003).
+
+## Amendment — 2026-10-10: details under a value
+
+A value can have **details** of the same type, up to three levels: القماش → جوخ هندي → مونس /
+مشخط / ساده. A value with active details is a heading: a variant is made of one of its details,
+reads with the whole path ("جوخ هندي مشخط") and its SKU segment joins the codes (`JHST`). Names and
+codes are unique among siblings, so ساده may exist under two fabrics. A photo tagged with a heading
+matches all of its details.

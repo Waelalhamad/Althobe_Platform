@@ -13,6 +13,7 @@ import {
   InvalidSelectionError,
   OptionCodeTakenError,
   OptionGroupInUseError,
+  OptionValueTooDeepError,
   OptionGroupTakenError,
   OptionValueTakenError,
   ProductCodeTakenError,
@@ -241,18 +242,37 @@ export function createCatalogueService(db: Db) {
             code: true,
             isActive: true,
             group: { select: { isActive: true, sortOrder: true, nameAr: true } },
+            parent: {
+              select: {
+                code: true,
+                isActive: true,
+                parent: { select: { code: true, isActive: true } },
+              },
+            },
+            details: { where: { isActive: true }, select: { id: true }, take: 1 },
           },
         });
         const byId = new Map(values.map((v) => [v.id, v]));
         const invalid = data.selections.flatMap((s) =>
           s.valueIds.filter((valueId) => {
             const v = byId.get(valueId);
-            return !v || v.groupId !== s.groupId || !v.isActive || !v.group.isActive;
+            const ancestorsActive =
+              (v?.parent?.isActive ?? true) && (v?.parent?.parent?.isActive ?? true);
+            return (
+              !v || v.groupId !== s.groupId || !v.isActive || !ancestorsActive || !v.group.isActive
+            );
           }),
         );
         if (invalid.length) {
           throw new InvalidSelectionError('Unknown, inactive, or misplaced option values', {
             valueIds: invalid,
+          });
+        }
+        // A value with details is a heading: the variant is made of one of its details.
+        const headings = values.filter((v) => v.details.length > 0).map((v) => v.id);
+        if (headings.length) {
+          throw new InvalidSelectionError('Choose a detail of these values', {
+            valueIds: headings,
           });
         }
 
@@ -285,7 +305,8 @@ export function createCatalogueService(db: Db) {
                   a.group.sortOrder - b.group.sortOrder ||
                   a.group.nameAr.localeCompare(b.group.nameAr),
               )
-              .map((v) => v.code),
+              // A detail's code follows its parent's: جوخ هندي مشخط → JHST.
+              .map((v) => (v.parent?.parent?.code ?? '') + (v.parent?.code ?? '') + v.code),
           );
         const wanted = fresh.map(skuOf);
         const usedSkus = new Set(
@@ -502,14 +523,25 @@ export function createCatalogueService(db: Db) {
         return await inTransaction(db, async (tx) => {
           const group = await tx.optionGroup.findUnique({ where: { id: data.groupId } });
           if (!group) throw new NotFoundError('option_group', data.groupId);
+          const parentId = data.parentId ?? null;
+          if (parentId) {
+            const parent = await tx.optionValue.findFirst({
+              where: { id: parentId, groupId: data.groupId },
+              select: { parent: { select: { parentId: true } } },
+            });
+            if (!parent) throw new NotFoundError('option_value', parentId);
+            // Three levels at most: type value → detail → detail of the detail.
+            if (parent.parent?.parentId) throw new OptionValueTooDeepError();
+          }
+          const siblings = { groupId: data.groupId, parentId };
           const last = await tx.optionValue.aggregate({
-            where: { groupId: data.groupId },
+            where: siblings,
             _max: { sortOrder: true },
           });
           const codes = new Set(
             (
               await tx.optionValue.findMany({
-                where: { groupId: data.groupId },
+                where: siblings,
                 select: { code: true },
               })
             ).map((v) => v.code),
@@ -518,12 +550,20 @@ export function createCatalogueService(db: Db) {
           const value = await tx.optionValue.create({
             data: {
               groupId: data.groupId,
+              parentId,
               valueAr: data.valueAr,
               // Without a code, a suggestion from the Arabic name, made unique in its type.
               code: data.code ?? freeCode(suggestCode(data.valueAr), codes),
               sortOrder: (last._max.sortOrder ?? 0) + 10,
             },
-            select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
+            select: {
+              id: true,
+              parentId: true,
+              valueAr: true,
+              code: true,
+              sortOrder: true,
+              isActive: true,
+            },
           });
           await writeAudit(tx, {
             actorId: ctx.userId,
@@ -557,14 +597,14 @@ export function createCatalogueService(db: Db) {
           if (!before) throw new NotFoundError('option_value', id);
           if (data.code !== undefined && data.code !== before.code) {
             const clash = await tx.optionValue.findFirst({
-              where: { groupId: before.groupId, code: data.code },
+              where: { groupId: before.groupId, parentId: before.parentId, code: data.code },
             });
             if (clash) throw new OptionCodeTakenError(data.code);
           }
 
           if (data.move) {
             const siblings = await tx.optionValue.findMany({
-              where: { groupId: before.groupId },
+              where: { groupId: before.groupId, parentId: before.parentId },
               orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
               select: { id: true },
             });
@@ -582,7 +622,14 @@ export function createCatalogueService(db: Db) {
               ...(data.code !== undefined ? { code: data.code } : {}),
               ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
             },
-            select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
+            select: {
+              id: true,
+              parentId: true,
+              valueAr: true,
+              code: true,
+              sortOrder: true,
+              isActive: true,
+            },
           });
           await writeAudit(tx, {
             actorId: ctx.userId,

@@ -359,6 +359,49 @@ describe('catalogue — codes and barcodes', () => {
     expect(again.created[0]!.sku).toBe('THB-QTN-KHL-56-2');
   });
 
+  it('values can have details: the variant picks a detail, and reads and codes the whole path', async () => {
+    const jokh = w.options.fabric.values.find((v) => v.valueAr === 'جوخ هندي')!;
+    const cotton = w.options.fabric.values.find((v) => v.valueAr === 'قطني')!;
+    const detail = async (parentId: string, valueAr: string) =>
+      catalogue.addOptionValue({ groupId: w.options.fabric.id, parentId, valueAr }, w.owner);
+    await detail(jokh.id, 'مونس');
+    const striped = await detail(jokh.id, 'مشخط');
+    await detail(jokh.id, 'ساده');
+    // The same name under another fabric is fine; twice under one is not.
+    await detail(cotton.id, 'ساده');
+    await expect(detail(jokh.id, 'ساده')).rejects.toMatchObject({ code: 'OPTION_VALUE_TAKEN' });
+
+    const selections = (fabricValueId: string) => [
+      { groupId: w.options.fabric.id, valueIds: [fabricValueId] },
+      pick(w.options.colour, 'أبيض'),
+      pick(w.options.size, '54'),
+    ];
+    // جوخ هندي now has details: it is a heading, not something a piece is made of.
+    await expect(
+      catalogue.generateVariants(
+        { productId: w.x.product.id, selections: selections(jokh.id) },
+        w.owner,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
+
+    const { created } = await catalogue.generateVariants(
+      { productId: w.x.product.id, selections: selections(striped.id) },
+      w.owner,
+    );
+    expect(created[0]!.title).toBe('جوخ هندي مشخط · أبيض · 54');
+    expect(created[0]!.sku).toBe(`THB-TEST-JH${striped.code}-ABY-54`);
+    expect(await catalogue.searchVariants({ q: 'جوخ' }, w.owner)).toHaveLength(1);
+
+    // Three levels at most.
+    const fine = await detail(striped.id, 'رفيع');
+    await expect(detail(fine.id, 'جداً')).rejects.toMatchObject({ code: 'OPTION_VALUE_TOO_DEEP' });
+    const groups = await catalogue.listOptionGroups(w.owner);
+    expect(
+      groups.find((g) => g.id === w.options.fabric.id)!.values.find((v) => v.id === fine.id)!
+        .parentId,
+    ).toBe(striped.id);
+  });
+
   it('refuses a duplicate product code and units other than PIECE', async () => {
     await expect(
       catalogue.createProduct({ code: 'THB-TEST', nameAr: 'مكرر' }, w.owner),

@@ -14,7 +14,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { api, type Money, type OptionGroup, type Product, type Variant } from '../api';
-import { errorText, formatPrice, fromMinorUnits, toMinorUnits } from '../format';
+import {
+  choosableValues,
+  errorText,
+  formatPrice,
+  fromMinorUnits,
+  toMinorUnits,
+  valueLabel,
+} from '../format';
 import { PhotoThumb } from '../photo';
 import { can, meQuery, optionGroupsQuery, productsQuery, variantsQuery } from '../queries';
 import { ProductPhotos } from './ProductPhotos';
@@ -224,7 +231,8 @@ function GroupPicker({
 }) {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState('');
-  const active = group.values.filter((v) => v.isActive);
+  // Details, not their headings: جوخ هندي مونس / مشخط / ساده rather than جوخ هندي.
+  const active = choosableValues(group);
   const allChosen = active.length > 0 && active.every((v) => chosen.includes(v.id));
 
   // A value missing from the list is added right here, then picked.
@@ -264,7 +272,7 @@ function GroupPicker({
             disabled={!group.isActive}
             onClick={() => onToggle(v.id)}
           >
-            {v.valueAr}
+            {valueLabel(group, v)}
           </Chip>
         ))}
         {group.isActive && (

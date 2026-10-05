@@ -80,6 +80,8 @@ export const updateOptionGroupSchema = z
 /** Without a code, one is suggested from the Arabic name (كحلي → KHL). */
 export const addOptionValueSchema = z.object({
   groupId: z.uuid(),
+  /** Add it as a detail of this value (جوخ هندي → مشخط). */
+  parentId: z.uuid().optional(),
   valueAr: label,
   code: valueCode.optional(),
 });

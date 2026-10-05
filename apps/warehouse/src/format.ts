@@ -3,6 +3,8 @@ import {
   type Currency,
   type LocationKind,
   type Money,
+  type OptionGroup,
+  type OptionValue,
   type SessionKind,
   type Variant,
 } from './api';
@@ -34,6 +36,7 @@ const ERRORS: Record<string, string> = {
   INVALID_PHOTO_TAGS: 'لا يمكن ربط الصورة بقيمة ليست من خيارات هذا المنتج',
   OPTION_GROUP_TAKEN: 'يوجد نوع خيار بهذا الاسم',
   OPTION_VALUE_TAKEN: 'هذه القيمة موجودة مسبقاً',
+  OPTION_VALUE_TOO_DEEP: 'التفاصيل حتى ثلاثة مستويات فقط',
   OPTION_CODE_TAKEN: 'هذا الرمز مستخدم لقيمة أخرى في نفس النوع',
   INVALID_OPTION_GROUPS: 'نوع خيار غير معروف أو موقوف',
   OPTION_GROUP_IN_USE: 'لا يمكن إزالة هذا النوع: أصناف هذا المنتج تستخدمه',
@@ -142,4 +145,35 @@ export const splitList = (text: string) =>
 /** "ثوب عربي · سعودية · ملكي · 56" — the product name plus every chosen option. */
 export function variantName(v: Pick<Variant, 'title' | 'product'>): string {
   return v.title ? `${v.product.nameAr} · ${v.title}` : v.product.nameAr;
+}
+
+/** "جوخ هندي مشخط": a value read with what it details. */
+export function valueLabel(group: OptionGroup, value: OptionValue): string {
+  const parts = [value.valueAr];
+  for (let p = value.parentId; p;) {
+    const parent = group.values.find((v) => v.id === p);
+    if (!parent) break;
+    parts.unshift(parent.valueAr);
+    p = parent.parentId;
+  }
+  return parts.join(' ');
+}
+
+/**
+ * What a piece can be made of: active values without active details (a value with details is a
+ * heading), whose headings are active too. In list order, details right after their heading.
+ */
+export function choosableValues(group: OptionGroup): OptionValue[] {
+  const active = (v: OptionValue): boolean =>
+    v.isActive && (!v.parentId || active(group.values.find((p) => p.id === v.parentId)!));
+  const out: OptionValue[] = [];
+  const walk = (parentId: string | null) => {
+    for (const v of group.values.filter((x) => x.parentId === parentId && active(x))) {
+      const details = group.values.filter((d) => d.parentId === v.id && d.isActive);
+      if (details.length) walk(v.id);
+      else out.push(v);
+    }
+  };
+  walk(null);
+  return out;
 }

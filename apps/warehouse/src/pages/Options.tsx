@@ -1,8 +1,8 @@
 import { Alert, Button, Card, Chip, Input, PageTitle } from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { api, type Move, type OptionGroup } from '../api';
-import { errorText, splitList } from '../format';
+import { api, type Move, type OptionGroup, type OptionValue } from '../api';
+import { errorText, splitList, valueLabel } from '../format';
 import { can, meQuery, optionGroupsQuery } from '../queries';
 
 // The owner's lists: القصة، الزر، السحاب، الكم، القماش، اللون، القياس — and any type added later.
@@ -64,6 +64,14 @@ function GroupCard({
   const [newValues, setNewValues] = useState('');
   const selectedValue = group.values.find((v) => v.id === selected);
   const visible = group.values.filter((v) => editable || v.isActive);
+  const siblingsOf = (value: OptionValue) =>
+    group.values.filter((v) => v.parentId === value.parentId);
+  const depthOf = (value: OptionValue) => {
+    let depth = 1;
+    for (let p = value.parentId; p; depth++)
+      p = group.values.find((v) => v.id === p)?.parentId ?? null;
+    return depth;
+  };
 
   const moveGroup = (move: Move) =>
     edit.mutate(async () => api.updateOptionGroup(group.id, { move }));
@@ -135,23 +143,39 @@ function GroupCard({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {visible.map((v) => (
-          <Chip
-            key={v.id}
-            selected={v.id === selected}
-            disabled={!editable}
-            className={v.isActive ? '' : 'line-through opacity-60'}
-            onClick={() => setSelected(v.id === selected ? null : v.id)}
+      {/* Top-level values, then a row of details under each value that has them. */}
+      {[null, ...visible.map((v) => v.id)].map((parentId) => {
+        const row = visible.filter((v) => v.parentId === parentId);
+        if (parentId !== null && row.length === 0) return null;
+        const heading = parentId && group.values.find((v) => v.id === parentId);
+        return (
+          <div
+            key={parentId ?? 'top'}
+            className={`flex flex-wrap items-center gap-2 ${heading ? 'mt-2 ps-4' : ''}`}
           >
-            {v.valueAr}{' '}
-            <span dir="ltr" className="font-mono text-xs opacity-70">
-              {v.code}
-            </span>
-          </Chip>
-        ))}
-        {visible.length === 0 && <span className="text-ink-muted">لا توجد قيم بعد</span>}
-      </div>
+            {heading && (
+              <span className="text-sm text-ink-muted">↲ تفاصيل {valueLabel(group, heading)}:</span>
+            )}
+            {row.map((v) => (
+              <Chip
+                key={v.id}
+                selected={v.id === selected}
+                disabled={!editable}
+                className={v.isActive ? '' : 'line-through opacity-60'}
+                onClick={() => setSelected(v.id === selected ? null : v.id)}
+              >
+                {v.valueAr}{' '}
+                <span dir="ltr" className="font-mono text-xs opacity-70">
+                  {v.code}
+                </span>
+              </Chip>
+            ))}
+            {parentId === null && row.length === 0 && (
+              <span className="text-ink-muted">لا توجد قيم بعد</span>
+            )}
+          </div>
+        );
+      })}
 
       {editable && selectedValue && (
         <ValueActions
@@ -159,11 +183,22 @@ function GroupCard({
           valueAr={selectedValue.valueAr}
           code={selectedValue.code}
           isActive={selectedValue.isActive}
-          first={group.values[0]?.id === selectedValue.id}
-          last={group.values.at(-1)?.id === selectedValue.id}
+          first={siblingsOf(selectedValue)[0]?.id === selectedValue.id}
+          last={siblingsOf(selectedValue).at(-1)?.id === selectedValue.id}
           busy={edit.isPending}
           onUpdate={(patch) =>
             edit.mutate(async () => api.updateOptionValue(selectedValue.id, patch))
+          }
+          // Three levels at most: a detail of a detail takes no further details.
+          onAddDetails={
+            depthOf(selectedValue) < 3
+              ? (names) =>
+                  edit.mutate(async () => {
+                    for (const name of names) {
+                      await api.addOptionValue(group.id, name, selectedValue.id);
+                    }
+                  })
+              : undefined
           }
         />
       )}
@@ -192,6 +227,7 @@ function GroupCard({
 function ValueActions({
   valueAr,
   code,
+  onAddDetails,
   isActive,
   first,
   last,
@@ -205,8 +241,10 @@ function ValueActions({
   last: boolean;
   busy: boolean;
   onUpdate: (patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move }) => void;
+  onAddDetails: ((names: string[]) => void) | undefined;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [details, setDetails] = useState('');
   const [recoding, setRecoding] = useState(false);
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-blush p-2">
@@ -265,6 +303,28 @@ function ValueActions({
           >
             {isActive ? 'إخفاء' : 'إظهار'}
           </Button>
+          {onAddDetails && (
+            <form
+              className="flex min-w-64 flex-1 gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const names = splitList(details);
+                if (names.length) {
+                  onAddDetails(names);
+                  setDetails('');
+                }
+              }}
+            >
+              <Input
+                value={details}
+                onChange={(e) => setDetails(e.target.value)}
+                placeholder={`تفاصيل تحت «${valueAr}»، مثل: مونس، مشخط، ساده`}
+              />
+              <Button type="submit" variant="secondary" disabled={!details.trim() || busy}>
+                إضافة تفاصيل
+              </Button>
+            </form>
+          )}
         </>
       )}
     </div>

@@ -78,6 +78,8 @@ export interface Variant {
 
 export interface OptionValue {
   id: string;
+  /** The value this one details (جوخ هندي for مشخط); null at the top. */
+  parentId: string | null;
   valueAr: string;
   /** Short Latin code the SKU is built from (سعودية → SA). */
   code: string;
@@ -323,8 +325,11 @@ export const api = {
     id: string,
     patch: { nameAr?: string; isActive?: boolean; move?: Move },
   ) => request<OptionGroup>('PATCH', `/option-groups/${id}`, patch),
-  addOptionValue: async (groupId: string, valueAr: string) =>
-    post<OptionValue>(`/option-groups/${groupId}/values`, { valueAr }),
+  addOptionValue: async (groupId: string, valueAr: string, parentId?: string) =>
+    post<OptionValue>(`/option-groups/${groupId}/values`, {
+      valueAr,
+      ...(parentId ? { parentId } : {}),
+    }),
   updateOptionValue: async (
     id: string,
     patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move },

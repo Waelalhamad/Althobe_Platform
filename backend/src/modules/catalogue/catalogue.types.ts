@@ -57,6 +57,8 @@ export interface ProductView {
 
 export interface OptionValueView {
   id: string;
+  /** The value this one details (جوخ هندي for مشخط); null at the top. */
+  parentId: string | null;
   valueAr: string;
   /** Short Latin code the SKU is built from. */
   code: string;

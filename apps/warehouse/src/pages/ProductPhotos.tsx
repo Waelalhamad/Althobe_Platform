@@ -2,7 +2,7 @@ import { Alert, Button, Card, Chip, ConfirmButton } from '@althobe/ui/components
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api, type OptionGroup, type Photo } from '../api';
-import { errorText } from '../format';
+import { errorText, valueLabel } from '../format';
 import { photoSrc, shrinkPhoto } from '../photo';
 import { modeQuery, photosQuery } from '../queries';
 
@@ -94,9 +94,9 @@ export function ProductPhotos({
 
 const tagNames = (photo: Photo, groups: OptionGroup[]) =>
   groups
-    .flatMap((g) => g.values)
-    .filter((v) => photo.valueIds.includes(v.id))
-    .map((v) => v.valueAr)
+    .flatMap((g) =>
+      g.values.filter((v) => photo.valueIds.includes(v.id)).map((v) => valueLabel(g, v)),
+    )
     .join(' · ');
 
 /** Several photos at once, from the gallery or the phone camera; shrunk, then sent one by one. */
@@ -225,7 +225,7 @@ function PhotoEditor({
                   disabled={update.isPending}
                   onClick={() => toggleTag(v.id)}
                 >
-                  {v.valueAr}
+                  {valueLabel(g, v)}
                 </Chip>
               ))}
           </div>

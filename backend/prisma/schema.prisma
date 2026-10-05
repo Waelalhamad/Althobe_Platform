@@ -244,8 +244,10 @@ model OptionGroup {
 model OptionValue {
   id        String   @id @default(uuid(7)) @db.Uuid
   groupId   String   @map("group_id") @db.Uuid
+  // A detail of another value of the same type (جوخ هندي → مشخط); null at the top. Up to 3 levels.
+  parentId  String?  @map("parent_id") @db.Uuid
   valueAr   String   @map("value_ar")
-  // Short Latin code the SKU is built from (سعودية → SA); unique within its type.
+  // Short Latin code the SKU is built from (سعودية → SA); unique among its siblings.
   code      String
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
@@ -253,13 +255,18 @@ model OptionValue {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   group         OptionGroup          @relation(fields: [groupId], references: [id])
+  // Composite: a detail always sits under a value of its own type.
+  parent        OptionValue?         @relation("OptionValueDetails", fields: [parentId, groupId], references: [id, groupId])
+  details       OptionValue[]        @relation("OptionValueDetails")
   variantValues VariantOptionValue[]
   photoValues   ProductPhotoValue[]
 
-  @@unique([groupId, valueAr], map: "uq_option_values_group_value")
-  @@unique([groupId, code], map: "uq_option_values_group_code")
+  // NULLS NOT DISTINCT in the migration: two top-level values may not share a name or code.
+  @@unique([groupId, parentId, valueAr], map: "uq_option_values_group_parent_value")
+  @@unique([groupId, parentId, code], map: "uq_option_values_group_parent_code")
   // Target of the composite foreign key that keeps a variant's value under the right type.
   @@unique([id, groupId], map: "uq_option_values_id_group")
+  @@index([parentId], map: "idx_option_values_parent_id")
   @@map("option_values")
 }
 

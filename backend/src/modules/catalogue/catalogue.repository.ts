@@ -2,6 +2,22 @@ import type { PriceList, Prisma } from '@prisma/client';
 import type { Queryable, Tx } from '../../shared/db.js';
 import type { OptionGroupView, PriceView, VariantView } from './catalogue.types.js';
 
+const valueFields = { id: true, valueAr: true, sortOrder: true } as const;
+
+interface ValueNode {
+  id: string;
+  valueAr: string;
+  sortOrder: number;
+  parent?: ValueNode | null;
+}
+
+/** Top-down: [جوخ هندي, مشخط]. */
+function pathOf(value: ValueNode): ValueNode[] {
+  const path: ValueNode[] = [];
+  for (let v: ValueNode | null | undefined = value; v; v = v.parent) path.unshift(v);
+  return path;
+}
+
 const variantSelect = {
   id: true,
   sku: true,
@@ -26,7 +42,13 @@ const variantSelect = {
     select: {
       groupId: true,
       group: { select: { key: true, nameAr: true, sortOrder: true } },
-      value: { select: { id: true, valueAr: true, sortOrder: true } },
+      // The value and up to two levels above it (جوخ هندي → مشخط).
+      value: {
+        select: {
+          ...valueFields,
+          parent: { select: { ...valueFields, parent: { select: valueFields } } },
+        },
+      },
     },
   },
 } satisfies Prisma.ProductVariantSelect;
@@ -40,25 +62,31 @@ function toView(row: VariantRow): VariantView {
   const sorted = [...row.optionValues].sort(
     (a, b) => a.group.sortOrder - b.group.sortOrder || a.group.nameAr.localeCompare(b.group.nameAr),
   );
-  const options = sorted.map((o) => ({
-    groupId: o.groupId,
-    groupKey: o.group.key,
-    group: o.group.nameAr,
-    valueId: o.value.id,
-    value: o.value.valueAr,
-  }));
+  const options = sorted.map((o) => {
+    const path = pathOf(o.value);
+    return {
+      groupId: o.groupId,
+      groupKey: o.group.key,
+      group: o.group.nameAr,
+      valueId: o.value.id,
+      // A detail reads with what it details: "جوخ هندي مشخط".
+      value: path.map((v) => v.valueAr).join(' '),
+      pathIds: path.map((v) => v.id),
+    };
+  });
   return {
     id: row.id,
     sku: row.sku,
     barcode: row.barcode,
     isActive: row.isActive,
-    options,
+    options: options.map(({ pathIds: _, ...option }) => option),
     title: options.map((o) => o.value).join(' · '),
     size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
     prices: { retail: priceOn(row, 'RETAIL'), wholesale: priceOn(row, 'WHOLESALE') },
+    // A photo tagged جوخ هندي shows every جوخ هندي detail.
     photoId: bestPhoto(
       photos,
-      options.map((o) => o.valueId),
+      options.flatMap((o) => o.pathIds),
     ),
     product,
   };
@@ -93,7 +121,7 @@ function compareVariants(a: VariantRow, b: VariantRow): number {
   const order = (row: VariantRow) =>
     [...row.optionValues]
       .sort((x, y) => x.group.sortOrder - y.group.sortOrder)
-      .map((o) => o.value.sortOrder);
+      .flatMap((o) => pathOf(o.value).map((v) => v.sortOrder));
   const [x, y] = [order(a), order(b)];
   for (let i = 0; i < Math.min(x.length, y.length); i++) {
     if (x[i] !== y[i]) return x[i]! - y[i]!;
@@ -151,7 +179,18 @@ export async function searchVariants(
               { sku: { contains: text, mode: 'insensitive' } },
               { barcode: { startsWith: text } },
               { product: { nameAr: { contains: text, mode: 'insensitive' } } },
-              { optionValues: { some: { value: { valueAr: { contains: text } } } } },
+              {
+                optionValues: {
+                  some: {
+                    value: {
+                      OR: [
+                        { valueAr: { contains: text } },
+                        { parent: { valueAr: { contains: text } } },
+                      ],
+                    },
+                  },
+                },
+              },
             ],
           }
         : {}),
@@ -174,7 +213,14 @@ export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]>
       isActive: true,
       values: {
         orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
-        select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
+        select: {
+          id: true,
+          parentId: true,
+          valueAr: true,
+          code: true,
+          sortOrder: true,
+          isActive: true,
+        },
       },
     },
   });
