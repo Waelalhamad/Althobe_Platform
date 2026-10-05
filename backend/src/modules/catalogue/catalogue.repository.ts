@@ -174,7 +174,7 @@ export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]>
       isActive: true,
       values: {
         orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
-        select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+        select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
       },
     },
   });

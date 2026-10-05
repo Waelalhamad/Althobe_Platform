@@ -105,7 +105,7 @@ describe('product photos', () => {
 
     const photo = await upload();
     const otherType = await t.db.optionGroup.create({
-      data: { nameAr: 'الياقة', values: { create: [{ valueAr: 'عالية' }] } },
+      data: { nameAr: 'الياقة', values: { create: [{ valueAr: 'عالية', code: 'HI' }] } },
       select: { values: { select: { id: true } } },
     });
     await expect(

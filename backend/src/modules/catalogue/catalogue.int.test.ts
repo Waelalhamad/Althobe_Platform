@@ -45,8 +45,16 @@ describe('catalogue — variants from option types', () => {
     for (const v of created) {
       expect(isValidEan13(v.barcode)).toBe(true);
       expect(v.barcode.startsWith('200')).toBe(true);
-      expect(v.sku).toMatch(/^THB-NEW-\d{6,}$/);
     }
+    // Readable SKU: the product code, then each value's code in type order.
+    expect(created.map((v) => v.sku)).toEqual([
+      'THB-NEW-QTN-ABY-54',
+      'THB-NEW-QTN-ABY-56',
+      'THB-NEW-QTN-ABY-58',
+      'THB-NEW-QTN-ASW-54',
+      'THB-NEW-QTN-ASW-56',
+      'THB-NEW-QTN-ASW-58',
+    ]);
     // Listed in option order; each variant reads in type order.
     expect(created.map((v) => v.title)).toEqual([
       'قطني · أبيض · 54',
@@ -141,6 +149,7 @@ describe('catalogue — variants from option types', () => {
         data: Array.from({ length: count }, (_, i) => ({
           groupId,
           valueAr: `${prefix}${i}`,
+          code: `${prefix}${i}`,
           sortOrder: 1000 + i,
         })),
       });
@@ -295,6 +304,59 @@ describe('catalogue — codes and barcodes', () => {
     const first = await catalogue.createProduct({ nameAr: 'ثوب' }, w.owner);
     const second = await catalogue.createProduct({ nameAr: 'كلابية' }, w.owner);
     expect([first.code, second.code]).toEqual(['P-0001', 'P-0003']);
+  });
+
+  it('suggests a code for a new value, refuses a taken one, and keeps SKUs unique', async () => {
+    const navy = await catalogue.addOptionValue(
+      { groupId: w.options.colour.id, valueAr: 'كحلي' },
+      w.owner,
+    );
+    expect(navy.code).toBe('KHL');
+    await expect(
+      catalogue.addOptionValue(
+        { groupId: w.options.colour.id, valueAr: 'كحلي غامق', code: 'khl' },
+        w.owner,
+      ),
+    ).rejects.toMatchObject({ code: 'OPTION_CODE_TAKEN' });
+    await expect(
+      catalogue.updateOptionValue(navy.id, { code: 'ABY' }, w.owner),
+    ).rejects.toMatchObject({ code: 'OPTION_CODE_TAKEN' });
+
+    // The product code renamed to something meaningful: new SKUs use it, existing ones stay.
+    const product = await catalogue.updateProduct(w.x.product.id, { code: 'thb' }, w.owner);
+    expect(product.code).toBe('THB');
+    const { created } = await catalogue.generateVariants(
+      {
+        productId: w.x.product.id,
+        selections: [
+          pick(w.options.fabric, 'قطني'),
+          { groupId: w.options.colour.id, valueIds: [navy.id] },
+          pick(w.options.size, '56'),
+        ],
+      },
+      w.owner,
+    );
+    expect(created[0]!.sku).toBe('THB-QTN-KHL-56');
+    expect((await catalogue.getVariant(w.x.id, w.owner)).sku).toBe(w.x.sku);
+
+    // A code renamed and then reused would repeat a SKU: the new one gets -2.
+    await catalogue.updateOptionValue(navy.id, { code: 'NV' }, w.owner);
+    const indigo = await catalogue.addOptionValue(
+      { groupId: w.options.colour.id, valueAr: 'نيلي', code: 'KHL' },
+      w.owner,
+    );
+    const again = await catalogue.generateVariants(
+      {
+        productId: w.x.product.id,
+        selections: [
+          pick(w.options.fabric, 'قطني'),
+          { groupId: w.options.colour.id, valueIds: [indigo.id] },
+          pick(w.options.size, '56'),
+        ],
+      },
+      w.owner,
+    );
+    expect(again.created[0]!.sku).toBe('THB-QTN-KHL-56-2');
   });
 
   it('refuses a duplicate product code and units other than PIECE', async () => {

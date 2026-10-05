@@ -11,6 +11,7 @@ import {
   InvalidBarcodeError,
   InvalidOptionGroupsError,
   InvalidSelectionError,
+  OptionCodeTakenError,
   OptionGroupInUseError,
   OptionGroupTakenError,
   OptionValueTakenError,
@@ -19,6 +20,7 @@ import {
   TooManyCombinationsError,
 } from './catalogue.errors.js';
 import * as repo from './catalogue.repository.js';
+import { buildSku, freeCode, suggestCode } from './sku.js';
 import {
   addOptionValueSchema,
   createOptionGroupSchema,
@@ -145,6 +147,11 @@ export function createCatalogueService(db: Db) {
           await tx.product.findUniqueOrThrow({ where: { id }, select: productSelect }),
         );
 
+        if (data.code !== undefined && data.code !== before.code) {
+          const clash = await tx.product.findUnique({ where: { code: data.code } });
+          if (clash) throw new ProductCodeTakenError(data.code);
+        }
+
         if (data.groupIds) {
           // A type the product already has stays allowed even if it was deactivated since.
           const groupIds = await resolveGroups(tx, data.groupIds, new Set(before.groupIds));
@@ -172,6 +179,7 @@ export function createCatalogueService(db: Db) {
           await tx.product.update({
             where: { id },
             data: {
+              ...(data.code !== undefined ? { code: data.code } : {}),
               ...(data.nameAr !== undefined ? { nameAr: data.nameAr } : {}),
               ...(data.nameEn !== undefined ? { nameEn: data.nameEn } : {}),
               ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
@@ -230,8 +238,9 @@ export function createCatalogueService(db: Db) {
           select: {
             id: true,
             groupId: true,
+            code: true,
             isActive: true,
-            group: { select: { isActive: true } },
+            group: { select: { isActive: true, sortOrder: true, nameAr: true } },
           },
         });
         const byId = new Map(values.map((v) => [v.id, v]));
@@ -264,18 +273,43 @@ export function createCatalogueService(db: Db) {
           (combo) => !taken.has(optionKey(combo)),
         );
 
-        const sequences = fresh.length ? await repo.nextBarcodeSequences(tx, fresh.length) : [];
-        const rows = fresh.map((combo, i) => {
-          const sequence = sequences[i]!;
-          return {
-            productId: data.productId,
-            optionKey: optionKey(combo),
-            barcode: buildInternalBarcode(BARCODE_ENTITY.variant, sequence),
-            // Human-readable, ASCII, unique. Options live in their own tables (they are Arabic),
-            // so the SKU does not try to encode them.
-            sku: `${product.code}-${sequence.toString().padStart(6, '0')}`,
-          };
+        // SKU: the product code and each value's code, in type order (THB-SA-RY-…-56). A SKU
+        // already in use (a code renamed and reused) gets -2, -3, … so it stays unique.
+        const skuOf = (combo: string[]) =>
+          buildSku(
+            product.code,
+            combo
+              .map((id) => byId.get(id)!)
+              .sort(
+                (a, b) =>
+                  a.group.sortOrder - b.group.sortOrder ||
+                  a.group.nameAr.localeCompare(b.group.nameAr),
+              )
+              .map((v) => v.code),
+          );
+        const wanted = fresh.map(skuOf);
+        const usedSkus = new Set(
+          (
+            await tx.productVariant.findMany({
+              where: { OR: wanted.map((sku) => ({ sku: { startsWith: sku } })) },
+              select: { sku: true },
+            })
+          ).map((v) => v.sku),
+        );
+        const skus = wanted.map((sku) => {
+          let unique = sku;
+          for (let n = 2; usedSkus.has(unique); n++) unique = `${sku}-${n}`;
+          usedSkus.add(unique);
+          return unique;
         });
+
+        const sequences = fresh.length ? await repo.nextBarcodeSequences(tx, fresh.length) : [];
+        const rows = fresh.map((combo, i) => ({
+          productId: data.productId,
+          optionKey: optionKey(combo),
+          barcode: buildInternalBarcode(BARCODE_ENTITY.variant, sequences[i]!),
+          sku: skus[i]!,
+        }));
         if (rows.length) {
           const inserted = await tx.productVariant.createManyAndReturn({
             data: rows,
@@ -472,13 +506,24 @@ export function createCatalogueService(db: Db) {
             where: { groupId: data.groupId },
             _max: { sortOrder: true },
           });
+          const codes = new Set(
+            (
+              await tx.optionValue.findMany({
+                where: { groupId: data.groupId },
+                select: { code: true },
+              })
+            ).map((v) => v.code),
+          );
+          if (data.code && codes.has(data.code)) throw new OptionCodeTakenError(data.code);
           const value = await tx.optionValue.create({
             data: {
               groupId: data.groupId,
               valueAr: data.valueAr,
+              // Without a code, a suggestion from the Arabic name, made unique in its type.
+              code: data.code ?? freeCode(suggestCode(data.valueAr), codes),
               sortOrder: (last._max.sortOrder ?? 0) + 10,
             },
-            select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+            select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
           });
           await writeAudit(tx, {
             actorId: ctx.userId,
@@ -510,6 +555,12 @@ export function createCatalogueService(db: Db) {
         return await inTransaction(db, async (tx) => {
           const before = await tx.optionValue.findUnique({ where: { id } });
           if (!before) throw new NotFoundError('option_value', id);
+          if (data.code !== undefined && data.code !== before.code) {
+            const clash = await tx.optionValue.findFirst({
+              where: { groupId: before.groupId, code: data.code },
+            });
+            if (clash) throw new OptionCodeTakenError(data.code);
+          }
 
           if (data.move) {
             const siblings = await tx.optionValue.findMany({
@@ -528,16 +579,17 @@ export function createCatalogueService(db: Db) {
             where: { id },
             data: {
               ...(data.valueAr !== undefined ? { valueAr: data.valueAr } : {}),
+              ...(data.code !== undefined ? { code: data.code } : {}),
               ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
             },
-            select: { id: true, valueAr: true, sortOrder: true, isActive: true },
+            select: { id: true, valueAr: true, code: true, sortOrder: true, isActive: true },
           });
           await writeAudit(tx, {
             actorId: ctx.userId,
             action: 'options.value.update',
             entityType: 'option_value',
             entityId: id,
-            before: { valueAr: before.valueAr, isActive: before.isActive },
+            before: { valueAr: before.valueAr, code: before.code, isActive: before.isActive },
             after: data,
           });
           return value;

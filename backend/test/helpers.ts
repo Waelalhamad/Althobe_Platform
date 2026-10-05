@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { inject } from 'vitest';
 import { createDb, type Db } from '../src/shared/db.js';
 import { createMemoryStorage } from '../src/shared/storage.js';
+import { suggestCode } from '../src/modules/catalogue/sku.js';
 import type { UnitCostInput } from '../src/shared/money.js';
 import {
   ALL_PERMISSIONS,
@@ -182,7 +183,13 @@ async function createOptionTypes(db: Db) {
         key,
         nameAr,
         sortOrder,
-        values: { create: values.map((valueAr, i) => ({ valueAr, sortOrder: (i + 1) * 10 })) },
+        values: {
+          create: values.map((valueAr, i) => ({
+            valueAr,
+            code: suggestCode(valueAr),
+            sortOrder: (i + 1) * 10,
+          })),
+        },
       },
       select: { id: true, values: { select: { id: true, valueAr: true } } },
     });

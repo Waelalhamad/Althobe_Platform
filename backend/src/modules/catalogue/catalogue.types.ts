@@ -58,6 +58,8 @@ export interface ProductView {
 export interface OptionValueView {
   id: string;
   valueAr: string;
+  /** Short Latin code the SKU is built from. */
+  code: string;
   sortOrder: number;
   isActive: boolean;
 }

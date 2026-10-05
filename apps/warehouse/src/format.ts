@@ -34,6 +34,7 @@ const ERRORS: Record<string, string> = {
   INVALID_PHOTO_TAGS: 'لا يمكن ربط الصورة بقيمة ليست من خيارات هذا المنتج',
   OPTION_GROUP_TAKEN: 'يوجد نوع خيار بهذا الاسم',
   OPTION_VALUE_TAKEN: 'هذه القيمة موجودة مسبقاً',
+  OPTION_CODE_TAKEN: 'هذا الرمز مستخدم لقيمة أخرى في نفس النوع',
   INVALID_OPTION_GROUPS: 'نوع خيار غير معروف أو موقوف',
   OPTION_GROUP_IN_USE: 'لا يمكن إزالة هذا النوع: أصناف هذا المنتج تستخدمه',
   INVALID_SELECTION: 'اختر قيمة واحدة على الأقل لكل نوع، من القيم المفعّلة فقط',

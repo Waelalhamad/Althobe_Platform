@@ -245,6 +245,8 @@ model OptionValue {
   id        String   @id @default(uuid(7)) @db.Uuid
   groupId   String   @map("group_id") @db.Uuid
   valueAr   String   @map("value_ar")
+  // Short Latin code the SKU is built from (سعودية → SA); unique within its type.
+  code      String
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -255,6 +257,7 @@ model OptionValue {
   photoValues   ProductPhotoValue[]
 
   @@unique([groupId, valueAr], map: "uq_option_values_group_value")
+  @@unique([groupId, code], map: "uq_option_values_group_code")
   // Target of the composite foreign key that keeps a variant's value under the right type.
   @@unique([id, groupId], map: "uq_option_values_id_group")
   @@map("option_values")

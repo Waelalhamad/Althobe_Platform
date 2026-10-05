@@ -118,6 +118,6 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await expect(page.locator('tbody tr td').nth(3)).toHaveText('37');
   await page.getByLabel('بحث').fill(second);
   await expect(page.locator('tbody tr td').nth(3)).toHaveText('20');
-  await page.getByLabel('بحث').fill(code);
+  await page.getByLabel('بحث').fill('ثوب اختبار شامل');
   await page.screenshot({ path: `${shots}/8-balances.png` });
 });

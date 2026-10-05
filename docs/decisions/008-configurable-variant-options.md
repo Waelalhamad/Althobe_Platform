@@ -49,3 +49,15 @@ each combination actually made is its own variant with its own barcode and balan
 - Prices per option (e.g. جوخ هندي costs more) are not modelled here; prices come next and attach
   to the variant (domain.md).
 - Made-to-measure (tailoring) is still not modelled: these options describe finished stock.
+
+## Amendment — 2026-10-09: readable SKUs
+
+Every option value has a short Latin **code** (`A–Z`, `0–9`, 1–6 characters, unique within its
+type): سعودية `SA`, ملكي `RY`, أبيض `WH`, sizes are their own number. A new variant's SKU is the
+product code followed by its values' codes in type order: `THB-SA-RY-MD-SN-JH-WH-56`.
+
+- New values get a code suggested from the Arabic name (كحلي → `KHL`); the owner edits it on the
+  Options page. Product codes are generated (`P-0001`, …) and can be renamed (`THB`).
+- A SKU is fixed when the variant is created (it is printed on labels): renaming a code changes the
+  SKUs of variants created afterwards only. If a SKU would repeat, `-2`, `-3`, … is appended.
+- The barcode stays a plain database sequence with no meaning (ADR-003).

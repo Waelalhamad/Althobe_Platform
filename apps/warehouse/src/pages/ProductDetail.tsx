@@ -299,6 +299,7 @@ function ProductSettings({ product, groups }: { product: Product; groups: Option
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [nameAr, setNameAr] = useState(product.nameAr);
+  const [code, setCode] = useState(product.code);
   const [groupIds, setGroupIds] = useState(product.groupIds);
   // Hidden types stay listed only while the product still has them.
   const offered = groups.filter((g) => g.isActive || product.groupIds.includes(g.id));
@@ -328,6 +329,12 @@ function ProductSettings({ product, groups }: { product: Product; groups: Option
         <Field label="اسم المنتج">
           <Input value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
         </Field>
+        <Field
+          label="رمز المنتج"
+          hint="أول جزء من SKU، مثل THB — الأصناف الجديدة فقط؛ الموجودة تحتفظ برمزها المطبوع"
+        >
+          <Input dir="ltr" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        </Field>
         <div>
           <span className="text-sm font-medium text-ink-muted">أنواع الخيارات لهذا المنتج</span>
           <div className="mt-1 flex flex-wrap gap-2">
@@ -349,8 +356,14 @@ function ProductSettings({ product, groups }: { product: Product; groups: Option
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button
-          disabled={!nameAr.trim() || groupIds.length === 0 || update.isPending}
-          onClick={() => update.mutate({ nameAr: nameAr.trim(), groupIds })}
+          disabled={!nameAr.trim() || !code.trim() || groupIds.length === 0 || update.isPending}
+          onClick={() =>
+            update.mutate({
+              nameAr: nameAr.trim(),
+              groupIds,
+              ...(code.trim() !== product.code ? { code: code.trim() } : {}),
+            })
+          }
         >
           حفظ
         </Button>

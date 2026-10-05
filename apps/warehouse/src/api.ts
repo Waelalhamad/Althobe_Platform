@@ -79,6 +79,8 @@ export interface Variant {
 export interface OptionValue {
   id: string;
   valueAr: string;
+  /** Short Latin code the SKU is built from (سعودية → SA). */
+  code: string;
   sortOrder: number;
   isActive: boolean;
 }
@@ -273,7 +275,13 @@ export const api = {
   }) => post<Product>('/products', input),
   updateProduct: async (
     id: string,
-    patch: { nameAr?: string; nameEn?: string | null; isActive?: boolean; groupIds?: string[] },
+    patch: {
+      code?: string;
+      nameAr?: string;
+      nameEn?: string | null;
+      isActive?: boolean;
+      groupIds?: string[];
+    },
   ) => request<Product>('PATCH', `/products/${id}`, patch),
   generateVariants: async (
     productId: string,
@@ -319,7 +327,7 @@ export const api = {
     post<OptionValue>(`/option-groups/${groupId}/values`, { valueAr }),
   updateOptionValue: async (
     id: string,
-    patch: { valueAr?: string; isActive?: boolean; move?: Move },
+    patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move },
   ) => request<OptionValue>('PATCH', `/option-values/${id}`, patch),
 
   balances: async (locationId: string) =>

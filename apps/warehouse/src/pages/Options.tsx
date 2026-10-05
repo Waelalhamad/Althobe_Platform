@@ -144,7 +144,10 @@ function GroupCard({
             className={v.isActive ? '' : 'line-through opacity-60'}
             onClick={() => setSelected(v.id === selected ? null : v.id)}
           >
-            {v.valueAr}
+            {v.valueAr}{' '}
+            <span dir="ltr" className="font-mono text-xs opacity-70">
+              {v.code}
+            </span>
           </Chip>
         ))}
         {visible.length === 0 && <span className="text-ink-muted">لا توجد قيم بعد</span>}
@@ -154,6 +157,7 @@ function GroupCard({
         <ValueActions
           key={selectedValue.id}
           valueAr={selectedValue.valueAr}
+          code={selectedValue.code}
           isActive={selectedValue.isActive}
           first={group.values[0]?.id === selectedValue.id}
           last={group.values.at(-1)?.id === selectedValue.id}
@@ -187,6 +191,7 @@ function GroupCard({
 
 function ValueActions({
   valueAr,
+  code,
   isActive,
   first,
   last,
@@ -194,16 +199,32 @@ function ValueActions({
   onUpdate,
 }: {
   valueAr: string;
+  code: string;
   isActive: boolean;
   first: boolean;
   last: boolean;
   busy: boolean;
-  onUpdate: (patch: { valueAr?: string; isActive?: boolean; move?: Move }) => void;
+  onUpdate: (patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move }) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [recoding, setRecoding] = useState(false);
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-blush p-2">
-      {renaming ? (
+      {recoding ? (
+        <>
+          <span className="text-sm">
+            رمز SKU (حروف لاتينية وأرقام، حتى 6) — الأصناف الجديدة فقط:
+          </span>
+          <RenameForm
+            initial={code}
+            onCancel={() => setRecoding(false)}
+            onSave={(next) => {
+              onUpdate({ code: next.toUpperCase() });
+              setRecoding(false);
+            }}
+          />
+        </>
+      ) : renaming ? (
         <RenameForm
           initial={valueAr}
           onCancel={() => setRenaming(false)}
@@ -217,6 +238,9 @@ function ValueActions({
           <span className="font-medium">«{valueAr}»</span>
           <Button variant="secondary" onClick={() => setRenaming(true)}>
             تعديل الاسم
+          </Button>
+          <Button variant="secondary" onClick={() => setRecoding(true)}>
+            الرمز: <span dir="ltr">{code}</span>
           </Button>
           <Button
             variant="secondary"

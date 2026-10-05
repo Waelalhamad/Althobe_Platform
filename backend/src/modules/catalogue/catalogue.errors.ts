@@ -44,6 +44,12 @@ export class OptionValueTakenError extends DomainError {
   }
 }
 
+export class OptionCodeTakenError extends DomainError {
+  constructor(code: string) {
+    super('OPTION_CODE_TAKEN', 'Another value of this type already has this code', { code });
+  }
+}
+
 /** Option types that are unknown or inactive, given to a product. */
 export class InvalidOptionGroupsError extends DomainError {
   constructor(groupIds: string[]) {

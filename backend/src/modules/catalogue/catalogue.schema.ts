@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { minorAmountSchema } from '../../shared/money.js';
+import { CODE_PATTERN } from './sku.js';
 
 /** Trimmed, inner whitespace collapsed: "جوخ  هندي " and "جوخ هندي" are one value. */
 const label = z
@@ -9,14 +10,22 @@ const label = z
 
 const move = z.enum(['up', 'down']);
 
+/** A value's short code for SKUs: 1–6 of A–Z and 0–9 (سعودية → SA). */
+const valueCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(CODE_PATTERN, 'Code: 1–6 characters, A–Z and 0–9');
+
+const productCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9][A-Z0-9-]{1,19}$/, 'Code: 2–20 characters, A–Z, 0–9 and dashes');
+
 export const createProductSchema = z.object({
-  code: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z0-9][A-Z0-9-]{1,19}$/, 'Code: 2–20 characters, A–Z, 0–9 and dashes')
-    // Omitted: the next free P-0001, P-0002, … is generated.
-    .optional(),
+  /** Omitted: the next free P-0001, P-0002, … is generated. */
+  code: productCode.optional(),
   nameAr: z.string().trim().min(1).max(120),
   nameEn: z.string().trim().min(1).max(120).optional(),
   // Phase 1 counts every product in whole pieces. BOX / METER / KG exist in the schema so adding
@@ -28,6 +37,8 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = z
   .object({
+    /** Renaming the code changes the SKUs of variants created from now on, not existing ones. */
+    code: productCode.optional(),
     nameAr: z.string().trim().min(1).max(120).optional(),
     nameEn: z.string().trim().min(1).max(120).nullable().optional(),
     isActive: z.boolean().optional(),
@@ -66,10 +77,20 @@ export const updateOptionGroupSchema = z
   .object({ nameAr: label.optional(), isActive: z.boolean().optional(), move: move.optional() })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 
-export const addOptionValueSchema = z.object({ groupId: z.uuid(), valueAr: label });
+/** Without a code, one is suggested from the Arabic name (كحلي → KHL). */
+export const addOptionValueSchema = z.object({
+  groupId: z.uuid(),
+  valueAr: label,
+  code: valueCode.optional(),
+});
 
 export const updateOptionValueSchema = z
-  .object({ valueAr: label.optional(), isActive: z.boolean().optional(), move: move.optional() })
+  .object({
+    valueAr: label.optional(),
+    code: valueCode.optional(),
+    isActive: z.boolean().optional(),
+    move: move.optional(),
+  })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to change');
 
 export const setVariantActiveSchema = z.object({ isActive: z.boolean() });
