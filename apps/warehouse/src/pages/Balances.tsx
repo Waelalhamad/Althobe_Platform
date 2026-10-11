@@ -1,9 +1,20 @@
-import { Alert, Button, Card, Code, Field, Input, PageTitle, Select } from '@althobe/ui/components';
+import {
+  Alert,
+  Button,
+  Card,
+  Code,
+  EmptyState,
+  Field,
+  Input,
+  PageTitle,
+  Select,
+} from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, type Balance, type Variant } from '../api';
 import { errorText, formatMoney, formatPrice, formatQuantity } from '../format';
+import { PAGES } from '../help';
 import { balancesQuery, can, locationsQuery, meQuery } from '../queries';
 
 const route = getRouteApi('/app/balances');
@@ -34,7 +45,7 @@ export function BalancesPage() {
 
   return (
     <>
-      <PageTitle>الأرصدة</PageTitle>
+      <PageTitle intro={PAGES.balances}>الأرصدة</PageTitle>
       <Card className="mb-4 grid gap-3 md:grid-cols-2">
         <Field label="الموقع">
           <Select
@@ -90,8 +101,15 @@ export function BalancesPage() {
             )}
             {!isLoading && visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-ink-muted">
-                  لا يوجد رصيد
+                <td colSpan={8} className="p-3">
+                  {needle ? (
+                    <p className="p-3 text-center text-ink-muted">لا نتائج لهذا البحث</p>
+                  ) : (
+                    <EmptyState title="لا توجد قطع في هذا الموقع بعد">
+                      الرصيد يزيد عندما تُدخل القطع بالمسح: «جرد افتتاحي» للبضاعة الموجودة أصلاً، أو
+                      «استلام» للبضاعة الجديدة — من الصفحة الرئيسية.
+                    </EmptyState>
+                  )}
                 </td>
               </tr>
             )}

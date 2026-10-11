@@ -1,10 +1,12 @@
-import { Alert, Button, Card, Field, PageTitle, Select } from '@althobe/ui/components';
+import { Alert, Button, Card, EmptyState, Field, PageTitle, Select } from '@althobe/ui/components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '../api';
 import { errorText, STOCKTAKE_STATUS } from '../format';
+import { PAGES } from '../help';
 import { can, locationsQuery, meQuery, stocktakesQuery } from '../queries';
+import { TermHint } from './Help';
 
 export function StocktakesPage() {
   const { data: user } = useQuery(meQuery);
@@ -27,7 +29,9 @@ export function StocktakesPage() {
 
   return (
     <>
-      <PageTitle>الجرد</PageTitle>
+      <PageTitle intro={PAGES.stocktakes}>
+        الجرد <TermHint term="stocktake" />
+      </PageTitle>
 
       {can(user, 'inventory.stocktake.count') && (
         <Card className="mb-4 flex flex-col gap-3">
@@ -87,8 +91,11 @@ export function StocktakesPage() {
             ))}
             {!isLoading && stocktakes.length === 0 && (
               <tr>
-                <td colSpan={4} className="p-6 text-center text-ink-muted">
-                  لا يوجد جرد بعد
+                <td colSpan={4} className="p-3">
+                  <EmptyState title="لا يوجد جرد بعد">
+                    اختر الموقع أعلاه واضغط «بدء جرد جديد»، ثم امسح كل القطع الموجودة فيه. أول إدخال
+                    للبضاعة يكون «جرد افتتاحي» من الرئيسية، لا من هنا.
+                  </EmptyState>
                 </td>
               </tr>
             )}

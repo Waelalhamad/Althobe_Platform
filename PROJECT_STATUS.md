@@ -33,6 +33,17 @@ three levels); a product is one design (its options except the size) with its ow
 price; its sizes carry barcode, SKU and stock. Everything is editable; what never had stock can be
 deleted.
 
+**Live (2026-10-11):** https://system.arabthob.com — Railway (europe-west4), real Neon database,
+S3 photos. Railway's auto-deploy from GitHub is not connected yet: deploy with `railway up`.
+
+**Guided app (2026-10-12):** the home page lists the six setup steps (options → categories →
+products → prices and photos → labels → opening count), ticks them from the data and opens the
+next one with one button. Every page says what it is for; empty lists explain what goes there; the
+menu is grouped (الإعداد · المخزون · التقارير) and filtered by permission, with a phone menu; stop and
+delete sit in a «إيقاف وحذف» box at the bottom; a green message confirms each save and names the
+next step; «؟» hints and the «المساعدة» page explain the words. Option types and values that
+nothing uses can now be deleted. Text is 18 px; label bars are sized in whole printer dots.
+
 **Practice mode:** `pnpm dev:practice` runs the app on a separate `althobe_practice` database with a
 yellow «وضع التدريب» banner — for learning the scanner and printer without touching real stock.
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import { errorText, ROLE } from '../format';
+import { PAGES } from '../help';
 import { meQuery } from '../queries';
 
 const MIN_LENGTH = 12;
@@ -31,7 +32,7 @@ export function AccountPage() {
 
   return (
     <>
-      <PageTitle>حسابي</PageTitle>
+      <PageTitle intro={PAGES.account}>حسابي</PageTitle>
       <Card className="mb-4">
         <div className="font-bold">{me?.nameAr}</div>
         <div className="text-sm text-ink-muted" dir="ltr">

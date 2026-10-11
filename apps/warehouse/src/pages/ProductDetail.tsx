@@ -1,11 +1,24 @@
-import { Alert, Button, Card, Chip, Code, ConfirmButton, PageTitle } from '@althobe/ui/components';
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  Code,
+  ConfirmButton,
+  DangerZone,
+  NextStep,
+  PageTitle,
+  useToast,
+} from '@althobe/ui/components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, type Product, type Variant } from '../api';
 import { choosableValues, errorText, formatPrice, fromMinorUnits, valueLabel } from '../format';
+import { PAGES } from '../help';
 import { can, categoriesQuery, meQuery, optionGroupsQuery, productQuery } from '../queries';
 import { EditableAmount, useCatalogueRefresh } from './catalogue-parts';
+import { TermHint } from './Help';
 import { ProductPhotos } from './ProductPhotos';
 
 const route = getRouteApi('/app/products/$productId');
@@ -23,6 +36,7 @@ export function ProductDetailPage() {
   return (
     <>
       <PageTitle
+        intro={PAGES.product}
         actions={
           <Link to="/labels" search={{ categoryId: product.category.id, productId }}>
             <Button variant="secondary">طباعة الملصقات</Button>
@@ -45,21 +59,34 @@ export function ProductDetailPage() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <PricesCard product={product} canPrice={canPrice} />
-        {canWrite && <ProductActions product={product} />}
-      </div>
+      <PricesCard product={product} canPrice={canPrice} />
       <ProductPhotos productId={productId} canWrite={canWrite} />
       <SizesTable variants={variants} canWrite={canWrite} canPrice={canPrice} />
       {canWrite && product.isActive && <AddSizes product={product} variants={variants} />}
+      <NextStep
+        action={
+          <Link
+            to="/labels"
+            search={{ categoryId: product.category.id, productId }}
+            className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
+          >
+            طباعة ملصقات هذا المنتج ←
+          </Link>
+        }
+      >
+        بعد السعر والصور، اطبع ملصقاً لكل قطعة من هذا المنتج.
+      </NextStep>
+      {canWrite && <ProductDanger product={product} />}
     </>
   );
 }
 
 function PricesCard({ product, canPrice }: { product: Product; canPrice: boolean }) {
   const refresh = useCatalogueRefresh();
+  const toast = useToast();
   const save = (list: 'retail' | 'wholesale') => async (amount: string | null) => {
     await api.setProductPrices({ productIds: [product.id], [list]: amount });
+    toast('تم حفظ السعر');
     await refresh();
   };
   return (
@@ -68,7 +95,9 @@ function PricesCard({ product, canPrice }: { product: Product; canPrice: boolean
       <div className="flex flex-wrap gap-8">
         {(['retail', 'wholesale'] as const).map((list) => (
           <div key={list}>
-            <div className="text-sm text-ink-muted">{list === 'retail' ? 'المفرق' : 'الجملة'}</div>
+            <div className="text-sm text-ink-muted">
+              {list === 'retail' ? 'المفرق' : 'الجملة'} <TermHint term={list} />
+            </div>
             <div className="tabular text-2xl font-bold">
               <EditableAmount
                 text={formatPrice(product.prices[list])}
@@ -91,16 +120,22 @@ function PricesCard({ product, canPrice }: { product: Product; canPrice: boolean
   );
 }
 
-function ProductActions({ product }: { product: Product }) {
+/** Stop, restart or delete the product, at the bottom of its page. */
+function ProductDanger({ product }: { product: Product }) {
   const refresh = useCatalogueRefresh();
   const navigate = useNavigate();
+  const toast = useToast();
   const toggle = useMutation({
     mutationFn: async () => api.setProductActive(product.id, !product.isActive),
-    onSuccess: refresh,
+    onSuccess: async () => {
+      toast(product.isActive ? 'أُوقف المنتج' : 'أُعيد تفعيل المنتج');
+      await refresh();
+    },
   });
   const remove = useMutation({
     mutationFn: async () => api.deleteProduct(product.id),
     onSuccess: async () => {
+      toast('حُذف المنتج');
       await refresh();
       await navigate({
         to: '/categories/$categoryId',
@@ -109,29 +144,19 @@ function ProductActions({ product }: { product: Product }) {
     },
   });
   return (
-    <Card>
-      <h2 className="mb-3 text-lg font-bold">المنتج</h2>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
-          {product.isActive ? 'إيقاف المنتج' : 'إعادة تفعيل المنتج'}
-        </Button>
-        <ConfirmButton
-          variant="danger"
-          disabled={remove.isPending}
-          onConfirm={() => remove.mutate()}
-        >
-          حذف المنتج
-        </ConfirmButton>
-      </div>
-      <p className="mt-2 text-sm text-ink-muted">
-        الحذف ممكن فقط إذا لم يدخل المخزون أبداً؛ غير ذلك أوقفه.
-      </p>
+    <DangerZone note="الإيقاف يوقف استلام وبيع كل مقاساته ويحفظ تاريخها، ويمكن إعادته. الحذف فقط لمنتج لم يدخل المخزون أبداً. لإيقاف أو حذف مقاس واحد استخدم جدول المقاسات.">
+      <Button variant="secondary" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+        {product.isActive ? 'إيقاف المنتج' : 'إعادة تفعيل المنتج'}
+      </Button>
+      <ConfirmButton variant="danger" disabled={remove.isPending} onConfirm={() => remove.mutate()}>
+        حذف المنتج
+      </ConfirmButton>
       {(toggle.isError || remove.isError) && (
-        <div className="mt-3">
+        <div className="w-full">
           <Alert>{errorText(toggle.error ?? remove.error)}</Alert>
         </div>
       )}
-    </Card>
+    </DangerZone>
   );
 }
 
@@ -162,16 +187,26 @@ function SizesTable({
 
   return (
     <Card className="mt-4 overflow-x-auto p-0">
-      <h2 className="p-3 text-lg font-bold">المقاسات</h2>
+      <h2 className="p-3 text-lg font-bold">
+        المقاسات <TermHint term="size" />
+      </h2>
       <table className="w-full">
         <thead className="bg-blush text-sm text-ink-muted">
           <tr>
             <th className="p-3 text-start">المقاس</th>
-            <th className="p-3 text-start">SKU</th>
-            <th className="p-3 text-start">الباركود</th>
+            <th className="p-3 text-start">
+              SKU <TermHint term="sku" />
+            </th>
+            <th className="p-3 text-start">
+              الباركود <TermHint term="barcode" />
+            </th>
             <th className="p-3 text-start">المفرق</th>
             <th className="p-3 text-start">الجملة</th>
-            {canWrite && <th className="p-3" />}
+            {canWrite && (
+              <th className="p-3 text-end">
+                إيقاف / حذف <TermHint term="stopped" />
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -234,6 +269,7 @@ function SizesTable({
 /** More sizes for this design: the same product, a new barcode per size. */
 function AddSizes({ product, variants }: { product: Product; variants: Variant[] }) {
   const refresh = useCatalogueRefresh();
+  const toast = useToast();
   const { data: groups = [] } = useQuery(optionGroupsQuery);
   const { data: categories = [] } = useQuery(categoriesQuery);
   const [chosen, setChosen] = useState<string[]>([]);
@@ -251,7 +287,8 @@ function AddSizes({ product, variants }: { product: Product; variants: Variant[]
           { groupId: sizeGroup!.id, valueIds: chosen },
         ],
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      toast(`أُضيف ${result.created.length} مقاس — اطبع ملصقاتها من «طباعة الملصقات»`);
       setChosen([]);
       await refresh();
     },

@@ -5,16 +5,21 @@ import {
   Chip,
   Code,
   ConfirmButton,
+  DangerZone,
+  EmptyState,
   Field,
   Input,
+  NextStep,
   PageTitle,
   Select,
+  useToast,
 } from '@althobe/ui/components';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, type Category, type OptionGroup, type Product } from '../api';
 import { errorText, formatPrice, fromMinorUnits } from '../format';
+import { PAGES } from '../help';
 import { PhotoThumb } from '../photo';
 import {
   can,
@@ -25,6 +30,7 @@ import {
   variantsQuery,
 } from '../queries';
 import { categoryPath, categoryTree } from './Categories';
+import { TermHint } from './Help';
 import {
   EditableAmount,
   GroupPicker,
@@ -45,7 +51,7 @@ export function CategoryPage() {
   const { data: user } = useQuery(meQuery);
   const { data: categories = [] } = useQuery(categoriesQuery);
   const { data: groups = [] } = useQuery(optionGroupsQuery);
-  const { data: products = [] } = useQuery(productsQuery(categoryId));
+  const { data: products = [], isLoading: productsLoading } = useQuery(productsQuery(categoryId));
   const category = categories.find((c) => c.id === categoryId);
   const categoryGroups = groups.filter((g) => category?.groupIds.includes(g.id));
   const canWrite = can(user, 'products.write');
@@ -54,6 +60,7 @@ export function CategoryPage() {
   return (
     <>
       <PageTitle
+        intro={PAGES.category}
         actions={
           <Link to="/labels" search={{ categoryId, productId: undefined }}>
             <Button variant="secondary">طباعة الملصقات</Button>
@@ -80,8 +87,70 @@ export function CategoryPage() {
       {canWrite && category?.isActive && (
         <ProductBuilder categoryId={categoryId} groups={categoryGroups} canPrice={canPrice} />
       )}
-      <ProductsTable groups={categoryGroups} products={products} canPrice={canPrice} />
+      <ProductsTable
+        groups={categoryGroups}
+        products={products}
+        loading={productsLoading}
+        canPrice={canPrice}
+      />
+      {products.length > 0 && (
+        <NextStep
+          action={
+            <Link
+              to="/labels"
+              search={{ categoryId, productId: undefined }}
+              className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
+            >
+              طباعة الملصقات ←
+            </Link>
+          }
+        >
+          ضع الأسعار في الجدول (واضغط على المنتج لإضافة صوره)، ثم اطبع ملصقات هذا التصنيف.
+        </NextStep>
+      )}
+      {canWrite && category && <CategoryDanger category={category} />}
     </>
+  );
+}
+
+/** Stop, restart or delete the category, at the bottom of its page. */
+function CategoryDanger({ category }: { category: Category }) {
+  const refresh = useCatalogueRefresh();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const update = useMutation({
+    mutationFn: async (isActive: boolean) => api.updateCategory(category.id, { isActive }),
+    onSuccess: async (_, isActive) => {
+      toast(isActive ? 'أُعيد تفعيل التصنيف' : 'أُوقف التصنيف — منتجاته لا تُستلم ولا تُباع');
+      await refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: async () => api.deleteCategory(category.id),
+    onSuccess: async () => {
+      toast(`حُذف التصنيف «${category.nameAr}»`);
+      await refresh();
+      await navigate({ to: '/products' });
+    },
+  });
+  return (
+    <DangerZone note="الإيقاف يوقف استلام وبيع كل منتجاته ويحفظ تاريخها، ويمكن إعادته. الحذف فقط لتصنيف لم يدخل أي من منتجاته المخزون، وليس داخله تصنيفات فرعية.">
+      <Button
+        variant="secondary"
+        disabled={update.isPending}
+        onClick={() => update.mutate(!category.isActive)}
+      >
+        {category.isActive ? 'إيقاف التصنيف' : 'إعادة تفعيل التصنيف'}
+      </Button>
+      <ConfirmButton variant="danger" disabled={remove.isPending} onConfirm={() => remove.mutate()}>
+        حذف التصنيف
+      </ConfirmButton>
+      {(update.isError || remove.isError) && (
+        <div className="w-full">
+          <Alert>{errorText(update.error ?? remove.error)}</Alert>
+        </div>
+      )}
+    </DangerZone>
   );
 }
 
@@ -99,6 +168,7 @@ function ProductBuilder({
   canPrice: boolean;
 }) {
   const refresh = useCatalogueRefresh();
+  const toast = useToast();
   const { data: variants = [] } = useQuery(variantsQuery({ categoryId }));
   const { chosen, toggle, setAll } = useChosen();
   const [retail, setRetail] = useState('');
@@ -138,12 +208,19 @@ function ProductBuilder({
         ...(typed ? { prices: typed } : {}),
       });
     },
-    onSuccess: refresh,
+    onSuccess: async (result) => {
+      toast(
+        `أُنشئ ${result.created.length} مقاس في ${result.products.length} منتج — التالي: الأسعار في الجدول بالأسفل`,
+      );
+      await refresh();
+    },
   });
 
   return (
     <Card>
-      <h2 className="mb-1 text-lg font-bold">إضافة منتجات</h2>
+      <h2 className="mb-1 text-lg font-bold">
+        إضافة منتجات <TermHint term="product" />
+      </h2>
       <p className="mb-4 text-sm text-ink-muted">
         اختر من كل نوع قيمة أو أكثر، ثم المقاسات. يُنشأ منتج لكل تصميم، وداخله مقاس لكل قياس اخترته،
         ولكل مقاس باركود خاص. الموجود لا يتكرر.
@@ -214,10 +291,12 @@ function ProductBuilder({
 function ProductsTable({
   groups,
   products,
+  loading,
   canPrice,
 }: {
   groups: OptionGroup[];
   products: Product[];
+  loading: boolean;
   canPrice: boolean;
 }) {
   const refresh = useCatalogueRefresh();
@@ -269,10 +348,18 @@ function ProductsTable({
           <tr>
             <th className="w-16 p-3" />
             <th className="p-3 text-start">التصميم</th>
-            <th className="p-3 text-start">الرمز</th>
-            <th className="p-3 text-start">المقاسات</th>
-            <th className="p-3 text-start">المفرق</th>
-            <th className="p-3 text-start">الجملة</th>
+            <th className="p-3 text-start">
+              الرمز <TermHint term="sku" />
+            </th>
+            <th className="p-3 text-start">
+              المقاسات <TermHint term="size" />
+            </th>
+            <th className="p-3 text-start">
+              المفرق <TermHint term="retail" />
+            </th>
+            <th className="p-3 text-start">
+              الجملة <TermHint term="wholesale" />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -309,10 +396,20 @@ function ProductsTable({
               ))}
             </tr>
           ))}
-          {products.length === 0 && (
+          {loading && (
             <tr>
               <td colSpan={6} className="p-6 text-center text-ink-muted">
-                لا توجد منتجات بعد
+                جارٍ التحميل…
+              </td>
+            </tr>
+          )}
+          {!loading && products.length === 0 && (
+            <tr>
+              <td colSpan={6} className="p-3">
+                <EmptyState title="لا توجد منتجات في هذا التصنيف بعد">
+                  في «إضافة منتجات» أعلاه اختر من كل نوع قيمة أو أكثر، ثم المقاسات، واضغط «إنشاء».
+                  يُنشأ كل تصميم كمنتج، وداخله مقاساته بباركود لكل مقاس.
+                </EmptyState>
               </td>
             </tr>
           )}
@@ -328,11 +425,13 @@ function BulkProductPrices({ products }: { products: Product[] }) {
   const [retail, setRetail] = useState('');
   const [wholesale, setWholesale] = useState('');
   const typed = typedPrices(parsePrices(retail, wholesale));
+  const toast = useToast();
 
   const apply = useMutation({
     mutationFn: async () =>
       api.setProductPrices({ productIds: products.map((p) => p.id), ...typed }),
     onSuccess: async () => {
+      toast(`تم تسعير ${products.length} منتج`);
       setRetail('');
       setWholesale('');
       await refresh();
@@ -347,13 +446,12 @@ function BulkProductPrices({ products }: { products: Product[] }) {
       <ConfirmButton disabled={!typed || apply.isPending} onConfirm={() => apply.mutate()}>
         تعيين السعر لـ {products.length} منتج
       </ConfirmButton>
-      {apply.isSuccess && <span className="pb-2 text-ok">تم التسعير</span>}
       {apply.isError && <span className="pb-2 text-bad">{errorText(apply.error)}</span>}
     </div>
   );
 }
 
-/** Rename, recode, move in the tree, choose the option types, stop/restart or delete. */
+/** Rename, recode, move in the tree, choose the option types. */
 function CategorySettings({
   category,
   categories,
@@ -364,7 +462,7 @@ function CategorySettings({
   groups: OptionGroup[];
 }) {
   const refresh = useCatalogueRefresh();
-  const navigate = useNavigate();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [nameAr, setNameAr] = useState(category.nameAr);
   const [code, setCode] = useState(category.code);
@@ -390,13 +488,10 @@ function CategorySettings({
   const update = useMutation({
     mutationFn: async (patch: Parameters<typeof api.updateCategory>[1]) =>
       api.updateCategory(category.id, patch),
-    onSuccess: refresh,
-  });
-  const remove = useMutation({
-    mutationFn: async () => api.deleteCategory(category.id),
     onSuccess: async () => {
+      toast('تم حفظ التصنيف');
+      setOpen(false);
       await refresh();
-      await navigate({ to: '/products' });
     },
   });
 
@@ -465,37 +560,10 @@ function CategorySettings({
         <Button variant="ghost" onClick={() => setOpen(false)}>
           إغلاق
         </Button>
-        <span className="ms-auto flex gap-2">
-          {category.isActive ? (
-            <Button
-              variant="secondary"
-              disabled={update.isPending}
-              onClick={() => update.mutate({ isActive: false })}
-            >
-              إيقاف التصنيف
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              disabled={update.isPending}
-              onClick={() => update.mutate({ isActive: true })}
-            >
-              إعادة تفعيل التصنيف
-            </Button>
-          )}
-          <ConfirmButton
-            variant="danger"
-            disabled={remove.isPending}
-            onConfirm={() => remove.mutate()}
-          >
-            حذف التصنيف
-          </ConfirmButton>
-        </span>
       </div>
-      {update.isSuccess && <p className="mt-3 text-ok">تم الحفظ</p>}
-      {(update.isError || remove.isError) && (
+      {update.isError && (
         <div className="mt-3">
-          <Alert>{errorText(update.error ?? remove.error)}</Alert>
+          <Alert>{errorText(update.error)}</Alert>
         </div>
       )}
     </Card>

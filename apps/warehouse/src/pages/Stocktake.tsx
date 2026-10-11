@@ -1,4 +1,13 @@
-import { Alert, Button, Card, Code, ConfirmButton, Input, PageTitle } from '@althobe/ui/components';
+import {
+  Alert,
+  Button,
+  Card,
+  Code,
+  ConfirmButton,
+  Input,
+  PageTitle,
+  useToast,
+} from '@althobe/ui/components';
 import { newScanId, useScanInput } from '@althobe/ui/scanner';
 import { sound } from '@althobe/ui/sound';
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -85,9 +94,11 @@ export function StocktakePage() {
       api.reviewStocktake(stocktakeId, confirmUncountedAsZero),
     onSuccess: replace,
   });
+  const toast = useToast();
   const apply = useMutation({
     mutationFn: async () => api.applyStocktake(stocktakeId),
     onSuccess: async (result) => {
+      toast('اعتُمد الجرد — الأرصدة صارت مطابقة للعدّ');
       replace(result.stocktake);
       await queryClient.invalidateQueries({ queryKey: ['balances'] });
       await queryClient.invalidateQueries({ queryKey: ['stocktakes'] });

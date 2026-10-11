@@ -433,6 +433,67 @@ describe('editing option lists', () => {
   });
 });
 
+describe('deleting option values and types', () => {
+  const inUse = { code: 'OPTION_IN_USE' };
+  const live = async () => catalogue.listOptionGroups(w.owner);
+
+  it('deletes an unused value with its details, and frees its name and code', async () => {
+    const colourType = async () => (await live()).find((g) => g.id === w.options.colour.id)!;
+    const black = (await colourType()).values.find((v) => v.valueAr === 'أسود')!;
+    await catalogue.deleteOptionValue(black.id, w.owner);
+    const colours = (await colourType()).values;
+    expect(colours.map((v) => v.valueAr)).toEqual(['أبيض']);
+    const again = await catalogue.addOptionValue(
+      { groupId: w.options.colour.id, valueAr: 'أسود', code: black.code },
+      w.owner,
+    );
+    expect(again.code).toBe(black.code);
+
+    const jukh = w.options.fabric.values.find((v) => v.valueAr === 'جوخ هندي')!;
+    await catalogue.addOptionValue(
+      { groupId: w.options.fabric.id, parentId: jukh.id, valueAr: 'مشخط' },
+      w.owner,
+    );
+    await catalogue.deleteOptionValue(jukh.id, w.owner);
+    const fabrics = (await live()).find((g) => g.id === w.options.fabric.id)!.values;
+    expect(fabrics.map((v) => v.valueAr)).toEqual(['قطني']);
+    await expect(catalogue.deleteOptionValue(jukh.id, w.owner)).rejects.toMatchObject({
+      code: 'OPTION_VALUE_NOT_FOUND',
+    });
+  });
+
+  it('refuses a value a product or size uses, until those are deleted', async () => {
+    const white = w.options.colour.values.find((v) => v.valueAr === 'أبيض')!;
+    const size54 = w.options.size.values.find((v) => v.valueAr === '54')!;
+    await expect(catalogue.deleteOptionValue(white.id, w.owner)).rejects.toMatchObject(inUse);
+    await expect(catalogue.deleteOptionValue(size54.id, w.owner)).rejects.toMatchObject(inUse);
+
+    await catalogue.deleteVariant(w.x.id, w.owner);
+    await catalogue.deleteOptionValue(size54.id, w.owner);
+    await catalogue.deleteProduct(w.x.product.id, w.owner);
+    await catalogue.deleteOptionValue(white.id, w.owner);
+  });
+
+  it('deletes a type only once no category uses it; the size type stays', async () => {
+    await expect(catalogue.deleteOptionGroup(w.options.colour.id, w.owner)).rejects.toMatchObject({
+      ...inUse,
+      details: { categories: [w.category.nameAr] },
+    });
+    await expect(catalogue.deleteOptionGroup(w.options.size.id, w.owner)).rejects.toMatchObject({
+      code: 'OPTION_BUILT_IN',
+    });
+
+    const collar = await addType('الياقة', ['عادية', 'صينية']);
+    await catalogue.deleteOptionGroup(collar.id, w.owner);
+    expect((await live()).map((g) => g.nameAr)).not.toContain('الياقة');
+    await expect(
+      catalogue.addOptionValue({ groupId: collar.id, valueAr: 'جديدة' }, w.owner),
+    ).rejects.toMatchObject({ code: 'OPTION_GROUP_NOT_FOUND' });
+    // The name is free again.
+    await addType('الياقة', ['عادية']);
+  });
+});
+
 describe('permissions', () => {
   it('only products.write changes categories, products, sizes, types or values; products.read sees', async () => {
     const staff = actorWith(w.owner, [PERMISSIONS.products.read]);
@@ -459,6 +520,8 @@ describe('permissions', () => {
       async () =>
         catalogue.addOptionValue({ groupId: w.options.colour.id, valueAr: 'رمادي' }, staff),
       async () => catalogue.updateOptionValue(valueId, { isActive: false }, staff),
+      async () => catalogue.deleteOptionValue(valueId, staff),
+      async () => catalogue.deleteOptionGroup(w.options.colour.id, staff),
     ];
     for (const attempt of attempts) await expect(attempt()).rejects.toMatchObject(denied);
   });

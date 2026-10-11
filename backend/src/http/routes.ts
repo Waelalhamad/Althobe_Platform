@@ -232,6 +232,15 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       ),
     }));
 
+    // Only while unused; a type must first leave every category.
+    priv.delete('/option-groups/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.deleteOptionGroup(request.params.id, actorOf(request)),
+    }));
+
+    priv.delete('/option-values/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.deleteOptionValue(request.params.id, actorOf(request)),
+    }));
+
     priv.get(
       '/variants',
       async (

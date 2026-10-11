@@ -7,6 +7,7 @@ import {
   Input,
   PageTitle,
   Select,
+  useToast,
 } from '@althobe/ui/components';
 import { newScanId, useScanInput } from '@althobe/ui/scanner';
 import { sound } from '@althobe/ui/sound';
@@ -103,9 +104,11 @@ export function ScanSessionPage() {
 
   const scanner = useScanInput(handleScan, { enabled: open });
 
+  const toast = useToast();
   const commit = useMutation({
     mutationFn: async () => api.commit(sessionId),
     onSuccess: async () => {
+      toast('تم الحفظ في المخزون — الأرصدة محدّثة');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['session', sessionId] }),
         queryClient.invalidateQueries({ queryKey: ['balances'] }),
@@ -226,7 +229,8 @@ export function ScanSessionPage() {
             {session.lines.length === 0 && (
               <tr>
                 <td colSpan={5} className="p-8 text-center text-ink-muted">
-                  ابدأ المسح — كل مسحة تضيف قطعة واحدة
+                  ابدأ المسح — كل مسحة تضيف قطعة واحدة. عند الانتهاء اضغط «تأكيد» بالأسفل ليُحفظ في
+                  المخزون؛ قبل التأكيد لا يتغير شيء.
                 </td>
               </tr>
             )}

@@ -24,7 +24,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await page.getByLabel('كلمة المرور').fill(PASSWORD);
   await page.screenshot({ path: `${shots}/1-login.png` });
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
-  await expect(page.getByRole('heading', { name: 'المواقع' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'الرئيسية', exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       async () => (await document.fonts.ready, document.fonts.check('16px Somar')),
@@ -37,7 +37,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
   for (const [name, values] of Object.entries(types)) {
     await ensureOptionType(page.request, name, values);
   }
-  await page.getByRole('link', { name: 'المنتجات' }).click();
+  await page.getByRole('link', { name: 'التصنيفات والمنتجات' }).click();
   await page.getByLabel('اسم التصنيف').fill('ثوب اختبار شامل');
   // Only these three types, whatever else exists on the test database.
   const form = page.locator('form').filter({ has: page.getByLabel('اسم التصنيف') });
@@ -66,12 +66,12 @@ test('opening count by scanner, end to end', async ({ page }) => {
   }
   await expect(page.getByText('2 تصميم × 2 مقاس')).toBeVisible();
   await page.getByRole('button', { name: 'إنشاء 4 مقاس' }).click();
-  await expect(page.getByText('أُنشئ 4 مقاس في 2 منتج')).toBeVisible();
+  await expect(page.getByText('أُنشئ 4 مقاس في 2 منتج').first()).toBeVisible();
   await page.screenshot({ path: `${shots}/3-variants.png` });
 
   // ── One product: its sizes and their barcodes ───────────────────────────────────────────
   await page.getByRole('link', { name: 'قطني · أبيض' }).click();
-  await expect(page.getByRole('heading', { name: 'المقاسات', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^المقاسات/ })).toBeVisible();
   const barcodes = await page.locator('tbody tr td:nth-child(3)').allInnerTexts();
   expect(barcodes).toHaveLength(2);
   for (const b of barcodes) expect(b.trim()).toMatch(/^200\d{10}$/);

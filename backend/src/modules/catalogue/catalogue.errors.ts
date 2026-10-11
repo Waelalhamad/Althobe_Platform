@@ -119,3 +119,20 @@ export class HasStockError extends DomainError {
     super('HAS_STOCK', 'It has stock movements: stop it instead of deleting it');
   }
 }
+
+/** Still used by a category, or by products or sizes that are not deleted. */
+export class OptionInUseError extends DomainError {
+  constructor(details: { categories?: string[]; products?: number }) {
+    super(
+      'OPTION_IN_USE',
+      'Still used: take it out of those categories or products first',
+      details,
+    );
+  }
+}
+
+export class OptionBuiltInError extends DomainError {
+  constructor() {
+    super('OPTION_BUILT_IN', 'The size type is built in and cannot be deleted; hide it instead');
+  }
+}

@@ -1,12 +1,25 @@
-import { Alert, Button, Card, Chip, Input, PageTitle } from '@althobe/ui/components';
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  ConfirmButton,
+  Input,
+  NextStep,
+  PageTitle,
+  useToast,
+} from '@althobe/ui/components';
+import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { api, type Move, type OptionGroup, type OptionValue } from '../api';
 import { errorText, splitList, valueLabel } from '../format';
+import { PAGES } from '../help';
 import { can, meQuery, optionGroupsQuery } from '../queries';
+import { TermHint } from './Help';
 
 // The owner's lists: القصة، الزر، السحاب، الكم، القماش، اللون، القياس — and any type added later.
-// Values are hidden, never deleted, so variants that already use them stay intact.
+// Hidden values stay on existing products; a value or type that no product uses can be deleted.
 
 export function OptionsPage() {
   const { data: user } = useQuery(meQuery);
@@ -15,10 +28,13 @@ export function OptionsPage() {
 
   return (
     <>
-      <PageTitle>خيارات المنتجات</PageTitle>
-      <p className="mb-4 text-ink-muted">
-        هذه القوائم تُستخدم عند إضافة أصناف المنتج. الترتيب هنا هو ترتيب الوصف في الشاشات والملصقات.
-        القيمة المخفية لا تظهر للأصناف الجديدة، والأصناف الموجودة لا تتأثر.
+      <PageTitle intro={PAGES.options}>
+        خيارات المنتجات <TermHint term="option" />
+      </PageTitle>
+      <p className="mb-4 text-sm text-ink-muted">
+        اضغط على أي قيمة لتعديلها أو ترتيبها أو إضافة تفاصيل لها <TermHint term="detail" /> أو
+        إخفائها <TermHint term="stopped" /> أو حذفها <TermHint term="deleted" />. الترتيب هنا هو
+        ترتيب الوصف في الشاشات والملصقات.
       </p>
       {isLoading && <p className="text-ink-muted">جارٍ التحميل…</p>}
       <div className="flex flex-col gap-4">
@@ -33,6 +49,20 @@ export function OptionsPage() {
         ))}
       </div>
       {editable && <AddGroup />}
+      {editable && groups.length > 0 && (
+        <NextStep
+          action={
+            <Link
+              to="/products"
+              className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
+            >
+              التصنيفات ←
+            </Link>
+          }
+        >
+          بعد تجهيز القوائم، أنشئ التصنيفات (ثوب، طقم) وابنِ منتجاتها.
+        </NextStep>
+      )}
     </>
   );
 }
@@ -40,10 +70,14 @@ export function OptionsPage() {
 /** One mutation shape for every edit on this page: run it, then refresh everything that shows options. */
 function useOptionEdit() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   return useMutation({
     mutationFn: async (run: () => Promise<unknown>) => run(),
     // A rename changes every variant's description, so every cached list is stale.
-    onSuccess: async () => queryClient.invalidateQueries(),
+    onSuccess: async () => {
+      toast('تم الحفظ');
+      await queryClient.invalidateQueries();
+    },
   });
 }
 
@@ -139,6 +173,15 @@ function GroupCard({
             >
               {group.isActive ? 'إخفاء النوع' : 'إظهار النوع'}
             </Button>
+            {group.key !== 'SIZE' && (
+              <ConfirmButton
+                variant="ghost"
+                disabled={edit.isPending}
+                onConfirm={() => edit.mutate(async () => api.deleteOptionGroup(group.id))}
+              >
+                حذف النوع
+              </ConfirmButton>
+            )}
           </div>
         )}
       </div>
@@ -171,7 +214,9 @@ function GroupCard({
               </Chip>
             ))}
             {parentId === null && row.length === 0 && (
-              <span className="text-ink-muted">لا توجد قيم بعد</span>
+              <span className="text-ink-muted">
+                لا توجد قيم بعد — اكتبها في الحقل أدناه، وافصل بين عدة قيم بفاصلة.
+              </span>
             )}
           </div>
         );
@@ -188,6 +233,12 @@ function GroupCard({
           busy={edit.isPending}
           onUpdate={(patch) =>
             edit.mutate(async () => api.updateOptionValue(selectedValue.id, patch))
+          }
+          onDelete={() =>
+            edit.mutate(async () => {
+              await api.deleteOptionValue(selectedValue.id);
+              setSelected(null);
+            })
           }
           // Three levels at most: a detail of a detail takes no further details.
           onAddDetails={
@@ -233,6 +284,7 @@ function ValueActions({
   last,
   busy,
   onUpdate,
+  onDelete,
 }: {
   valueAr: string;
   code: string;
@@ -242,6 +294,7 @@ function ValueActions({
   busy: boolean;
   onUpdate: (patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move }) => void;
   onAddDetails: ((names: string[]) => void) | undefined;
+  onDelete: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [details, setDetails] = useState('');
@@ -303,6 +356,9 @@ function ValueActions({
           >
             {isActive ? 'إخفاء' : 'إظهار'}
           </Button>
+          <ConfirmButton variant="danger" disabled={busy} onConfirm={onDelete}>
+            حذف
+          </ConfirmButton>
           {onAddDetails && (
             <form
               className="flex min-w-64 flex-1 gap-2"

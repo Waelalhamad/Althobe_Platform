@@ -1,12 +1,14 @@
 import { Prisma } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
-import { inTransaction, type Db } from '../../shared/db.js';
+import { inTransaction, type Db, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { assertPermission, PERMISSIONS, type ActorContext } from '../../shared/permissions.js';
 import { parse } from '../../shared/validation.js';
 import {
+  OptionBuiltInError,
   OptionCodeTakenError,
   OptionGroupTakenError,
+  OptionInUseError,
   OptionValueTakenError,
   OptionValueTooDeepError,
 } from './catalogue.errors.js';
@@ -81,11 +83,12 @@ export function createOptionsService(db: Db) {
       const data = parse(updateOptionGroupSchema, input);
       try {
         return await inTransaction(db, async (tx) => {
-          const before = await tx.optionGroup.findUnique({ where: { id } });
+          const before = await tx.optionGroup.findFirst({ where: { id, ...live } });
           if (!before) throw new NotFoundError('option_group', id);
 
           if (data.move) {
             const siblings = await tx.optionGroup.findMany({
+              where: live,
               orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
               select: { id: true },
             });
@@ -121,19 +124,19 @@ export function createOptionsService(db: Db) {
       const data = parse(addOptionValueSchema, input);
       try {
         return await inTransaction(db, async (tx) => {
-          const group = await tx.optionGroup.findUnique({ where: { id: data.groupId } });
+          const group = await tx.optionGroup.findFirst({ where: { id: data.groupId, ...live } });
           if (!group) throw new NotFoundError('option_group', data.groupId);
           const parentId = data.parentId ?? null;
           if (parentId) {
             const parent = await tx.optionValue.findFirst({
-              where: { id: parentId, groupId: data.groupId },
+              where: { id: parentId, groupId: data.groupId, ...live },
               select: { parent: { select: { parentId: true } } },
             });
             if (!parent) throw new NotFoundError('option_value', parentId);
             // Three levels at most: type value → detail → detail of the detail.
             if (parent.parent?.parentId) throw new OptionValueTooDeepError();
           }
-          const siblings = { groupId: data.groupId, parentId };
+          const siblings = { groupId: data.groupId, parentId, ...live };
           const last = await tx.optionValue.aggregate({
             where: siblings,
             _max: { sortOrder: true },
@@ -183,18 +186,23 @@ export function createOptionsService(db: Db) {
       const data = parse(updateOptionValueSchema, input);
       try {
         return await inTransaction(db, async (tx) => {
-          const before = await tx.optionValue.findUnique({ where: { id } });
+          const before = await tx.optionValue.findFirst({ where: { id, ...live } });
           if (!before) throw new NotFoundError('option_value', id);
           if (data.code !== undefined && data.code !== before.code) {
             const clash = await tx.optionValue.findFirst({
-              where: { groupId: before.groupId, parentId: before.parentId, code: data.code },
+              where: {
+                groupId: before.groupId,
+                parentId: before.parentId,
+                code: data.code,
+                ...live,
+              },
             });
             if (clash) throw new OptionCodeTakenError(data.code);
           }
 
           if (data.move) {
             const siblings = await tx.optionValue.findMany({
-              where: { groupId: before.groupId, parentId: before.parentId },
+              where: { groupId: before.groupId, parentId: before.parentId, ...live },
               orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
               select: { id: true },
             });
@@ -226,7 +234,96 @@ export function createOptionsService(db: Db) {
         throw error;
       }
     },
+
+    /**
+     * Deletes a value with its details, while no product or size that is not deleted uses them.
+     * Its name and code become free again.
+     */
+    async deleteOptionValue(id: string, ctx: ActorContext): Promise<{ ok: true }> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      return inTransaction(db, async (tx) => {
+        const value = await tx.optionValue.findFirst({ where: { id, ...live } });
+        if (!value) throw new NotFoundError('option_value', id);
+        const all = await tx.optionValue.findMany({
+          where: { groupId: value.groupId, ...live },
+          select: { id: true, parentId: true },
+        });
+        const ids = [id, ...descendants(all, id)];
+        await assertUnused(tx, { valueId: { in: ids } });
+        await tx.optionValue.updateMany({
+          where: { id: { in: ids } },
+          data: { deletedAt: new Date(), isActive: false },
+        });
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: 'options.value.delete',
+          entityType: 'option_value',
+          entityId: id,
+          before: { valueAr: value.valueAr, code: value.code, details: ids.length - 1 },
+        });
+        return { ok: true as const };
+      });
+    },
+
+    /**
+     * Deletes a type with all its values, once no category uses it (take it out of the
+     * categories first). The size type is built in: labels print it large.
+     */
+    async deleteOptionGroup(id: string, ctx: ActorContext): Promise<{ ok: true }> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      return inTransaction(db, async (tx) => {
+        const group = await tx.optionGroup.findFirst({ where: { id, ...live } });
+        if (!group) throw new NotFoundError('option_group', id);
+        if (group.key === 'SIZE') throw new OptionBuiltInError();
+        const categories = await tx.category.findMany({
+          where: { ...live, optionGroups: { some: { groupId: id } } },
+          select: { nameAr: true },
+        });
+        if (categories.length) {
+          throw new OptionInUseError({ categories: categories.map((c) => c.nameAr) });
+        }
+        await assertUnused(tx, { groupId: id });
+        const now = new Date();
+        await tx.optionValue.updateMany({
+          where: { groupId: id, ...live },
+          data: { deletedAt: now, isActive: false },
+        });
+        await tx.optionGroup.update({ where: { id }, data: { deletedAt: now, isActive: false } });
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: 'options.group.delete',
+          entityType: 'option_group',
+          entityId: id,
+          before: { nameAr: group.nameAr },
+        });
+        return { ok: true as const };
+      });
+    },
   };
+}
+
+const live = { deletedAt: null } as const;
+
+/** Refuses while a product or size that is not deleted uses one of these values. */
+async function assertUnused(
+  tx: Tx,
+  where: { valueId: { in: string[] } } | { groupId: string },
+): Promise<void> {
+  const products = await tx.product.count({ where: { ...live, styleValues: { some: where } } });
+  const sizes = await tx.productVariant.count({
+    where: { ...live, product: live, optionValues: { some: where } },
+  });
+  if (products + sizes) throw new OptionInUseError({ products: products || sizes });
+}
+
+/** Every detail under `id`, at any depth. */
+function descendants(
+  all: readonly { id: string; parentId: string | null }[],
+  id: string,
+): string[] {
+  const out: string[] = [];
+  for (const v of all) if (v.parentId === id) out.push(v.id, ...descendants(all, v.id));
+  return out;
 }
 
 /** The ids in their new order after moving `id` one place up or down (no-op at the ends). */

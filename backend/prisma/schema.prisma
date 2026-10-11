@@ -254,14 +254,17 @@ model Product {
 // Configurable variant options (ADR-008): an option type (القصة، الزر، القماش، اللون، القياس…) and
 // its values are data the owner edits, not columns. Deactivated, never deleted.
 model OptionGroup {
-  id        String   @id @default(uuid(7)) @db.Uuid
+  id        String    @id @default(uuid(7)) @db.Uuid
   // Stable key for the built-in types (SIZE is printed large on labels); null for added types.
-  key       String?  @unique(map: "uq_option_groups_key")
-  nameAr    String   @unique(map: "uq_option_groups_name_ar") @map("name_ar")
-  sortOrder Int      @default(0) @map("sort_order")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  key       String?   @unique(map: "uq_option_groups_key")
+  // Unique among types not deleted (partial index in the migration).
+  nameAr    String    @unique(map: "uq_option_groups_name_ar") @map("name_ar")
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  // Deleted: gone from every list; products deleted earlier keep pointing at it.
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   values        OptionValue[]
   categories    CategoryOptionGroup[]
@@ -272,17 +275,18 @@ model OptionGroup {
 }
 
 model OptionValue {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  groupId   String   @map("group_id") @db.Uuid
+  id        String    @id @default(uuid(7)) @db.Uuid
+  groupId   String    @map("group_id") @db.Uuid
   // A detail of another value of the same type (جوخ هندي → مشخط); null at the top. Up to 3 levels.
-  parentId  String?  @map("parent_id") @db.Uuid
-  valueAr   String   @map("value_ar")
+  parentId  String?   @map("parent_id") @db.Uuid
+  valueAr   String    @map("value_ar")
   // Short Latin code the SKU is built from (سعودية → SA); unique among its siblings.
   code      String
-  sortOrder Int      @default(0) @map("sort_order")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   group         OptionGroup          @relation(fields: [groupId], references: [id])
   // Composite: a detail always sits under a value of its own type.
@@ -291,7 +295,8 @@ model OptionValue {
   styleValues   ProductStyleValue[]
   variantValues VariantOptionValue[]
 
-  // NULLS NOT DISTINCT in the migration: two top-level values may not share a name or code.
+  // NULLS NOT DISTINCT and only among values not deleted (migration): two top-level values may
+  // not share a name or code.
   @@unique([groupId, parentId, valueAr], map: "uq_option_values_group_parent_value")
   @@unique([groupId, parentId, code], map: "uq_option_values_group_parent_code")
   // Target of the composite foreign keys that keep a value under the right type.

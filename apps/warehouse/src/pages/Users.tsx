@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { api, type Account } from '../api';
 import { errorText, ROLE } from '../format';
+import { PAGES } from '../help';
 import { meQuery, usersQuery } from '../queries';
 
 const ROLE_NAMES = Object.keys(ROLE);
@@ -29,7 +30,7 @@ export function UsersPage() {
 
   return (
     <>
-      <PageTitle>المستخدمون</PageTitle>
+      <PageTitle intro={PAGES.users}>المستخدمون</PageTitle>
       {shown && (
         <div className="mb-4">
           <Alert tone="warn">

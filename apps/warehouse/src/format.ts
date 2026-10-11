@@ -43,6 +43,8 @@ const ERRORS: Record<string, string> = {
   HAS_STOCK: 'له حركات مخزون — أوقفه بدل حذفه',
   OPTION_VALUE_TOO_DEEP: 'التفاصيل حتى ثلاثة مستويات فقط',
   OPTION_CODE_TAKEN: 'هذا الرمز مستخدم لقيمة أخرى في نفس النوع',
+  OPTION_IN_USE: 'لا يمكن الحذف: مستخدم في منتجات قائمة — احذف تلك المنتجات أولاً، أو أخفِه',
+  OPTION_BUILT_IN: 'نوع القياس أساسي ولا يُحذف — يمكن إخفاؤه',
   INVALID_OPTION_GROUPS: 'نوع خيار غير معروف أو موقوف',
   OPTION_GROUP_IN_USE: 'لا يمكن إزالة هذا النوع: أصناف هذا المنتج تستخدمه',
   INVALID_SELECTION: 'اختر قيمة واحدة على الأقل لكل نوع، من القيم المفعّلة فقط',
@@ -58,7 +60,14 @@ const ERRORS: Record<string, string> = {
 };
 
 export function errorText(error: unknown): string {
-  if (error instanceof ApiError) return ERRORS[error.code] ?? `خطأ: ${error.code}`;
+  if (error instanceof ApiError) {
+    // A type still chosen in categories: name them, so the owner knows where to remove it.
+    const categories = error.details.categories;
+    if (error.code === 'OPTION_IN_USE' && Array.isArray(categories)) {
+      return `لا يمكن الحذف: هذا النوع مستخدم في التصنيفات: ${categories.join('، ')} — أزله من إعدادات التصنيف أولاً`;
+    }
+    return ERRORS[error.code] ?? `خطأ: ${error.code}`;
+  }
   return ERRORS.NETWORK!;
 }
 

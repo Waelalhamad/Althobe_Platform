@@ -330,6 +330,7 @@ export async function listCategories(q: Queryable): Promise<CategoryView[]> {
 
 export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]> {
   return q.optionGroup.findMany({
+    where: live,
     orderBy: [{ sortOrder: 'asc' }, { nameAr: 'asc' }],
     select: {
       id: true,
@@ -338,6 +339,7 @@ export async function listOptionGroups(q: Queryable): Promise<OptionGroupView[]>
       sortOrder: true,
       isActive: true,
       values: {
+        where: live,
         orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
         select: {
           id: true,

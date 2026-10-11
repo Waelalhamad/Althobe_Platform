@@ -379,6 +379,8 @@ export const api = {
     id: string,
     patch: { valueAr?: string; code?: string; isActive?: boolean; move?: Move },
   ) => request<OptionValue>('PATCH', `/option-values/${id}`, patch),
+  deleteOptionGroup: async (id: string) => request<{ ok: true }>('DELETE', `/option-groups/${id}`),
+  deleteOptionValue: async (id: string) => request<{ ok: true }>('DELETE', `/option-values/${id}`),
 
   balances: async (locationId: string) =>
     get<{ variant: Variant; balance: Balance }[]>(`/inventory/balances?locationId=${locationId}`),

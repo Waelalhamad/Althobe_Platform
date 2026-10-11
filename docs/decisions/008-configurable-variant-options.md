@@ -36,6 +36,9 @@ each combination actually made is its own variant with its own barcode and balan
   instead of creating a second one.
 - Renaming a value changes every screen at once; labels already printed keep the old text.
 - Types and values are deactivated, never deleted: hidden from new variants, existing ones intact.
+  *Changed 2026-10-12 (migration `option_delete`):* a value or type that no category, product or
+  size (not deleted) uses can be deleted; it is a soft delete that frees its name and code, so
+  products deleted earlier still point at it. The size type cannot be deleted.
 - A type can be removed from a product only while no variant of it uses that type.
 - Display order is the type order (then value order), edited on the Options page. The type with
   key `SIZE` is printed large on labels.

@@ -22,7 +22,8 @@ variants (one value per type), SKUs, and barcodes — internal EAN-13 codes allo
 - A variant has exactly one active value per option type of its product; `option_key` (sorted value
   ids) makes each combination unique per product, for life — retired variants are restored, not
   recreated.
-- Option types and values are deactivated, never deleted. A type leaves a product only while no
+- Option types and values are hidden, or deleted (soft) while no category, product or size uses
+  them; the size type is never deleted. A type leaves a product only while no
   variant of it uses the type.
 
 ## Main Services

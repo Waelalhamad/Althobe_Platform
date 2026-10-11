@@ -1,4 +1,4 @@
-import { Alert, Button, Card, ConfirmButton } from '@althobe/ui/components';
+import { Alert, Button, Card, ConfirmButton, useToast } from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api, type Photo } from '../api';
@@ -59,7 +59,12 @@ export function ProductPhotos({ productId, canWrite }: { productId: string; canW
             )}
           </button>
         ))}
-        {photos.length === 0 && <p className="text-ink-muted">لا توجد صور بعد</p>}
+        {photos.length === 0 && (
+          <p className="text-ink-muted">
+            لا توجد صور بعد. الصور اختيارية لكنها تساعد على التعرف على التصميم — اضغط «إضافة صور»
+            واختر من المعرض أو صوّر بالكاميرا. الصورة الأولى تصبح الرئيسية.
+          </p>
+        )}
       </div>
       {canWrite && selectedPhoto && (
         <PhotoEditor
@@ -78,6 +83,7 @@ export function ProductPhotos({ productId, canWrite }: { productId: string; canW
 function Uploader({ productId }: { productId: string }) {
   const queryClient = useQueryClient();
   const refresh = useCatalogueRefresh();
+  const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -95,7 +101,9 @@ function Uploader({ productId }: { productId: string }) {
         setProgress({ done: i + 1, total: files.length });
         await queryClient.invalidateQueries({ queryKey: ['photos', productId] });
       }
+      return files.length;
     },
+    onSuccess: (count) => toast(`أُضيفت ${count} صورة`),
     onSettled: async () => {
       setProgress(null);
       if (input.current) input.current.value = '';

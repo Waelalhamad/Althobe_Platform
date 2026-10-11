@@ -1,10 +1,22 @@
-import { Button, Card, Code, Field, Input, PageTitle, Select } from '@althobe/ui/components';
+import {
+  Button,
+  Card,
+  Code,
+  EmptyState,
+  Field,
+  Input,
+  NextStep,
+  PageTitle,
+  Select,
+} from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { toSVG } from 'bwip-js/browser';
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { Variant } from '../api';
+import { PAGES } from '../help';
 import { categoriesQuery, productsQuery, variantsQuery } from '../queries';
+import { markLabelsPrinted } from '../setup';
 import { categoryPath, categoryTree } from './Categories';
 
 const route = getRouteApi('/app/labels');
@@ -103,8 +115,15 @@ export function LabelsPage() {
     <>
       <div className="print:hidden">
         <PageTitle
+          intro={PAGES.labels}
           actions={
-            <Button onClick={() => window.print()} disabled={labels.length === 0}>
+            <Button
+              onClick={() => {
+                markLabelsPrinted();
+                window.print();
+              }}
+              disabled={labels.length === 0}
+            >
               طباعة {labels.length} ملصق
             </Button>
           }
@@ -261,6 +280,16 @@ export function LabelsPage() {
           </Card>
         )}
 
+        {!categoryId && !productId && (
+          <div className="mt-4">
+            <EmptyState title="اختر ما تريد طباعته">
+              اختر تصنيفاً من الأعلى لطباعة ملصقات كل منتجاته، أو منتجاً واحداً. ثم حدد عدد النسخ
+              لكل مقاس (عدد القطع الموجودة منه) واضغط «طباعة». في نافذة الطباعة اختر المقياس 100%
+              وبدون هوامش.
+            </EmptyState>
+          </div>
+        )}
+
         {labels.length > 0 && (
           <>
             <h2 className="mb-2 mt-6 font-bold">
@@ -273,6 +302,19 @@ export function LabelsPage() {
                 </div>
               ))}
             </div>
+            <NextStep
+              action={
+                <Link
+                  to="/"
+                  className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
+                >
+                  الرئيسية ←
+                </Link>
+              }
+            >
+              بعد لصق الملصقات، أدخل القطع للمخزون بالمسح: «جرد افتتاحي» أول مرة، أو «استلام»
+              للبضاعة الجديدة — من الرئيسية.
+            </NextStep>
           </>
         )}
       </div>

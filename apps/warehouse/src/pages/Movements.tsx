@@ -1,7 +1,8 @@
-import { Card, Code, Field, PageTitle, Select } from '@althobe/ui/components';
+import { Card, Code, EmptyState, Field, PageTitle, Select } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { formatQuantity, MOVEMENT_TYPE, variantName } from '../format';
+import { PAGES } from '../help';
 import { locationsQuery, movementsQuery } from '../queries';
 
 const route = getRouteApi('/app/movements');
@@ -17,7 +18,7 @@ export function MovementsPage() {
 
   return (
     <>
-      <PageTitle>سجل الحركات</PageTitle>
+      <PageTitle intro={PAGES.movements}>سجل الحركات</PageTitle>
       <Card className="mb-4 flex flex-wrap items-end gap-3">
         <div className="min-w-60">
           <Field label="الموقع">
@@ -107,8 +108,10 @@ export function MovementsPage() {
             )}
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-ink-muted">
-                  لا توجد حركات
+                <td colSpan={8} className="p-3">
+                  <EmptyState title="لا توجد حركات بعد">
+                    كل إدخال أو إخراج أو نقل أو جرد يُسجَّل هنا تلقائياً عند تأكيده.
+                  </EmptyState>
                 </td>
               </tr>
             )}

@@ -17,6 +17,7 @@ import { OptionsPage } from './pages/Options';
 import { ProductDetailPage } from './pages/ProductDetail';
 import { CategoriesPage } from './pages/Categories';
 import { CategoryPage } from './pages/Category';
+import { HelpPage } from './pages/Help';
 import { ReportsPage } from './pages/Reports';
 import { ScanSessionPage } from './pages/ScanSession';
 import { StocktakePage } from './pages/Stocktake';
@@ -104,6 +105,7 @@ const routes = [
   createRoute({ getParentRoute: () => appRoute, path: '/reports', component: ReportsPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/users', component: UsersPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/account', component: AccountPage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpPage }),
   createRoute({
     getParentRoute: () => appRoute,
     path: '/stocktakes/$stocktakeId',

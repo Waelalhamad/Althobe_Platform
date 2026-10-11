@@ -55,6 +55,7 @@ stock endpoints arriving in Phase 3 will require it.
 | `GET` | `/option-groups` (types with their values) | `products.read` |
 | `POST` | `/option-groups` · `/option-groups/:id/values` | `products.write` |
 | `PATCH` | `/option-groups/:id` · `/option-values/:id` — rename, `isActive`, `move: up/down` | `products.write` |
+| `DELETE` | `/option-groups/:id` · `/option-values/:id` — only while unused (`OPTION_IN_USE` names the categories); SIZE is `OPTION_BUILT_IN` | `products.write` |
 | `GET` | `/barcodes/:code` | `inventory.view` |
 | `GET` | `/inventory/balances?locationId=&q=` | `inventory.view` |
 | `GET` | `/inventory/movements?variantId=&locationId=` | `inventory.view` |

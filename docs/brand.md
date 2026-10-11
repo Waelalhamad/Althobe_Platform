@@ -67,6 +67,23 @@ The logo's red is `#86161A`, a hair darker than the palette's `#8A1913`; indisti
   on the deep red.
 - Keep clear space around it of at least the height of the Arabic wordmark.
 
+## Page pattern (warehouse app)
+
+Every page is predictable, so people always know what a page is for and what comes next:
+
+- **Title + one sentence** (`PageTitle intro`): what the page is for. All texts live in
+  `apps/warehouse/src/help.ts`.
+- **Empty list → `EmptyState`**: what belongs there and how to add it, never a bare "لا توجد".
+- **`NextStep`** at the bottom where the order of work is fixed (options → categories → products →
+  labels → opening count).
+- **Stop and delete → `DangerZone`** at the bottom of the page, always with the same explanation of
+  stopping (keeps history, reversible) versus deleting (only what never had stock).
+- **After a save → `useToast`**: green, says what happened and the next step. Errors stay as an
+  `Alert` in place.
+- **Unclear words → `Hint` / `TermHint`** ("؟"), from the glossary in `help.ts`; the same glossary
+  is the «المساعدة» page.
+- **Body text 18 px** (`html { font-size: 112.5% }`); secondary text `ink-muted`.
+
 ## Open asset requests
 
 | Needed | Why |

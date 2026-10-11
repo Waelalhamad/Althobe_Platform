@@ -1,6 +1,7 @@
-import { Card, Code, PageTitle } from '@althobe/ui/components';
+import { Card, Code, EmptyState, PageTitle } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { formatMoney, formatQuantity } from '../format';
+import { PAGES } from '../help';
 import { can, locationsQuery, meQuery, summaryQuery } from '../queries';
 
 /** Stock on hand per location and product. Value (SYP, moving average) only for cost viewers. */
@@ -18,7 +19,7 @@ export function ReportsPage() {
 
   return (
     <>
-      <PageTitle>تقرير المخزون</PageTitle>
+      <PageTitle intro={PAGES.reports}>تقرير المخزون</PageTitle>
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         {locations.map((l) => {
@@ -74,7 +75,11 @@ export function ReportsPage() {
         );
       })}
       {isLoading && <p className="text-ink-muted">جارٍ التحميل…</p>}
-      {!isLoading && rows.length === 0 && <p className="text-ink-muted">لا يوجد مخزون بعد.</p>}
+      {!isLoading && rows.length === 0 && (
+        <EmptyState title="لا يوجد مخزون بعد">
+          التقرير يظهر بعد أول إدخال للقطع (جرد افتتاحي أو استلام) من الصفحة الرئيسية.
+        </EmptyState>
+      )}
     </>
   );
 }
