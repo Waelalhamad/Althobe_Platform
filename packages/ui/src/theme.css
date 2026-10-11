@@ -60,7 +60,7 @@
 
   --color-surface: #fbf7f5;
   --color-ink: #231a19;
-  --color-ink-muted: #6b5d5c;
+  --color-ink-muted: #574a49;
 
   /* Scan feedback is deliberately NOT the brand red (docs/brand.md). */
   --color-ok: #15803d;
@@ -73,6 +73,9 @@
 
 @layer base {
   html {
+    /* 18px instead of 16px: Somar is light at small sizes and the app is read at arm's length
+       on phones and warehouse PCs. Tailwind sizes are in rem, so everything scales with it. */
+    font-size: 112.5%;
     font-family: var(--font-sans);
     color: var(--color-ink);
     background: var(--color-surface);

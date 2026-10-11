@@ -90,6 +90,9 @@ never in place of the EAN-13 label.
 - Minimum print width 25 mm, magnification not below 80% of nominal EAN-13 size.
 - Quiet zone preserved on both sides. This is the single most common cause of labels that will
   not scan.
+- Bars sized in whole printer dots (203 dpi: the thinnest bar is exactly 2–4 dots, 0.25–0.5 mm);
+  a fractional bar width is rounded unevenly by the printer and the label will not scan. Print
+  at 100% scale, never "fit to page".
 - Human-readable digits printed under the bars, always. If the scan fails, someone types them.
 - Label content: Arabic product name, the size large, the other options (cut, buttons, fabric,
   colour, …) on up to two small lines, SKU, barcode. Price is

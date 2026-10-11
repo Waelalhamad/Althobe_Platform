@@ -331,12 +331,14 @@ const Label = memo(function Label({
       toSVG({
         bcid: 'ean13',
         text: variant.barcode,
-        includetext: true, // standard EAN-13 digit groups between the guard bars
         height: 10,
-        scale: 2,
-      }),
+        scale: 1,
+      })
+        // Stretch only vertically: the width is set exactly below, in whole printer dots.
+        .replace('<svg ', '<svg preserveAspectRatio="none" shape-rendering="crispEdges" '),
     [variant.barcode],
   );
+  const bars = barWidthMm(size.w - 2 * 1.5 * k);
 
   return (
     <div
@@ -352,11 +354,11 @@ const Label = memo(function Label({
     >
       <div className="flex shrink-0 items-center justify-between gap-1 leading-none">
         <div className="min-w-0 flex-1 text-start">
-          <div className="truncate font-bold" style={{ fontSize: mm(2.6) }}>
+          <div className="truncate font-bold" style={{ fontSize: mm(2.8) }}>
             {variant.product.nameAr}
           </div>
           {/* Every option but the size (printed large beside it), on at most two lines. */}
-          <div className="mt-0.5 line-clamp-2 leading-tight" style={{ fontSize: mm(2.3) }}>
+          <div className="mt-0.5 line-clamp-2 leading-tight" style={{ fontSize: mm(2.4) }}>
             {details}
           </div>
         </div>
@@ -365,21 +367,45 @@ const Label = memo(function Label({
         </div>
       </div>
       {/* Safe: bwip-js builds this SVG locally from a validated 13-digit barcode; no user HTML. */}
+      <div className="flex min-h-0 w-full flex-1 justify-center" style={{ marginTop: mm(0.8) }}>
+        <div
+          className="h-full [&>svg]:h-full [&>svg]:w-full"
+          style={{ width: `${bars}mm` }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+      {/* The digits as text, larger and sharper than bwip-js's built-in ones. */}
       <div
-        className="flex min-h-0 w-full flex-1 items-center justify-center [&>svg]:h-full [&>svg]:max-w-full"
-        style={{ marginBlock: mm(0.6) }}
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+        dir="ltr"
+        className="shrink-0 text-center font-bold leading-none"
+        style={{ fontSize: mm(2.9), letterSpacing: mm(0.25), marginTop: mm(0.4) }}
+      >
+        {variant.barcode}
+      </div>
       <div
         dir="ltr"
         className="shrink-0 text-center font-mono leading-none"
-        style={{ fontSize: mm(1.8) }}
+        style={{ fontSize: mm(1.9), marginTop: mm(0.3) }}
       >
         {variant.sku}
       </div>
     </div>
   );
 });
+
+// Label printers such as the XP-365B print at 203 dpi: 8 dots per mm. A bar that is not a whole
+// number of dots is rounded differently each time and the scanner cannot read it, so every
+// module (the thinnest bar) is exactly 2–4 dots wide. EAN-13 is 95 modules plus quiet zones
+// (11 left, 7 right) that must stay white.
+const DOTS_PER_MM = 8;
+const EAN13_MODULES = 96; // bwip-js draws 95 modules on a 96-unit canvas
+const QUIET_MODULES = 18;
+
+/** Width of the bars in mm: the widest whole-dot module that fits with its quiet zones. */
+function barWidthMm(availableMm: number): number {
+  const dots = Math.floor((availableMm * DOTS_PER_MM) / (EAN13_MODULES + QUIET_MODULES));
+  return (EAN13_MODULES * Math.min(4, Math.max(2, dots))) / DOTS_PER_MM;
+}
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
