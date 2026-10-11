@@ -14,7 +14,7 @@ bucket in `eu-central-1`, accessed by a dedicated least-privilege IAM user.
 | --- | --- |
 | Image | `Dockerfile` (repo root): `node:22-bookworm-slim` + OpenSSL, pnpm workspace build |
 | Deploy config | `railway.json`: Dockerfile builder, pre-deploy migrations, health check |
-| Migrations | `pnpm --filter @althobe/backend db:migrate` as the **pre-deploy** command; never resets |
+| Migrations | `pnpm --filter @althobe/backend db:migrate` on container start, before the server (the Dockerfile `CMD`; Railway ignored the pre-deploy command on 2026-10-12); never resets |
 | Health check | `GET /api/v1/health`: 200 when the database answers within 5 s, else 503 |
 | Secrets | Railway service variables only — never in git, files, or chat |
 

@@ -25,7 +25,10 @@ RUN pnpm build
 
 FROM base AS run
 ENV NODE_ENV=production
-# The whole built workspace: the pre-deploy migration step runs through tsx (a dev dependency).
+# The whole built workspace: the migration step runs through tsx (a dev dependency).
 COPY --from=build /app /app
 EXPOSE 3000
-CMD ["node", "backend/dist/main.js"]
+# Migrations run on start, before the server: Railway ignored railway.json's preDeployCommand on
+# 2026-10-12, which left a release running on the old schema. A failed migration stops the start,
+# so the new release never goes live. Migrations are idempotent; a restart re-checks in seconds.
+CMD ["sh", "-c", "pnpm --filter @althobe/backend db:migrate && exec node backend/dist/main.js"]
