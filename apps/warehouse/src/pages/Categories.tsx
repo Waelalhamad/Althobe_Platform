@@ -143,8 +143,8 @@ function CreateCategory({ categories }: { categories: Category[] }) {
     <Card>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <h2 className="font-bold">تصنيف جديد</h2>
-        <div className="grid items-end gap-3 md:grid-cols-2">
-          <Field label="اسم التصنيف" hint="الرمز يُقترح تلقائياً ويمكن تعديله">
+        <div className="grid items-start gap-3 md:grid-cols-2">
+          <Field label="اسم التصنيف" hint="مثل ثوب أو طقم. رمزه في SKU يُنشأ تلقائياً من الاسم">
             <Input
               required
               value={nameAr}
@@ -152,7 +152,10 @@ function CreateCategory({ categories }: { categories: Category[] }) {
               placeholder="ثوب، طقم…"
             />
           </Field>
-          <Field label="داخل تصنيف (اختياري)">
+          <Field
+            label="داخل تصنيف (اختياري)"
+            hint="اتركه «تصنيف رئيسي»، أو اختر تصنيفاً ليكون هذا فرعاً منه (ثوب ← صيفي)"
+          >
             <Select
               value={parentId}
               onChange={(e) => {

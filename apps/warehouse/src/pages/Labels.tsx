@@ -395,18 +395,20 @@ const Label = memo(function Label({
       }}
     >
       <div className="flex shrink-0 items-center justify-between gap-1 leading-none">
-        <div className="min-w-0 flex-1 text-start">
-          <div className="truncate font-bold" style={{ fontSize: mm(2.8) }}>
-            {variant.product.nameAr}
-          </div>
-          {/* Every option but the size (printed large beside it), on at most two lines. */}
-          <div className="mt-0.5 line-clamp-2 leading-tight" style={{ fontSize: mm(2.4) }}>
-            {details}
-          </div>
+        <div className="min-w-0 flex-1 truncate text-start font-bold" style={{ fontSize: mm(3) }}>
+          {variant.product.nameAr}
         </div>
         <div className="shrink-0 text-center font-bold leading-none" style={{ fontSize: mm(5.2) }}>
           {variant.size}
         </div>
+      </div>
+      {/* Every option but the size, across the full width. The text shrinks with its length so
+          a long design (cut · buttons · zip · fabric · colour …) is printed whole, never cut. */}
+      <div
+        className="line-clamp-3 shrink-0 font-semibold"
+        style={{ fontSize: mm(detailsFont(details, size.w / k - 3)), lineHeight: 1.15 }}
+      >
+        {details}
       </div>
       {/* Safe: bwip-js builds this SVG locally from a validated 13-digit barcode; no user HTML. */}
       <div className="flex min-h-0 w-full flex-1 justify-center" style={{ marginTop: mm(0.8) }}>
@@ -447,6 +449,16 @@ const QUIET_MODULES = 18;
 function barWidthMm(availableMm: number): number {
   const dots = Math.floor((availableMm * DOTS_PER_MM) / (EAN13_MODULES + QUIET_MODULES));
   return (EAN13_MODULES * Math.min(4, Math.max(2, dots))) / DOTS_PER_MM;
+}
+
+/**
+ * Font size (reference mm) for the options line: as large as possible up to 2.4, small enough
+ * that the whole text fits in three lines of `widthMm`. An Arabic letter averages about half
+ * its font size wide; 0.85 leaves room for words that do not break evenly.
+ */
+function detailsFont(text: string, widthMm: number): number {
+  const fits = (0.85 * 3 * widthMm) / (Math.max(1, text.length) * 0.5);
+  return Math.min(2.4, Math.max(1.6, fits));
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

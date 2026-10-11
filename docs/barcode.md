@@ -95,7 +95,7 @@ never in place of the EAN-13 label.
   at 100% scale, never "fit to page".
 - Human-readable digits printed under the bars, always. If the scan fails, someone types them.
 - Label content: Arabic product name, the size large, the other options (cut, buttons, fabric,
-  colour, …) on up to two small lines, SKU, barcode. Price is
+  colour, …) across the full width on up to three lines, the text shrinking with its length so it is never cut; SKU, barcode. Price is
   **not** part of the barcode; if it is printed on the label it is printed as text, from the
   current price list, at print time.
 - **Printed from the browser** (`apps/warehouse` → طباعة الملصقات), so any printer driver works.
