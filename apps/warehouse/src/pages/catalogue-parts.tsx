@@ -13,10 +13,13 @@ export const MAX_COMBINATIONS = 500;
 /** Refreshes everything that shows categories, products, sizes or photos. */
 export function useCatalogueRefresh() {
   const queryClient = useQueryClient();
+  // In parallel: one at a time cost a full round trip to the server each.
   return async () => {
-    for (const key of ['categories', 'products', 'product', 'variants', 'photos']) {
-      await queryClient.invalidateQueries({ queryKey: [key] });
-    }
+    await Promise.all(
+      ['categories', 'products', 'product', 'variants', 'photos'].map(async (key) =>
+        queryClient.invalidateQueries({ queryKey: [key] }),
+      ),
+    );
   };
 }
 

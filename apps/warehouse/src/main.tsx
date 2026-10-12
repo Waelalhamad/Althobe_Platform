@@ -11,6 +11,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     // Business refusals (4xx) are answers, not network blips: never retry them.
     queries: {
+      // Each request crosses the internet (~0.5 s from Syria); a page opened again within 30 s
+      // shows what it has without asking. Every save refreshes what it changed regardless.
+      staleTime: 30_000,
       retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 2,
     },
   },

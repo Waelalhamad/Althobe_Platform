@@ -100,8 +100,10 @@ export function StocktakePage() {
     onSuccess: async (result) => {
       toast('اعتُمد الجرد — الأرصدة صارت مطابقة للعدّ');
       replace(result.stocktake);
-      await queryClient.invalidateQueries({ queryKey: ['balances'] });
-      await queryClient.invalidateQueries({ queryKey: ['stocktakes'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['stocktakes'] }),
+      ]);
     },
   });
   const cancel = useMutation({

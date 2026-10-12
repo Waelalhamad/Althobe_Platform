@@ -119,7 +119,19 @@ export async function buildServer(options: ServerOptions) {
   );
 
   if (options.staticDir && existsSync(options.staticDir)) {
-    await app.register(fastifyStatic, { root: options.staticDir });
+    // Built files carry a content hash in their name, so they never change: the browser keeps
+    // them for a year and does not ask again. The page itself is always checked, for releases.
+    app.addHook('onSend', async (request, reply) => {
+      if (request.url.startsWith('/api/')) return;
+      const html = String(reply.getHeader('content-type') ?? '').startsWith('text/html');
+      reply.header(
+        'cache-control',
+        request.url.startsWith('/assets/') && !html
+          ? 'public, max-age=31536000, immutable'
+          : 'no-cache',
+      );
+    });
+    await app.register(fastifyStatic, { root: options.staticDir, cacheControl: false });
     // Client-side routes: any non-API GET falls back to the SPA shell.
     app.setNotFoundHandler(async (request, reply) => {
       if (request.method === 'GET' && !request.url.startsWith('/api/'))
