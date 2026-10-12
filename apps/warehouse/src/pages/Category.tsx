@@ -171,11 +171,14 @@ function ProductBuilder({
   const toast = useToast();
   const { data: variants = [] } = useQuery(variantsQuery({ categoryId }));
   const { chosen, toggle, setAll } = useChosen();
+  // Types left out of these designs («بدون»): a thobe has buttons or a zip, not both.
+  const [skipped, setSkipped] = useState<string[]>([]);
   const [retail, setRetail] = useState('');
   const [wholesale, setWholesale] = useState('');
   const prices = parsePrices(retail, wholesale);
 
-  const designGroups = groups.filter((g) => !isSize(g));
+  const designGroups = groups.filter((g) => !isSize(g) && !skipped.includes(g.id));
+  const used = groups.filter((g) => !skipped.includes(g.id));
   const sizeGroup = groups.find(isSize);
   const designs = designGroups.reduce<string[][]>(
     (acc, g) => acc.flatMap((combo) => (chosen[g.id] ?? []).map((id) => [...combo, id])),
@@ -204,7 +207,7 @@ function ProductBuilder({
     mutationFn: async () => {
       const typed = typedPrices(prices);
       return api.generateProducts(categoryId, {
-        selections: groups.map((g) => ({ groupId: g.id, valueIds: chosen[g.id] ?? [] })),
+        selections: used.map((g) => ({ groupId: g.id, valueIds: chosen[g.id] ?? [] })),
         ...(typed ? { prices: typed } : {}),
       });
     },
@@ -223,7 +226,8 @@ function ProductBuilder({
       </h2>
       <p className="mb-4 text-sm text-ink-muted">
         اختر من كل نوع قيمة أو أكثر، ثم المقاسات. يُنشأ منتج لكل تصميم، وداخله مقاس لكل قياس اخترته،
-        ولكل مقاس باركود خاص. الموجود لا يتكرر.
+        ولكل مقاس باركود خاص. الموجود لا يتكرر. نوع لا يخص هذه التصاميم (مثل السحاب لثوب بأزرار)
+        اختر له «بدون».
       </p>
       {groups.length === 0 && (
         <Alert tone="warn">لم تُحدَّد أنواع خيارات لهذا التصنيف — اخترها من «تعديل التصنيف».</Alert>
@@ -236,6 +240,12 @@ function ProductBuilder({
             chosen={chosen[g.id] ?? []}
             onToggle={(valueId) => toggle(g.id, valueId)}
             onSetAll={(ids) => setAll(g.id, ids)}
+            skipped={skipped.includes(g.id)}
+            onSkip={
+              isSize(g)
+                ? undefined
+                : (on) => setSkipped((s) => (on ? [...s, g.id] : s.filter((id) => id !== g.id)))
+            }
           />
         ))}
       </div>
@@ -262,7 +272,7 @@ function ProductBuilder({
         </Button>
         <span className="text-ink-muted">
           {total === 0
-            ? 'اختر من كل نوع قيمة واحدة على الأقل'
+            ? 'اختر من كل نوع قيمة واحدة على الأقل، أو «بدون»'
             : `${designs.length} تصميم × ${sizes.length} مقاس${already ? ` · ${already} موجود مسبقاً` : ''}`}
         </span>
         {total > MAX_COMBINATIONS && (

@@ -289,7 +289,7 @@ export function createCatalogueService(db: Db) {
     /**
      * Creates every missing combination of the chosen values: one product per design (the
      * non-size values) and one variant per size. One list of values per option type of the
-     * category. Existing designs and sizes are left as they are (a deleted one is restored), so
+     * category; a type left out is «بدون» for these designs (never the size). Existing designs and sizes are left as they are (a deleted one is restored), so
      * running it again with an extra size only adds that size.
      */
     async generateProducts(
@@ -310,12 +310,15 @@ export function createCatalogueService(db: Db) {
           select: { groupId: true, group: { select: { key: true } } },
         });
         const own = new Set(categoryGroups.map((g) => g.groupId));
+        const sizeGroupId = categoryGroups.find((g) => g.group.key === 'SIZE')?.groupId;
         const chosen = data.selections.map((s) => s.groupId);
-        const missing = [...own].filter((g) => !chosen.includes(g));
+        // A type left out is "بدون" for these designs (a thobe has buttons or a zip, not both).
+        // The size is never left out: every piece on a shelf has one.
+        const missing = sizeGroupId && !chosen.includes(sizeGroupId) ? [sizeGroupId] : [];
         const extra = chosen.filter((g) => !own.has(g));
         if (missing.length || extra.length || new Set(chosen).size !== chosen.length) {
           throw new InvalidSelectionError(
-            'Choose values for every option type of the category, each once, and only those',
+            'Choose sizes, and values only for option types of the category, each once',
             { missing, extra },
           );
         }
@@ -323,7 +326,6 @@ export function createCatalogueService(db: Db) {
         const values = await selectedValues(tx, data.selections);
         const byId = new Map(values.map((v) => [v.id, v]));
 
-        const sizeGroupId = categoryGroups.find((g) => g.group.key === 'SIZE')?.groupId;
         const style = data.selections
           .filter((s) => s.groupId !== sizeGroupId)
           .sort((a, b) => typeOrder(byId.get(a.valueIds[0]!)!, byId.get(b.valueIds[0]!)!));

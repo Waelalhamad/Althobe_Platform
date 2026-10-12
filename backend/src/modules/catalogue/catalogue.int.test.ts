@@ -128,7 +128,39 @@ describe('categories make products by design, each with its sizes', () => {
     expect(first!.title).toBe('سعودية · جوخ هندي · أبيض · 56');
   });
 
-  it('refuses a missing type, a value from another type, an inactive value, a heading, too many', async () => {
+  it('a type left out is "بدون": its own design, apart from the same design with a value', async () => {
+    const categoryId = w.category.id;
+    const without = await catalogue.generateProducts(
+      { categoryId, selections: [pick(w.options.colour, 'أسود'), pick(w.options.size, '56')] },
+      w.owner,
+    );
+    expect(without.products.map((p) => p.title)).toEqual(['أسود']);
+    expect(without.created.map((v) => v.title)).toEqual(['أسود · 56']);
+
+    const withFabric = await catalogue.generateProducts(
+      {
+        categoryId,
+        selections: [
+          pick(w.options.fabric, 'قطني'),
+          pick(w.options.colour, 'أسود'),
+          pick(w.options.size, '56'),
+        ],
+      },
+      w.owner,
+    );
+    expect(withFabric.created).toHaveLength(1);
+    expect(withFabric.products[0]!.id).not.toBe(without.products[0]!.id);
+
+    // Again without the fabric: the same product, nothing new.
+    const again = await catalogue.generateProducts(
+      { categoryId, selections: [pick(w.options.colour, 'أسود'), pick(w.options.size, '56')] },
+      w.owner,
+    );
+    expect(again.created).toHaveLength(0);
+    expect(again.products[0]!.id).toBe(without.products[0]!.id);
+  });
+
+  it('refuses missing sizes, a value from another type, an inactive value, a heading, too many', async () => {
     const categoryId = w.category.id;
     const [fabric, colour, size] = whiteCotton('56');
     const fails = async (selections: { groupId: string; valueIds: string[] }[]) =>

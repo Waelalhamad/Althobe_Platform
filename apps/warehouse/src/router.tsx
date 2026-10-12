@@ -22,6 +22,7 @@ import { ReportsPage } from './pages/Reports';
 import { ScanSessionPage } from './pages/ScanSession';
 import { StocktakePage } from './pages/Stocktake';
 import { StocktakesPage } from './pages/Stocktakes';
+import { LocationsPage } from './pages/Locations';
 import { UsersPage } from './pages/Users';
 import { meQuery } from './queries';
 
@@ -104,6 +105,7 @@ const routes = [
   }),
   createRoute({ getParentRoute: () => appRoute, path: '/reports', component: ReportsPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/users', component: UsersPage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/locations', component: LocationsPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/account', component: AccountPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpPage }),
   createRoute({

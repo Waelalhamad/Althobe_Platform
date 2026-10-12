@@ -21,5 +21,5 @@ and STORE (placeholder names). Later: bins (shelves) inside warehouses.
 ## Main Services
 
 ```
-listLocations  getLocation
+listLocations  getLocation  updateLocation (names only)
 ```

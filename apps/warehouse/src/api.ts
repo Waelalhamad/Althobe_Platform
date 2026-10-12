@@ -292,6 +292,8 @@ export const api = {
   me: async () => get<User>('/auth/me'),
 
   locations: async () => get<Location[]>('/locations'),
+  updateLocation: async (id: string, patch: { nameAr?: string; nameEn?: string | null }) =>
+    request<Location>('PATCH', `/locations/${id}`, patch),
 
   categories: async () => get<Category[]>('/categories'),
   createCategory: async (input: {

@@ -27,6 +27,8 @@ export const PERMISSIONS = {
   },
   admin: {
     users: 'admin.users.write',
+    // Renaming warehouses and the store.
+    locations: 'admin.locations.write',
   },
 } as const;
 

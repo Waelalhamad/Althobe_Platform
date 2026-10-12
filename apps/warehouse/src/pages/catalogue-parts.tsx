@@ -20,18 +20,30 @@ export function useCatalogueRefresh() {
   };
 }
 
-/** The values of one option type as tappable chips; a missing value can be added on the spot. */
+/**
+ * The values of one option type as tappable chips; a missing value can be added on the spot.
+ * With `onSkip`, a «بدون» chip leaves the type out of these designs (buttons or a zip, not both):
+ * it clears the values, and tapping a value turns it off again.
+ */
 export function GroupPicker({
   group,
   chosen,
   onToggle,
   onSetAll,
+  skipped = false,
+  onSkip,
 }: {
   group: OptionGroup;
   chosen: string[];
   onToggle: (valueId: string) => void;
   onSetAll: (valueIds: string[]) => void;
+  skipped?: boolean;
+  onSkip?: (skipped: boolean) => void;
 }) {
+  const pick = (valueId: string) => {
+    if (skipped) onSkip?.(false);
+    onToggle(valueId);
+  };
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState('');
   // Details, not their headings: جوخ هندي مونس / مشخط / ساده rather than جوخ هندي.
@@ -43,7 +55,7 @@ export function GroupPicker({
     onSuccess: async (value) => {
       setAdding('');
       await queryClient.invalidateQueries({ queryKey: optionGroupsQuery.queryKey });
-      onToggle(value.id);
+      pick(value.id);
     },
   });
 
@@ -55,7 +67,10 @@ export function GroupPicker({
           <button
             type="button"
             className="text-sm text-brand underline"
-            onClick={() => onSetAll(allChosen ? [] : active.map((v) => v.id))}
+            onClick={() => {
+              if (skipped) onSkip?.(false);
+              onSetAll(allChosen ? [] : active.map((v) => v.id));
+            }}
           >
             {allChosen ? 'إلغاء الكل' : 'اختيار الكل'}
           </button>
@@ -67,12 +82,23 @@ export function GroupPicker({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        {onSkip && group.isActive && (
+          <Chip
+            selected={skipped}
+            onClick={() => {
+              onSkip(!skipped);
+              if (!skipped) onSetAll([]);
+            }}
+          >
+            بدون {group.nameAr}
+          </Chip>
+        )}
         {active.map((v) => (
           <Chip
             key={v.id}
             selected={chosen.includes(v.id)}
             disabled={!group.isActive}
-            onClick={() => onToggle(v.id)}
+            onClick={() => pick(v.id)}
           >
             {valueLabel(group, v)}
           </Chip>

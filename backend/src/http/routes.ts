@@ -84,6 +84,14 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.locations.listLocations(actorOf(request)),
     }));
 
+    priv.patch('/locations/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.locations.updateLocation(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
     // ── Categories → products → sizes (ADR-011) ─────────────────────────────────────────────
     priv.get('/categories', async (request) => ({
       data: await s.catalogue.listCategories(actorOf(request)),

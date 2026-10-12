@@ -62,6 +62,7 @@ accounting.read
 employees.read
 employees.salary.read
 admin.users.write
+admin.locations.write
 admin.roles.write
 ```
 

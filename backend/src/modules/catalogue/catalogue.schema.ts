@@ -64,7 +64,8 @@ export const updateCategorySchema = z
 
 /**
  * Every combination of the chosen values: one product per design (the non-size values) and one
- * variant per size. One list of values per option type of the category.
+ * variant per size. One list of values per option type of the category; a type left out is
+ * «بدون» for these designs, except the size.
  */
 export const generateProductsSchema = z.object({
   categoryId: z.uuid(),

@@ -7,6 +7,7 @@ import { can, meQuery, modeQuery } from './queries';
 type To =
   | '/'
   | '/options'
+  | '/locations'
   | '/products'
   | '/labels'
   | '/balances'
@@ -30,6 +31,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
       { to: '/options', label: 'الخيارات', anyOf: ['products.write'] },
       { to: '/products', label: 'التصنيفات والمنتجات', anyOf: ['products.write'] },
       { to: '/labels', label: 'طباعة الملصقات', anyOf: ['products.write', 'inventory.receive'] },
+      { to: '/locations', label: 'المواقع', anyOf: ['admin.locations.write'] },
     ],
   },
   {

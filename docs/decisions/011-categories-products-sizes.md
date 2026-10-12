@@ -28,7 +28,9 @@ Three levels, each editable:
 ## Rules
 
 - **Generating** in a category takes one list of values per type: every design × every size is
-  created once; existing ones are skipped and deleted ones are restored with their barcode.
+  created once; existing ones are skipped and deleted ones are restored with their barcode. A
+  type left out is «بدون» for those designs (a thobe has buttons or a zip, not both): its own
+  design, apart from the same design with a value. The size type is never left out.
 - A variant's effective price is its own, else its product's.
 - **Deleting** (category, product, size) is a soft delete and only for what never moved stock; a
   category with sub-categories cannot be deleted. Anything that had stock is stopped instead.

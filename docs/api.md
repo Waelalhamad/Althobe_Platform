@@ -38,9 +38,10 @@ stock endpoints arriving in Phase 3 will require it.
 | `POST` | `/auth/login` · `/auth/logout` | — |
 | `GET` | `/auth/me` | authenticated |
 | `GET` | `/locations` | `inventory.view` |
+| `PATCH` | `/locations/:id` (`nameAr`, `nameEn`; code and kind never change) | `admin.locations.write` |
 | `GET` / `POST` | `/categories` — `{ nameAr, code?, parentId?, groupIds? }` (ADR-011) | `products.read` / `products.write` |
 | `PATCH` / `DELETE` | `/categories/:id` — name, code, `parentId`, `groupIds`, `isActive`, `move`; delete only without stock | `products.write` |
-| `POST` | `/categories/:id/products/generate` — `{ selections: [{ groupId, valueIds }], prices? }` | `products.write` (+ `prices.write` with prices) |
+| `POST` | `/categories/:id/products/generate` — `{ selections: [{ groupId, valueIds }], prices? }` (a type left out = «بدون»; sizes required) | `products.write` (+ `prices.write` with prices) |
 | `GET` | `/products?categoryId=` · `/products/:id` (with its sizes) | `products.read` |
 | `PATCH` / `DELETE` | `/products/:id` — `{ isActive }`; delete only without stock | `products.write` |
 | `POST` | `/products/prices` — `{ productIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
