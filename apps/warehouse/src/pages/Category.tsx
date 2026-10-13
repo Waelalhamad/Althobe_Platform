@@ -92,6 +92,7 @@ export function CategoryPage() {
         products={products}
         loading={productsLoading}
         canPrice={canPrice}
+        storageKey={categoryId}
       />
       {products.length > 0 && (
         <NextStep
@@ -298,44 +299,124 @@ function ProductBuilder({
   );
 }
 
-function ProductsTable({
+type PriceFilter = '' | 'missing' | 'priced';
+
+/** Filters survive leaving the page and coming back (per tab); storage may be unavailable. */
+function useRemembered<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = sessionStorage.getItem(key);
+      return saved ? (JSON.parse(saved) as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+  const set = (next: T) => {
+    setValue(next);
+    try {
+      sessionStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // Not remembered; the filter still works.
+    }
+  };
+  return [value, set] as const;
+}
+
+/**
+ * Products with a filter per option type, a search, and price state. `showCategory` is the
+ * all-products list: it adds the category column and a category filter.
+ */
+export function ProductsTable({
   groups,
   products,
   loading,
   canPrice,
+  storageKey,
+  showCategory = false,
 }: {
   groups: OptionGroup[];
   products: Product[];
   loading: boolean;
   canPrice: boolean;
+  storageKey: string;
+  showCategory?: boolean;
 }) {
   const refresh = useCatalogueRefresh();
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const designGroups = groups.filter((g) => !isSize(g));
-  const valueOf = (p: Product, groupId: string) =>
-    p.options.find((o) => o.groupId === groupId)?.value ?? '—';
-  const visible = products.filter((p) =>
-    Object.entries(filters).every(([groupId, value]) => !value || valueOf(p, groupId) === value),
+  const [filters, setFilters] = useRemembered<Record<string, string>>(`pf:${storageKey}`, {});
+  const [search, setSearch] = useRemembered(`ps:${storageKey}`, '');
+  const [price, setPrice] = useRemembered<PriceFilter>(`pp:${storageKey}`, '');
+  const [categoryId, setCategoryId] = useRemembered(`pc:${storageKey}`, '');
+  const designGroups = groups.filter(
+    (g) => !isSize(g) && products.some((p) => p.options.some((o) => o.groupId === g.id)),
   );
+  // A type left out of a design reads «بدون», the word used when building it.
+  const valueOf = (p: Product, groupId: string) =>
+    p.options.find((o) => o.groupId === groupId)?.value ?? 'بدون';
+  const categories = [...new Map(products.map((p) => [p.category.id, p.category])).values()];
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visible = products.filter(
+    (p) =>
+      (!categoryId || p.category.id === categoryId) &&
+      Object.entries(filters).every(
+        ([groupId, value]) => !value || valueOf(p, groupId) === value,
+      ) &&
+      (price === '' || (price === 'missing') === !p.prices.retail) &&
+      words.every((w) => `${p.title} ${p.code} ${p.category.nameAr}`.toLowerCase().includes(w)),
+  );
+  const filtered = Boolean(
+    categoryId || search.trim() || price || Object.values(filters).some(Boolean),
+  );
+  const clear = () => {
+    setFilters({});
+    setSearch('');
+    setPrice('');
+    setCategoryId('');
+  };
   const savePrice =
     (product: Product, list: 'retail' | 'wholesale') => async (amount: string | null) => {
       await api.setProductPrices({ productIds: [product.id], [list]: amount });
       await refresh();
     };
+  const columns = showCategory ? 7 : 6;
 
   return (
     <Card className="mt-4 overflow-x-auto p-0">
       <div className="flex flex-wrap items-end gap-3 p-3">
-        <h2 className="text-lg font-bold">المنتجات</h2>
+        <h2 className="w-full text-lg font-bold">{showCategory ? 'كل المنتجات' : 'المنتجات'}</h2>
+        <div className="w-48">
+          <Field label="بحث">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="اسم أو رمز"
+            />
+          </Field>
+        </div>
+        {showCategory && categories.length > 1 && (
+          <div className="w-36">
+            <Field label="التصنيف">
+              <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                <option value="">الكل</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nameAr}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
         {designGroups.map((g) => {
-          const values = [...new Set(products.map((p) => valueOf(p, g.id)))];
+          const values = [...new Set(products.map((p) => valueOf(p, g.id)))].sort((a, b) =>
+            a.localeCompare(b, 'ar'),
+          );
           if (values.length < 2) return null;
           return (
             <div key={g.id} className="w-36">
               <Field label={g.nameAr}>
                 <Select
                   value={filters[g.id] ?? ''}
-                  onChange={(e) => setFilters((f) => ({ ...f, [g.id]: e.target.value }))}
+                  onChange={(e) => setFilters({ ...filters, [g.id]: e.target.value })}
                 >
                   <option value="">الكل</option>
                   {values.map((value) => (
@@ -348,7 +429,21 @@ function ProductsTable({
             </div>
           );
         })}
-        <span className="ms-auto text-sm text-ink-muted">
+        <div className="w-36">
+          <Field label="السعر">
+            <Select value={price} onChange={(e) => setPrice(e.target.value as PriceFilter)}>
+              <option value="">الكل</option>
+              <option value="missing">بلا سعر مفرق</option>
+              <option value="priced">مُسعّر</option>
+            </Select>
+          </Field>
+        </div>
+        {filtered && (
+          <Button variant="ghost" onClick={clear}>
+            مسح الفلاتر
+          </Button>
+        )}
+        <span className="ms-auto pb-2 text-sm text-ink-muted">
           {visible.length} من {products.length} منتج
         </span>
       </div>
@@ -357,6 +452,7 @@ function ProductsTable({
         <thead className="bg-blush text-sm text-ink-muted">
           <tr>
             <th className="w-16 p-3" />
+            {showCategory && <th className="p-3 text-start">التصنيف</th>}
             <th className="p-3 text-start">التصميم</th>
             <th className="p-3 text-start">
               الرمز <TermHint term="sku" />
@@ -378,6 +474,17 @@ function ProductsTable({
               <td className="p-2">
                 <PhotoThumb id={p.mainPhotoId} size={44} />
               </td>
+              {showCategory && (
+                <td className="p-3 text-sm">
+                  <Link
+                    to="/categories/$categoryId"
+                    params={{ categoryId: p.category.id }}
+                    className="text-brand"
+                  >
+                    {p.category.nameAr}
+                  </Link>
+                </td>
+              )}
               <td className="p-3">
                 <Link
                   to="/products/$productId"
@@ -408,14 +515,24 @@ function ProductsTable({
           ))}
           {loading && (
             <tr>
-              <td colSpan={6} className="p-6 text-center text-ink-muted">
+              <td colSpan={columns} className="p-6 text-center text-ink-muted">
                 جارٍ التحميل…
               </td>
             </tr>
           )}
-          {!loading && products.length === 0 && (
+          {!loading && products.length > 0 && visible.length === 0 && (
             <tr>
-              <td colSpan={6} className="p-3">
+              <td colSpan={columns} className="p-6 text-center text-ink-muted">
+                لا منتجات تطابق الفلاتر —{' '}
+                <button type="button" className="text-brand underline" onClick={clear}>
+                  مسح الفلاتر
+                </button>
+              </td>
+            </tr>
+          )}
+          {!loading && products.length === 0 && !showCategory && (
+            <tr>
+              <td colSpan={columns} className="p-3">
                 <EmptyState title="لا توجد منتجات في هذا التصنيف بعد">
                   في «إضافة منتجات» أعلاه اختر من كل نوع قيمة أو أكثر، ثم المقاسات، واضغط «إنشاء».
                   يُنشأ كل تصميم كمنتج، وداخله مقاساته بباركود لكل مقاس.

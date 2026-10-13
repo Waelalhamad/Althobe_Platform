@@ -17,7 +17,8 @@ import { useState, type FormEvent } from 'react';
 import { api, type Category } from '../api';
 import { errorText } from '../format';
 import { PAGES } from '../help';
-import { can, categoriesQuery, meQuery, optionGroupsQuery } from '../queries';
+import { can, categoriesQuery, meQuery, optionGroupsQuery, productsQuery } from '../queries';
+import { ProductsTable } from './Category';
 import { useCatalogueRefresh } from './catalogue-parts';
 import { TermHint } from './Help';
 
@@ -49,6 +50,8 @@ export function CategoriesPage() {
   const { data: user } = useQuery(meQuery);
   const { data: categories = [], isLoading } = useQuery(categoriesQuery);
   const tree = categoryTree(categories);
+  const { data: groups = [] } = useQuery(optionGroupsQuery);
+  const { data: products = [], isLoading: productsLoading } = useQuery(productsQuery());
 
   return (
     <>
@@ -102,6 +105,16 @@ export function CategoriesPage() {
             </tbody>
           </table>
         </Card>
+      )}
+      {products.length > 0 && (
+        <ProductsTable
+          groups={groups}
+          products={products}
+          loading={productsLoading}
+          canPrice={can(user, 'prices.write')}
+          storageKey="all"
+          showCategory
+        />
       )}
     </>
   );
