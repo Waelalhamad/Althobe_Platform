@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { divRoundHalfUp, rateToMicros, toBaseAmount, unitCostSchema } from './money.js';
+import { divRoundHalfUp, rateSchema, rateToMicros, toBaseAmount, unitCostSchema } from './money.js';
 
 describe('money (ADR-004, ADR-012)', () => {
   it('rounds half away from zero', () => {
@@ -41,6 +41,12 @@ describe('money (ADR-004, ADR-012)', () => {
       currency: 'USD',
       rateToBase: '1',
     });
+  });
+
+  it('refuses a malformed rate as invalid input, never a crash', () => {
+    expect(rateSchema.safeParse('1,000').success).toBe(false);
+    expect(rateSchema.safeParse('0').success).toBe(false);
+    expect(rateSchema.safeParse('14000').success).toBe(true);
   });
 
   it('accepts amounts as digit strings, the way they cross the API', () => {

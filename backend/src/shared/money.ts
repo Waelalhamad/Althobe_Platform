@@ -22,7 +22,11 @@ export const minorAmountSchema = z
 export const rateSchema = z
   .string()
   .regex(RATE_PATTERN, 'Expected a positive rate with at most 6 decimals')
-  .refine((value) => rateToMicros(value) > 0n, 'Rate must be greater than zero');
+  // Zod runs this even after the pattern fails: a malformed rate must not reach rateToMicros.
+  .refine(
+    (value) => RATE_PATTERN.test(value) && rateToMicros(value) > 0n,
+    'Rate must be greater than zero',
+  );
 
 /**
  * A unit cost as entered: amount in minor units of `currency`, and the rate in force (units of
