@@ -75,7 +75,8 @@ const routes = [
     path: '/labels',
     validateSearch: (search: Record<string, unknown>) => ({
       categoryId: optionalString(search.categoryId),
-      productId: optionalString(search.productId),
+      // Comma-separated: the products to print; none = all of the category.
+      productIds: optionalString(search.productIds),
     }),
     // Loaded on demand: the barcode renderer is ~1 MB and only this page needs it.
     component: lazyRouteComponent(async () => import('./pages/Labels'), 'LabelsPage'),

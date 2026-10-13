@@ -9,7 +9,7 @@ import {
   PageTitle,
   Select,
 } from '@althobe/ui/components';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { toSVG } from 'bwip-js/browser';
 import { memo, useEffect, useMemo, useState } from 'react';
@@ -73,18 +73,35 @@ const sizeKey = (s: Size) => `${s.w}x${s.h}`;
 const validMm = (n: number) => Number.isFinite(n) && n >= 15 && n <= 120;
 
 export function LabelsPage() {
-  const { categoryId, productId } = route.useSearch();
+  const { categoryId, productIds } = route.useSearch();
   const navigate = useNavigate();
   const { data: categories = [] } = useQuery(categoriesQuery);
-  const { data: products = [] } = useQuery({
-    ...productsQuery(categoryId),
-    enabled: Boolean(categoryId),
+  const { data: allProducts = [] } = useQuery(productsQuery());
+  const products = allProducts.filter((p) => p.category.id === categoryId);
+  // The chosen products, from any categories; none chosen = every product of the category.
+  const selected = new Set(productIds ? productIds.split(',') : products.map((p) => p.id));
+  const chosen = allProducts.filter((p) => selected.has(p.id));
+  // Sizes load per category (one request each), then keep only the chosen products'.
+  const variantQueries = useQueries({
+    queries: [...new Set(chosen.map((p) => p.category.id))].map((id) =>
+      variantsQuery({ categoryId: id }),
+    ),
   });
-  // One product's sizes, or every size of the category.
-  const { data: variants = [] } = useQuery({
-    ...variantsQuery(productId ? { productId } : { categoryId: categoryId ?? '' }),
-    enabled: Boolean(productId ?? categoryId),
-  });
+  const order = new Map(chosen.map((p, i) => [p.id, i]));
+  const variants = variantQueries
+    .flatMap((q) => q.data ?? [])
+    .filter((v) => selected.has(v.product.id))
+    .sort((a, b) => (order.get(a.product.id) ?? 0) - (order.get(b.product.id) ?? 0));
+  const loadingVariants = variantQueries.some((q) => q.isLoading);
+  const select = (ids: string[]) =>
+    void navigate({
+      to: '/labels',
+      search: { categoryId, productIds: ids.length ? ids.join(',') : undefined },
+      replace: true,
+    });
+  const toggle = (id: string) =>
+    select(selected.has(id) ? [...selected].filter((x) => x !== id) : [...selected, id]);
+  const [allCopies, setAllCopies] = useState('1');
   const [copies, setCopies] = useState<Record<string, number>>({});
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [customW, setCustomW] = useState(String(settings.thermal.w));
@@ -138,7 +155,11 @@ export function LabelsPage() {
               onChange={(e) =>
                 void navigate({
                   to: '/labels',
-                  search: { categoryId: e.target.value || undefined, productId: undefined },
+                  search: {
+                    categoryId: e.target.value || undefined,
+                    // Products already chosen stay chosen; with none, the whole category is.
+                    productIds,
+                  },
                 })
               }
             >
@@ -146,25 +167,6 @@ export function LabelsPage() {
               {categoryTree(categories).map(({ category: c }) => (
                 <option key={c.id} value={c.id}>
                   {categoryPath(categories, c.id)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="المنتج">
-            <Select
-              value={productId ?? ''}
-              disabled={!categoryId}
-              onChange={(e) =>
-                void navigate({
-                  to: '/labels',
-                  search: { categoryId, productId: e.target.value || undefined },
-                })
-              }
-            >
-              <option value="">كل منتجات التصنيف</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title || p.category.nameAr} ({p.code})
                 </option>
               ))}
             </Select>
@@ -241,8 +243,108 @@ export function LabelsPage() {
           </label>
         </Card>
 
+        {categoryId && products.length > 0 && (
+          <Card className="mt-4">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h2 className="font-bold">منتجات {categoryPath(categories, categoryId)}</h2>
+              <Button
+                variant="ghost"
+                onClick={() => select([...new Set([...selected, ...products.map((p) => p.id)])])}
+              >
+                تحديد الكل
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  const here = new Set(products.map((p) => p.id));
+                  const rest = [...selected].filter((id) => !here.has(id));
+                  // Nothing left would mean "the whole category" again: keep one marker.
+                  select(rest.length ? rest : ['none']);
+                }}
+              >
+                إلغاء الكل
+              </Button>
+            </div>
+            <div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+              {products.map((p) => (
+                <label
+                  key={p.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg p-2 hover:bg-surface"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(p.id)}
+                    onChange={() => toggle(p.id)}
+                  />
+                  <span>
+                    {p.title || p.category.nameAr}{' '}
+                    <span className="text-sm text-ink-muted">({p.variantCount} مقاس)</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {chosen.length > 0 && (
+          <Card className="mt-4">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h2 className="font-bold">
+                المختار للطباعة: {chosen.length} منتج · {variants.length} مقاس
+              </h2>
+              <Button variant="ghost" onClick={() => select(['none'])}>
+                مسح الاختيار
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {chosen.map((p) => (
+                <span
+                  key={p.id}
+                  className="flex items-center gap-1 rounded-full bg-blush px-3 py-1 text-sm"
+                >
+                  {p.category.nameAr} · {p.title || p.code}
+                  <button
+                    type="button"
+                    aria-label="إزالة"
+                    className="text-ink-muted hover:text-bad"
+                    onClick={() => toggle(p.id)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-sm text-ink-muted">
+              لإضافة منتجات من تصنيف آخر، اختر التصنيف من الأعلى وحدد منتجاته — يبقى ما اخترته هنا.
+            </p>
+          </Card>
+        )}
+
         {variants.length > 0 && (
           <Card className="mt-4 overflow-x-auto p-0">
+            <div className="flex flex-wrap items-end gap-2 p-3">
+              <div className="w-28">
+                <Field label="نسخ لكل مقاس">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={500}
+                    dir="ltr"
+                    value={allCopies}
+                    onChange={(e) => setAllCopies(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const n = Math.max(0, Math.min(500, Number(allCopies) || 0));
+                  setCopies(Object.fromEntries(variants.map((v) => [v.id, n])));
+                }}
+              >
+                تطبيق على الكل
+              </Button>
+            </div>
             <table className="w-full">
               <thead className="bg-blush text-sm text-ink-muted">
                 <tr>
@@ -280,12 +382,12 @@ export function LabelsPage() {
           </Card>
         )}
 
-        {!categoryId && !productId && (
+        {chosen.length === 0 && !loadingVariants && (
           <div className="mt-4">
             <EmptyState title="اختر ما تريد طباعته">
-              اختر تصنيفاً من الأعلى لطباعة ملصقات كل منتجاته، أو منتجاً واحداً. ثم حدد عدد النسخ
-              لكل مقاس (عدد القطع الموجودة منه) واضغط «طباعة». في نافذة الطباعة اختر المقياس 100%
-              وبدون هوامش.
+              اختر تصنيفاً من الأعلى، ثم حدد منتجاً أو أكثر — ويمكنك إضافة منتجات من تصنيفات أخرى.
+              ثم حدد عدد النسخ لكل مقاس (عدد القطع الموجودة منه) واضغط «طباعة». في نافذة الطباعة
+              اختر المقياس 100% وبدون هوامش.
             </EmptyState>
           </div>
         )}

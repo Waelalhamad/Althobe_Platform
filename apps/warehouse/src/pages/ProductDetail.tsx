@@ -38,7 +38,7 @@ export function ProductDetailPage() {
       <PageTitle
         intro={PAGES.product}
         actions={
-          <Link to="/labels" search={{ categoryId: product.category.id, productId }}>
+          <Link to="/labels" search={{ categoryId: product.category.id, productIds: productId }}>
             <Button variant="secondary">طباعة الملصقات</Button>
           </Link>
         }
@@ -67,7 +67,7 @@ export function ProductDetailPage() {
         action={
           <Link
             to="/labels"
-            search={{ categoryId: product.category.id, productId }}
+            search={{ categoryId: product.category.id, productIds: productId }}
             className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
           >
             طباعة ملصقات هذا المنتج ←

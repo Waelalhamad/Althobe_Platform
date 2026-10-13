@@ -62,7 +62,7 @@ export function CategoryPage() {
       <PageTitle
         intro={PAGES.category}
         actions={
-          <Link to="/labels" search={{ categoryId, productId: undefined }}>
+          <Link to="/labels" search={{ categoryId, productIds: undefined }}>
             <Button variant="secondary">طباعة الملصقات</Button>
           </Link>
         }
@@ -99,7 +99,7 @@ export function CategoryPage() {
           action={
             <Link
               to="/labels"
-              search={{ categoryId, productId: undefined }}
+              search={{ categoryId, productIds: undefined }}
               className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
             >
               طباعة الملصقات ←
@@ -446,6 +446,17 @@ export function ProductsTable({
         <span className="ms-auto pb-2 text-sm text-ink-muted">
           {visible.length} من {products.length} منتج
         </span>
+        {visible.length > 0 && (
+          <Link
+            to="/labels"
+            search={{
+              categoryId: visible[0]?.category.id,
+              productIds: visible.map((p) => p.id).join(','),
+            }}
+          >
+            <Button variant="secondary">طباعة ملصقات المعروض ({visible.length})</Button>
+          </Link>
+        )}
       </div>
       {canPrice && visible.length > 0 && <BulkProductPrices products={visible} />}
       <table className="w-full">
