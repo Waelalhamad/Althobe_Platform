@@ -463,9 +463,23 @@ function CostEditor({
     saved.currency !== currency ||
     (currency === 'USD' && saved.rateToBase !== rate.trim());
 
+  const valid = minor !== null && rateOk;
+  // A typed cost saves itself when focus leaves the cost fields (or on Enter): a cost that was
+  // typed but never saved left "confirm" refused with "missing cost".
+  const save = () => {
+    if (dirty && valid && !busy && minor)
+      onSave({ amount: minor, currency, rateToBase: currency === 'SYP' ? '1' : rate.trim() });
+  };
+
   return (
     // Inputs are full-width by design; the wrappers set their width in this compact row.
-    <div className="flex flex-wrap items-center gap-1">
+    <div
+      className="flex flex-wrap items-center gap-1"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) save();
+      }}
+      onKeyDown={(e) => e.key === 'Enter' && save()}
+    >
       <div className="w-28">
         <Input
           dir="ltr"
@@ -491,14 +505,7 @@ function CostEditor({
         </div>
       )}
       {dirty && (
-        <Button
-          variant="secondary"
-          disabled={busy || minor === null || !rateOk}
-          onClick={() =>
-            minor &&
-            onSave({ amount: minor, currency, rateToBase: currency === 'SYP' ? '1' : rate.trim() })
-          }
-        >
+        <Button variant="secondary" disabled={busy || !valid} onClick={save}>
           حفظ
         </Button>
       )}
