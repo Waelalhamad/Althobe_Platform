@@ -1,6 +1,6 @@
 # ADR-004: Money representation and multi-currency
 
-- Status: **Accepted** — Option B, base currency SYP
+- Status: **Accepted** — Option B, base currency SYP; **changed by ADR-012** (base USD, LYD added)
 - Proposed: 2026-09-21 · Accepted: 2026-09-24
 
 Decided up front because the answer shapes almost every financial table, and changing it later

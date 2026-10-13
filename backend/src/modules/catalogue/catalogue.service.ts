@@ -1,4 +1,3 @@
-import type { PriceList } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
 import { BARCODE_ENTITY, buildInternalBarcode, isMisreadEan13 } from '../../shared/barcode.js';
 import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
@@ -40,7 +39,14 @@ import {
   type SetProductPricesInput,
   type UpdateCategoryInput,
 } from './catalogue.schema.js';
-import type { CategoryView, ProductView, VariantView } from './catalogue.types.js';
+import {
+  PRICE_KEYS,
+  PRICE_LISTS,
+  type CategoryView,
+  type PriceKey,
+  type ProductView,
+  type VariantView,
+} from './catalogue.types.js';
 import { createOptionsService, isUniqueViolation, moved, renumber } from './options.service.js';
 import { buildSku, freeCode, suggestCode } from './sku.js';
 
@@ -58,9 +64,6 @@ export type {
 
 /** One request may create at most this many sizes; more is almost certainly a mistake. */
 export const MAX_COMBINATIONS = 500;
-
-/** Selling prices are held in USD (ADR-009); display in other currencies comes later. */
-export const PRICE_CURRENCY = 'USD';
 
 /** Categories nest three levels deep at most: ثوب → صيفي → … */
 const MAX_CATEGORY_DEPTH = 3;
@@ -384,20 +387,11 @@ export function createCatalogueService(db: Db) {
               })),
             ),
           });
-          if (data.prices?.retail !== undefined) {
+          if (data.prices) {
             await writeProductPrices(
               tx,
               inserted.map((p) => p.id),
-              'RETAIL',
-              data.prices.retail,
-            );
-          }
-          if (data.prices?.wholesale !== undefined) {
-            await writeProductPrices(
-              tx,
-              inserted.map((p) => p.id),
-              'WHOLESALE',
-              data.prices.wholesale,
+              data.prices,
             );
           }
         }
@@ -578,7 +572,7 @@ export function createCatalogueService(db: Db) {
 
     // ── Prices (ADR-009) ──────────────────────────────────────────────────────────────────
 
-    /** The same retail and/or wholesale price for one product or many; null removes it. */
+    /** The same prices for one product or many (ADR-012: SYP, LYD retail; USD wholesale). */
     async setProductPrices(
       input: SetProductPricesInput,
       ctx: ActorContext,
@@ -589,18 +583,13 @@ export function createCatalogueService(db: Db) {
         const before = await repo.listProducts(tx, { ids: data.productIds });
         const missing = data.productIds.filter((id) => !before.some((p) => p.id === id));
         if (missing.length) throw new NotFoundError('product', missing[0]!);
-        if (data.retail !== undefined) {
-          await writeProductPrices(tx, data.productIds, 'RETAIL', data.retail);
-        }
-        if (data.wholesale !== undefined) {
-          await writeProductPrices(tx, data.productIds, 'WHOLESALE', data.wholesale);
-        }
+        await writeProductPrices(tx, data.productIds, data);
         await writeAudit(tx, {
           actorId: ctx.userId,
           action: 'prices.product.set',
           entityType: 'product_prices',
           before: before.map((p) => ({ productId: p.id, code: p.code, ...p.prices })),
-          after: { ...data, currency: PRICE_CURRENCY },
+          after: data,
         });
         return repo.listProducts(tx, { ids: data.productIds });
       });
@@ -617,18 +606,13 @@ export function createCatalogueService(db: Db) {
         const before = await repo.findVariantsByIds(tx, data.variantIds);
         const missing = data.variantIds.filter((id) => !before.some((v) => v.id === id));
         if (missing.length) throw new NotFoundError('variant', missing[0]!);
-        if (data.retail !== undefined) {
-          await writeVariantPrices(tx, data.variantIds, 'RETAIL', data.retail);
-        }
-        if (data.wholesale !== undefined) {
-          await writeVariantPrices(tx, data.variantIds, 'WHOLESALE', data.wholesale);
-        }
+        await writeVariantPrices(tx, data.variantIds, data);
         await writeAudit(tx, {
           actorId: ctx.userId,
           action: 'prices.set',
           entityType: 'variant_prices',
           before: before.map((v) => ({ variantId: v.id, sku: v.sku, ...v.prices })),
-          after: { ...data, currency: PRICE_CURRENCY },
+          after: data,
         });
         return repo.findVariantsByIds(tx, data.variantIds);
       });
@@ -797,41 +781,52 @@ async function assertNoStock(
   if (movements) throw new HasStockError();
 }
 
-/** One statement for any number of products: a filtered list is priced at once. */
+/** The given prices (undefined = leave alone, null = remove), each in its list's currency. */
+type PriceChanges = Partial<Record<PriceKey, bigint | null>>;
+
+/** One statement per list for any number of products: a filtered list is priced at once. */
 async function writeProductPrices(
   tx: Tx,
   productIds: string[],
-  list: PriceList,
-  amount: bigint | null,
+  changes: PriceChanges,
 ): Promise<void> {
-  if (amount === null) {
-    await tx.productPrice.deleteMany({ where: { productId: { in: productIds }, list } });
-    return;
+  for (const key of PRICE_KEYS) {
+    const amount = changes[key];
+    if (amount === undefined) continue;
+    const { list, currency } = PRICE_LISTS[key];
+    if (amount === null) {
+      await tx.productPrice.deleteMany({ where: { productId: { in: productIds }, list } });
+      continue;
+    }
+    await tx.$executeRaw`
+      INSERT INTO product_prices (id, product_id, list, amount, currency, updated_at)
+      SELECT gen_random_uuid(), p, ${list}::price_list, ${amount}, ${currency}, now()
+      FROM unnest(${productIds}::uuid[]) AS p
+      ON CONFLICT (product_id, list)
+      DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = now()`;
   }
-  await tx.$executeRaw`
-    INSERT INTO product_prices (id, product_id, list, amount, currency, updated_at)
-    SELECT gen_random_uuid(), p, ${list}::price_list, ${amount}, ${PRICE_CURRENCY}, now()
-    FROM unnest(${productIds}::uuid[]) AS p
-    ON CONFLICT (product_id, list)
-    DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = now()`;
 }
 
 async function writeVariantPrices(
   tx: Tx,
   variantIds: string[],
-  list: PriceList,
-  amount: bigint | null,
+  changes: PriceChanges,
 ): Promise<void> {
-  if (amount === null) {
-    await tx.variantPrice.deleteMany({ where: { variantId: { in: variantIds }, list } });
-    return;
+  for (const key of PRICE_KEYS) {
+    const amount = changes[key];
+    if (amount === undefined) continue;
+    const { list, currency } = PRICE_LISTS[key];
+    if (amount === null) {
+      await tx.variantPrice.deleteMany({ where: { variantId: { in: variantIds }, list } });
+      continue;
+    }
+    await tx.$executeRaw`
+      INSERT INTO variant_prices (id, variant_id, list, amount, currency, updated_at)
+      SELECT gen_random_uuid(), v, ${list}::price_list, ${amount}, ${currency}, now()
+      FROM unnest(${variantIds}::uuid[]) AS v
+      ON CONFLICT (variant_id, list)
+      DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = now()`;
   }
-  await tx.$executeRaw`
-    INSERT INTO variant_prices (id, variant_id, list, amount, currency, updated_at)
-    SELECT gen_random_uuid(), v, ${list}::price_list, ${amount}, ${PRICE_CURRENCY}, now()
-    FROM unnest(${variantIds}::uuid[]) AS v
-    ON CONFLICT (variant_id, list)
-    DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency, updated_at = now()`;
 }
 
 /**

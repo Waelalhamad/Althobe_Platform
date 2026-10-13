@@ -8,6 +8,7 @@ type To =
   | '/'
   | '/options'
   | '/locations'
+  | '/rates'
   | '/products'
   | '/labels'
   | '/balances'
@@ -32,6 +33,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
       { to: '/products', label: 'التصنيفات والمنتجات', anyOf: ['products.write'] },
       { to: '/labels', label: 'طباعة الملصقات', anyOf: ['products.write', 'inventory.receive'] },
       { to: '/locations', label: 'المواقع', anyOf: ['admin.locations.write'] },
+      { to: '/rates', label: 'أسعار الصرف', anyOf: ['admin.rates.write'] },
     ],
   },
   {

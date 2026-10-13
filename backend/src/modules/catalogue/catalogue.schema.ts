@@ -71,7 +71,11 @@ export const generateProductsSchema = z.object({
   categoryId: z.uuid(),
   /** Prices for the products this call creates (needs prices.write). */
   prices: z
-    .object({ retail: minorAmountSchema.optional(), wholesale: minorAmountSchema.optional() })
+    .object({
+      retailSyp: minorAmountSchema.optional(),
+      retailLyd: minorAmountSchema.optional(),
+      wholesale: minorAmountSchema.optional(),
+    })
     .optional(),
   selections: z
     .array(z.object({ groupId: z.uuid(), valueIds: ids(100) }))
@@ -83,26 +87,28 @@ export const listProductsSchema = z.object({ categoryId: z.uuid().optional() });
 
 export const setActiveSchema = z.object({ isActive: z.boolean() });
 
-/** A price in minor units (string of digits); null removes it. Prices are in USD (ADR-009). */
+/**
+ * A price in minor units of its list's currency (ADR-012: retailSyp in SYP, retailLyd in LYD with
+ * 3 decimals, wholesale in USD); null removes it.
+ */
 const priceSchema = minorAmountSchema.nullable();
+const priceFields = {
+  retailSyp: priceSchema.optional(),
+  retailLyd: priceSchema.optional(),
+  wholesale: priceSchema.optional(),
+};
+const changesAPrice = (v: Partial<Record<keyof typeof priceFields, unknown>>) =>
+  v.retailSyp !== undefined || v.retailLyd !== undefined || v.wholesale !== undefined;
 
-/** The same retail and/or wholesale price for one product or many (all their sizes). */
+/** The same prices for one product or many (all their sizes). */
 export const setProductPricesSchema = z
-  .object({
-    productIds: ids(2000),
-    retail: priceSchema.optional(),
-    wholesale: priceSchema.optional(),
-  })
-  .refine((v) => v.retail !== undefined || v.wholesale !== undefined, 'Nothing to change');
+  .object({ productIds: ids(2000), ...priceFields })
+  .refine(changesAPrice, 'Nothing to change');
 
 /** A size's own price, overriding its product's; null goes back to the product's price. */
 export const setPricesSchema = z
-  .object({
-    variantIds: ids(2000),
-    retail: priceSchema.optional(),
-    wholesale: priceSchema.optional(),
-  })
-  .refine((v) => v.retail !== undefined || v.wholesale !== undefined, 'Nothing to change');
+  .object({ variantIds: ids(2000), ...priceFields })
+  .refine(changesAPrice, 'Nothing to change');
 
 // ─── Option types and values (ADR-008) ───────────────────────────────────────────────────────
 

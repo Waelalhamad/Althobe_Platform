@@ -1,4 +1,5 @@
-import type { UnitOfMeasure } from '@prisma/client';
+import type { PriceList, UnitOfMeasure } from '@prisma/client';
+import type { Currency } from '../../shared/money.js';
 
 // ADR-011: category (ثوب) → product (one design) → variant (one size of it).
 
@@ -19,10 +20,20 @@ export interface PriceView {
   currency: string;
 }
 
-export interface Prices {
-  retail: PriceView | null;
-  wholesale: PriceView | null;
-}
+/**
+ * ADR-012: retail in Syrian pounds (Syria) and Libyan dinars (Libya), wholesale in dollars. Each
+ * key is one price list in one currency; the database checks the pairing too.
+ */
+export const PRICE_LISTS = {
+  retailSyp: { list: 'RETAIL_SYP', currency: 'SYP' },
+  retailLyd: { list: 'RETAIL_LYD', currency: 'LYD' },
+  wholesale: { list: 'WHOLESALE', currency: 'USD' },
+} as const satisfies Record<string, { list: PriceList; currency: Currency }>;
+
+export type PriceKey = keyof typeof PRICE_LISTS;
+export const PRICE_KEYS = Object.keys(PRICE_LISTS) as PriceKey[];
+
+export type Prices = Record<PriceKey, PriceView | null>;
 
 /** Everything a scan screen needs to show about a variant (one size of a product). */
 export interface VariantView {
@@ -39,7 +50,7 @@ export interface VariantView {
   /** Effective selling prices: this size's own price, else the product's (ADR-009). */
   prices: Prices;
   /** Which of `prices` are this size's own rather than the product's. */
-  ownPrices: { retail: boolean; wholesale: boolean };
+  ownPrices: Record<PriceKey, boolean>;
   /** The product's main photo (ADR-010); null if it has none. */
   photoId: string | null;
   product: {

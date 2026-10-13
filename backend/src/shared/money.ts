@@ -1,13 +1,16 @@
 import { z } from 'zod';
 
-// ADR-004: integer minor units, ISO exponent 2 for both currencies, base currency SYP.
-// Nothing in this file ever touches a floating-point number.
-export const CURRENCIES = ['SYP', 'USD'] as const;
+// ADR-004 / ADR-012: integer minor units with each currency's ISO 4217 exponent, base (reporting)
+// currency USD. Nothing in this file ever touches a floating-point number.
+export const CURRENCIES = ['SYP', 'USD', 'LYD'] as const;
 export type Currency = (typeof CURRENCIES)[number];
-export const BASE_CURRENCY: Currency = 'SYP';
+export const BASE_CURRENCY = 'USD' satisfies Currency;
+
+/** Decimal places: the Libyan dinar has 1000 dirhams, the others 100 subunits. */
+export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3 };
 
 // Rates are held as a decimal string with at most 6 fractional digits ("13000", "13000.5"),
-// matching numeric(18,6) in the database.
+// matching numeric(18,6) in the database. A rate is units of the currency per 1 USD.
 const RATE_SCALE = 1_000_000n;
 const RATE_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
 
@@ -21,7 +24,10 @@ export const rateSchema = z
   .regex(RATE_PATTERN, 'Expected a positive rate with at most 6 decimals')
   .refine((value) => rateToMicros(value) > 0n, 'Rate must be greater than zero');
 
-/** A unit cost as entered: amount in minor units of `currency`, and the rate in force. */
+/**
+ * A unit cost as entered: amount in minor units of `currency`, and the rate in force (units of
+ * that currency per 1 USD; always 1 for USD).
+ */
 export const unitCostSchema = z
   .object({
     amount: minorAmountSchema,
@@ -63,7 +69,11 @@ export function divRoundHalfUp(numerator: bigint, denominator: bigint): bigint {
   return negative ? -quotient : quotient;
 }
 
-/** Converts an amount in minor units of any currency to minor units of the base currency. */
-export function toBaseAmount(amount: bigint, rateToBase: string): bigint {
-  return divRoundHalfUp(amount * rateToMicros(rateToBase), RATE_SCALE);
+/**
+ * Minor units of `currency` → USD cents, at `rate` units of that currency per 1 USD:
+ * cents = amount × 10^(2 − exponent) ÷ rate.
+ */
+export function toBaseAmount(amount: bigint, currency: Currency, rate: string): bigint {
+  const scale = 10n ** BigInt(EXPONENT[currency]);
+  return divRoundHalfUp(amount * 100n * RATE_SCALE, scale * rateToMicros(rate));
 }

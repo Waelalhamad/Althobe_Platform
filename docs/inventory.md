@@ -279,8 +279,8 @@ Behaviour:
   thobe 37 times gives one line: `ثوب X · قطني · أبيض · 54 — quantity 37`.
 - **Set quantity** — for a sealed carton of 20, scan once and type 20. The line quantity is set,
   not added to.
-- **Set cost** (RECEIVE and OPENING) — unit cost, currency (SYP or USD), and the exchange rate in
-  force. **Required on every RECEIVE line** before commit; optional for OPENING (costs may be
+- **Set cost** (RECEIVE and OPENING) — unit cost, currency (USD, SYP or LYD), and the exchange rate in
+  force (units per 1 USD, starting at the owner's rate — ADR-012). **Required on every RECEIVE line** before commit; optional for OPENING (costs may be
   unknown at the first count, and that stock then enters at zero value until corrected).
 - **Every scan carries a client-generated `scanId`.** A double trigger pull sends the same
   `scanId` twice and is counted once. Every scan is recorded as an event, so a session shows who
@@ -357,7 +357,7 @@ Rules:
 
 ## Costing
 
-**Moving weighted average**, per (variant, location), in the **base currency (SYP)**.
+**Moving weighted average**, per (variant, location), in the **base currency (USD, ADR-012)**.
 
 Each balance stores its **total value** (`value_base_amount`), not an average. The average is
 derived as `value / quantity` whenever it is needed, so repeated averaging can never accumulate
@@ -369,7 +369,7 @@ issue:    value -= round(value × issued / quantity)      — the last unit take
 average = round(value / quantity)
 ```
 
-- Receipts may be costed in SYP or USD. Each movement stores the original unit cost and currency,
+- Receipts may be costed in USD, SYP or LYD. Each movement stores the original unit cost and currency,
   the exchange rate in force, the unit cost converted to base, and the signed value it moved.
 - Inbound movements without an explicit cost (`RETURN`, positive `ADJUSTMENT`/`STOCKTAKE`) enter at
   the current average.

@@ -105,9 +105,11 @@ enum StocktakeStatus {
   @@map("stocktake_status")
 }
 
-// Which price of a variant (ADR-009). Customer price tiers and other currencies become more lists.
+// Which price of a product or size (ADR-012), each list in one currency: retail in SYP (Syria)
+// and LYD (Libya), wholesale in USD. Customer price tiers become more lists.
 enum PriceList {
-  RETAIL
+  RETAIL_SYP
+  RETAIL_LYD
   WHOLESALE
 
   @@map("price_list")
@@ -148,8 +150,23 @@ model User {
   stocktakeEvents    StocktakeScanEvent[]
   auditLogs          AuditLog[]
   productPhotos      ProductPhoto[]
+  exchangeRates      ExchangeRate[]
 
   @@map("users")
+}
+
+// ADR-012: the owner's exchange rates, units of the currency per 1 USD (USD is the base). One row
+// per currency; each change is in the audit log. A cost stamps the rate it used, so changing a
+// rate never changes a past record.
+model ExchangeRate {
+  currency  String   @id @db.Char(3)
+  rate      Decimal  @db.Decimal(18, 6)
+  updatedBy String   @map("updated_by") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  updater User @relation(fields: [updatedBy], references: [id])
+
+  @@map("exchange_rates")
 }
 
 // Server-side sessions (docs/security.md): the cookie holds a random token; only its SHA-256 is
@@ -472,7 +489,7 @@ model Location {
 // ─── Inventory ledger ──────────────────────────────────────────────────────────────────────────
 
 // Derived, cached current state. Written only by InventoryService, in the same transaction as the
-// movements that change it. value_base_amount is the total stock value in SYP minor units; the
+// movements that change it. value_base_amount is the total stock value in USD cents (ADR-012); the
 // average unit cost is derived (value / quantity) so repeated averaging never accumulates
 // rounding error.
 model InventoryBalance {
@@ -511,6 +528,7 @@ model InventoryMovement {
   note               String?
   unitCostAmount     BigInt?       @map("unit_cost_amount")
   unitCostCurrency   String?       @map("unit_cost_currency") @db.Char(3)
+  // Units of the cost's currency per 1 USD, the base (ADR-012); 1 for USD.
   rateToBase         Decimal?      @map("rate_to_base") @db.Decimal(18, 6)
   unitCostBaseAmount BigInt        @map("unit_cost_base_amount")
   valueBaseAmount    BigInt        @map("value_base_amount")

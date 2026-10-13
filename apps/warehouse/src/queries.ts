@@ -72,3 +72,6 @@ export const movementsQuery = (params: { variantId?: string; locationId?: string
 export function can(user: User | undefined, permission: string): boolean {
   return user?.permissions.includes(permission) ?? false;
 }
+
+/** Exchange rates (ADR-012): read by whoever enters a cost; changed only by the owner. */
+export const ratesQuery = queryOptions({ queryKey: ['rates'], queryFn: api.rates });

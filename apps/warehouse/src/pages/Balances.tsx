@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api, type Balance, type Variant } from '../api';
-import { errorText, formatMoney, formatPrice, formatQuantity } from '../format';
+import { errorText, formatMoney, formatQuantity, formatRetail } from '../format';
 import { PAGES } from '../help';
 import { balancesQuery, can, locationsQuery, meQuery } from '../queries';
 
@@ -156,7 +156,7 @@ function BalanceRow({
         </td>
         <td className="tabular p-3 font-bold">{formatQuantity(b.quantity)}</td>
         <td className="tabular p-3">{formatQuantity(b.availableQuantity)}</td>
-        <td className="tabular p-3">{formatPrice(v.prices.retail)}</td>
+        <td className="tabular p-3">{formatRetail(v.prices)}</td>
         {showCost && <td className="tabular p-3">{formatMoney(b.averageCostBaseAmount)}</td>}
         {showCost && <td className="tabular p-3">{formatMoney(b.valueBaseAmount)}</td>}
         <td className="p-2">

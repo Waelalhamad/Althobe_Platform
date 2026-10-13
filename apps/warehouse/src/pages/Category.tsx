@@ -17,8 +17,15 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { api, type Category, type OptionGroup, type Product } from '../api';
-import { errorText, formatPrice, fromMinorUnits } from '../format';
+import {
+  api,
+  PRICE_KEYS,
+  type Category,
+  type OptionGroup,
+  type PriceKey,
+  type Product,
+} from '../api';
+import { errorText, formatPrice, fromMinorUnits, PRICE_META } from '../format';
 import { PAGES } from '../help';
 import { PhotoThumb } from '../photo';
 import {
@@ -35,9 +42,11 @@ import {
   EditableAmount,
   GroupPicker,
   MAX_COMBINATIONS,
-  parsePrices,
-  PriceField,
+  EMPTY_PRICES,
+  PriceFields,
+  pricesValid,
   typedPrices,
+  type PriceTexts,
   useCatalogueRefresh,
   useChosen,
 } from './catalogue-parts';
@@ -174,9 +183,7 @@ function ProductBuilder({
   const { chosen, toggle, setAll } = useChosen();
   // Types left out of these designs («بدون»): a thobe has buttons or a zip, not both.
   const [skipped, setSkipped] = useState<string[]>([]);
-  const [retail, setRetail] = useState('');
-  const [wholesale, setWholesale] = useState('');
-  const prices = parsePrices(retail, wholesale);
+  const [prices, setPrices] = useState<PriceTexts>(EMPTY_PRICES);
 
   const designGroups = groups.filter((g) => !isSize(g) && !skipped.includes(g.id));
   const used = groups.filter((g) => !skipped.includes(g.id));
@@ -253,20 +260,19 @@ function ProductBuilder({
 
       {canPrice && (
         <div className="mt-4 flex flex-wrap items-end gap-3">
-          <PriceField label="سعر المفرق للمنتجات الجديدة" value={retail} onChange={setRetail} />
-          <PriceField
-            label="سعر الجملة للمنتجات الجديدة"
-            value={wholesale}
-            onChange={setWholesale}
-          />
-          <span className="pb-2 text-sm text-ink-muted">اختياري — يمكن التسعير لاحقاً</span>
+          <PriceFields values={prices} onChange={setPrices} />
+          <span className="pb-2 text-sm text-ink-muted">
+            أسعار المنتجات الجديدة — اختياري، يمكن التسعير لاحقاً
+          </span>
         </div>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-stone pt-4">
         <Button
           size="lg"
-          disabled={fresh === 0 || total > MAX_COMBINATIONS || !prices || generate.isPending}
+          disabled={
+            fresh === 0 || total > MAX_COMBINATIONS || !pricesValid(prices) || generate.isPending
+          }
           onClick={() => generate.mutate()}
         >
           {fresh > 0 ? `إنشاء ${fresh} مقاس` : 'إنشاء المنتجات'}
@@ -299,7 +305,8 @@ function ProductBuilder({
   );
 }
 
-type PriceFilter = '' | 'missing' | 'priced';
+/** '' = all; a price key = products missing that price; 'complete' = every price set. */
+type PriceFilter = '' | PriceKey | 'complete';
 
 /** Filters survive leaving the page and coming back (per tab); storage may be unavailable. */
 function useRemembered<T>(key: string, initial: T) {
@@ -360,7 +367,8 @@ export function ProductsTable({
       Object.entries(filters).every(
         ([groupId, value]) => !value || valueOf(p, groupId) === value,
       ) &&
-      (price === '' || (price === 'missing') === !p.prices.retail) &&
+      (price === '' ||
+        (price === 'complete' ? PRICE_KEYS.every((k) => p.prices[k]) : !p.prices[price])) &&
       words.every((w) => `${p.title} ${p.code} ${p.category.nameAr}`.toLowerCase().includes(w)),
   );
   const filtered = Boolean(
@@ -372,12 +380,11 @@ export function ProductsTable({
     setPrice('');
     setCategoryId('');
   };
-  const savePrice =
-    (product: Product, list: 'retail' | 'wholesale') => async (amount: string | null) => {
-      await api.setProductPrices({ productIds: [product.id], [list]: amount });
-      await refresh();
-    };
-  const columns = showCategory ? 7 : 6;
+  const savePrice = (product: Product, list: PriceKey) => async (amount: string | null) => {
+    await api.setProductPrices({ productIds: [product.id], [list]: amount });
+    await refresh();
+  };
+  const columns = (showCategory ? 5 : 4) + PRICE_KEYS.length;
 
   return (
     <Card className="mt-4 overflow-x-auto p-0">
@@ -433,8 +440,12 @@ export function ProductsTable({
           <Field label="السعر">
             <Select value={price} onChange={(e) => setPrice(e.target.value as PriceFilter)}>
               <option value="">الكل</option>
-              <option value="missing">بلا سعر مفرق</option>
-              <option value="priced">مُسعّر</option>
+              {PRICE_KEYS.map((key) => (
+                <option key={key} value={key}>
+                  بلا {PRICE_META[key].short}
+                </option>
+              ))}
+              <option value="complete">كل الأسعار موجودة</option>
             </Select>
           </Field>
         </div>
@@ -471,12 +482,11 @@ export function ProductsTable({
             <th className="p-3 text-start">
               المقاسات <TermHint term="size" />
             </th>
-            <th className="p-3 text-start">
-              المفرق <TermHint term="retail" />
-            </th>
-            <th className="p-3 text-start">
-              الجملة <TermHint term="wholesale" />
-            </th>
+            {PRICE_KEYS.map((key) => (
+              <th key={key} className="p-3 text-start">
+                {PRICE_META[key].short} <TermHint term={PRICE_META[key].term} />
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -510,12 +520,17 @@ export function ProductsTable({
                 <Code>{p.code}</Code>
               </td>
               <td className="tabular p-3">{p.variantCount}</td>
-              {(['retail', 'wholesale'] as const).map((list) => (
+              {PRICE_KEYS.map((list) => (
                 <td key={list} className="tabular p-3">
                   <EditableAmount
                     text={formatPrice(p.prices[list])}
-                    initial={p.prices[list] ? fromMinorUnits(p.prices[list].amount) : ''}
-                    label={list === 'retail' ? 'سعر المفرق' : 'سعر الجملة'}
+                    initial={
+                      p.prices[list]
+                        ? fromMinorUnits(p.prices[list].amount, PRICE_META[list].currency)
+                        : ''
+                    }
+                    label={PRICE_META[list].label}
+                    currency={PRICE_META[list].currency}
                     editable={canPrice}
                     muted={!p.prices[list]}
                     onSave={savePrice(p, list)}
@@ -560,9 +575,8 @@ export function ProductsTable({
 /** Same price for every product the filters show; an empty field leaves that price alone. */
 function BulkProductPrices({ products }: { products: Product[] }) {
   const refresh = useCatalogueRefresh();
-  const [retail, setRetail] = useState('');
-  const [wholesale, setWholesale] = useState('');
-  const typed = typedPrices(parsePrices(retail, wholesale));
+  const [prices, setPrices] = useState<PriceTexts>(EMPTY_PRICES);
+  const typed = typedPrices(prices);
   const toast = useToast();
 
   const apply = useMutation({
@@ -570,8 +584,7 @@ function BulkProductPrices({ products }: { products: Product[] }) {
       api.setProductPrices({ productIds: products.map((p) => p.id), ...typed }),
     onSuccess: async () => {
       toast(`تم تسعير ${products.length} منتج`);
-      setRetail('');
-      setWholesale('');
+      setPrices(EMPTY_PRICES);
       await refresh();
     },
   });
@@ -579,9 +592,11 @@ function BulkProductPrices({ products }: { products: Product[] }) {
   return (
     <div className="mx-3 mb-3 flex flex-wrap items-end gap-3 rounded-lg bg-blush p-3">
       <span className="pb-2 font-medium">تسعير المنتجات المعروضة ({products.length}):</span>
-      <PriceField label="المفرق" value={retail} onChange={setRetail} />
-      <PriceField label="الجملة" value={wholesale} onChange={setWholesale} />
-      <ConfirmButton disabled={!typed || apply.isPending} onConfirm={() => apply.mutate()}>
+      <PriceFields values={prices} onChange={setPrices} />
+      <ConfirmButton
+        disabled={!typed || !pricesValid(prices) || apply.isPending}
+        onConfirm={() => apply.mutate()}
+      >
         تعيين السعر لـ {products.length} منتج
       </ConfirmButton>
       {apply.isError && <span className="pb-2 text-bad">{errorText(apply.error)}</span>}

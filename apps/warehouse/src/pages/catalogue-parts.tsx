@@ -1,8 +1,15 @@
 import { Button, Chip, Field, Input } from '@althobe/ui/components';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, type OptionGroup } from '../api';
-import { choosableValues, errorText, toMinorUnits, valueLabel } from '../format';
+import { api, PRICE_KEYS, type Currency, type OptionGroup, type PriceKey } from '../api';
+import {
+  choosableValues,
+  CURRENCY_SYMBOL,
+  errorText,
+  PRICE_META,
+  toMinorUnits,
+  valueLabel,
+} from '../format';
 import { optionGroupsQuery } from '../queries';
 
 // Pieces shared by the category and product pages (ADR-011).
@@ -150,44 +157,79 @@ export function useChosen() {
   return { chosen, toggle, setAll };
 }
 
+/** The three price fields as typed (ADR-012). */
+export type PriceTexts = Record<PriceKey, string>;
+export const EMPTY_PRICES: PriceTexts = { retailSyp: '', retailLyd: '', wholesale: '' };
+
 /**
- * The typed prices as minor units: undefined for an empty field, or null when either field is
- * not a valid amount (so nothing is sent).
+ * Only the prices that were typed, as minor units of each list's currency, ready to send;
+ * undefined when nothing was typed or any field is not a valid amount (so nothing is sent).
  */
-export function parsePrices(retail: string, wholesale: string) {
-  const one = (text: string) => (text.trim() ? toMinorUnits(text) : undefined);
-  const [r, w] = [one(retail), one(wholesale)];
-  return r === null || w === null ? null : { retail: r, wholesale: w };
+export function typedPrices(texts: PriceTexts): Partial<Record<PriceKey, string>> | undefined {
+  const out: Partial<Record<PriceKey, string>> = {};
+  for (const key of PRICE_KEYS) {
+    const text = texts[key].trim();
+    if (!text) continue;
+    const minor = toMinorUnits(text, PRICE_META[key].currency);
+    if (minor === null) return undefined;
+    out[key] = minor;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
-/** Only the prices that were typed, ready to send. */
-export function typedPrices(prices: ReturnType<typeof parsePrices>) {
-  if (!prices || (!prices.retail && !prices.wholesale)) return undefined;
-  return {
-    ...(prices.retail ? { retail: prices.retail } : {}),
-    ...(prices.wholesale ? { wholesale: prices.wholesale } : {}),
-  };
+/** Every typed price is a valid amount in its currency (empty fields are fine). */
+export function pricesValid(texts: PriceTexts): boolean {
+  return PRICE_KEYS.every(
+    (key) => !texts[key].trim() || toMinorUnits(texts[key], PRICE_META[key].currency) !== null,
+  );
 }
 
-export function PriceField({
+/** One field per price list, each in its own currency. */
+export function PriceFields({
+  values,
+  onChange,
+  labelPrefix = '',
+}: {
+  values: PriceTexts;
+  onChange: (values: PriceTexts) => void;
+  labelPrefix?: string;
+}) {
+  return (
+    <>
+      {PRICE_KEYS.map((key) => (
+        <PriceField
+          key={key}
+          label={`${labelPrefix}${PRICE_META[key].label}`}
+          currency={PRICE_META[key].currency}
+          value={values[key]}
+          onChange={(value) => onChange({ ...values, [key]: value })}
+        />
+      ))}
+    </>
+  );
+}
+
+function PriceField({
   label,
+  currency,
   value,
   onChange,
 }: {
   label: string;
+  currency: Currency;
   value: string;
   onChange: (value: string) => void;
 }) {
-  const invalid = value.trim() !== '' && toMinorUnits(value) === null;
+  const invalid = value.trim() !== '' && toMinorUnits(value, currency) === null;
   return (
     <div className="w-48">
-      <Field label={`${label} ($)`}>
+      <Field label={label}>
         <Input
           dir="ltr"
           inputMode="decimal"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="25.00"
+          placeholder={CURRENCY_SYMBOL[currency]}
           className={invalid ? 'border-bad' : ''}
         />
       </Field>
@@ -200,6 +242,7 @@ export function EditableAmount({
   text,
   initial,
   label,
+  currency,
   editable,
   muted = false,
   onSave,
@@ -207,6 +250,7 @@ export function EditableAmount({
   text: string;
   initial: string;
   label: string;
+  currency: Currency;
   editable: boolean;
   muted?: boolean;
   onSave: (amount: string | null) => Promise<unknown>;
@@ -233,7 +277,7 @@ export function EditableAmount({
       </button>
     );
   }
-  const amount = value.trim() ? toMinorUnits(value) : null;
+  const amount = value.trim() ? toMinorUnits(value, currency) : null;
   const valid = !value.trim() || amount !== null;
   return (
     <form

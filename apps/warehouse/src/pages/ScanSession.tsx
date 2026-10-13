@@ -19,14 +19,16 @@ import { api, ApiError, type Currency, type ScanLine, type ScanSession } from '.
 import {
   errorText,
   formatMoney,
+  CURRENCY_SYMBOL,
   formatPrice,
+  formatRetail,
   formatQuantity,
   fromMinorUnits,
   SESSION_KIND,
   toMinorUnits,
 } from '../format';
 import { PhotoThumb } from '../photo';
-import { balancesQuery, locationsQuery, sessionQuery } from '../queries';
+import { balancesQuery, locationsQuery, ratesQuery, sessionQuery } from '../queries';
 
 const route = getRouteApi('/app/sessions/$sessionId');
 // Keyed so the page can hold "confirm" while a typed quantity or cost is still saving.
@@ -308,7 +310,7 @@ function LastScanPanel({ last, pending }: { last: LastScan | null; pending: numb
           <div className="text-xl font-bold">{variant.product.nameAr}</div>
           <div className="text-lg">{variant.title}</div>
           <div className="tabular text-sm text-ink-muted">
-            مفرق {formatPrice(variant.prices.retail)} · جملة {formatPrice(variant.prices.wholesale)}
+            مفرق {formatRetail(variant.prices)} · جملة {formatPrice(variant.prices.wholesale)}
           </div>
           {last.status === 'dup' && (
             <div className="text-sm text-warn">مسحة مكررة — لم تُحتسب مرتين</div>
@@ -440,7 +442,10 @@ function LineRow({
   );
 }
 
-/** Unit cost in SYP or USD; USD needs the exchange rate in force (ADR-004). */
+/**
+ * Unit cost in USD, SYP or LYD (ADR-012). SYP and LYD need the rate in force (units per 1 USD):
+ * it starts at the owner's rate from settings and may be changed for this delivery.
+ */
 function CostEditor({
   line,
   onSave,
@@ -450,25 +455,31 @@ function CostEditor({
   onSave: (cost: { amount: string; currency: Currency; rateToBase: string }) => void;
   busy: boolean;
 }) {
+  const { data: rates = [] } = useQuery(ratesQuery);
   const saved = line.unitCost;
-  const [amount, setAmount] = useState(saved ? fromMinorUnits(saved.amount) : '');
-  const [currency, setCurrency] = useState<Currency>(saved?.currency ?? 'SYP');
-  const [rate, setRate] = useState(saved && saved.currency === 'USD' ? saved.rateToBase : '');
+  const [amount, setAmount] = useState(saved ? fromMinorUnits(saved.amount, saved.currency) : '');
+  const [currency, setCurrency] = useState<Currency>(saved?.currency ?? 'USD');
+  const [typedRate, setRate] = useState<string | null>(
+    saved && saved.currency !== 'USD' ? saved.rateToBase : null,
+  );
+  const ownerRate = rates.find((r) => r.currency === currency)?.rate ?? '';
+  // Until a rate is typed, the owner's rate for the chosen currency is used.
+  const rate = currency === 'USD' ? '1' : (typedRate ?? ownerRate);
 
-  const minor = toMinorUnits(amount);
-  const rateOk = currency === 'SYP' || /^\d{1,12}(\.\d{1,6})?$/.test(rate.trim());
+  const minor = toMinorUnits(amount, currency);
+  const rateOk = currency === 'USD' || /^\d{1,12}(\.\d{1,6})?$/.test(rate.trim());
   const dirty =
     !saved ||
     saved.amount !== minor ||
     saved.currency !== currency ||
-    (currency === 'USD' && saved.rateToBase !== rate.trim());
+    (currency !== 'USD' && Number(saved.rateToBase) !== Number(rate.trim()));
 
   const valid = minor !== null && rateOk;
   // A typed cost saves itself when focus leaves the cost fields (or on Enter): a cost that was
   // typed but never saved left "confirm" refused with "missing cost".
   const save = () => {
     if (dirty && valid && !busy && minor)
-      onSave({ amount: minor, currency, rateToBase: currency === 'SYP' ? '1' : rate.trim() });
+      onSave({ amount: minor, currency, rateToBase: rate.trim() });
   };
 
   return (
@@ -485,22 +496,31 @@ function CostEditor({
           dir="ltr"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          placeholder="250000"
+          placeholder={CURRENCY_SYMBOL[currency]}
         />
       </div>
       <div className="w-20">
-        <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)}>
-          <option value="SYP">ل.س</option>
+        <Select
+          value={currency}
+          onChange={(e) => {
+            setCurrency(e.target.value as Currency);
+            setRate(null);
+          }}
+        >
           <option value="USD">$</option>
+          <option value="SYP">ل.س</option>
+          <option value="LYD">د.ل</option>
         </Select>
       </div>
-      {currency === 'USD' && (
-        <div className="w-28">
+      {currency !== 'USD' && (
+        <div className="w-32">
           <Input
             dir="ltr"
+            aria-label="سعر الصرف"
+            title={`كم ${CURRENCY_SYMBOL[currency]} مقابل 1 $`}
             value={rate}
             onChange={(e) => setRate(e.target.value)}
-            placeholder="سعر الصرف"
+            placeholder={`${CURRENCY_SYMBOL[currency]} لكل 1 $`}
           />
         </div>
       )}

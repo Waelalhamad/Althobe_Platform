@@ -5,6 +5,8 @@ import {
   type Money,
   type OptionGroup,
   type OptionValue,
+  type PriceKey,
+  type Prices,
   type SessionKind,
   type Variant,
 } from './api';
@@ -117,14 +119,31 @@ export function formatQuantity(n: number): string {
   return numberFormat.format(n);
 }
 
-/** Minor units (string, 2 decimals for both SYP and USD — ADR-004) → display. */
-export function formatMoney(minor: string | null, currency: Currency = 'SYP'): string {
+/** ISO 4217 decimals: the Libyan dinar has 1000 dirhams (ADR-012). */
+export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3 };
+export const CURRENCY_SYMBOL: Record<Currency, string> = { SYP: 'ل.س', USD: '$', LYD: 'د.ل' };
+
+/** Each price list: its currency and its names on screen (ADR-012). */
+export const PRICE_META: Record<
+  PriceKey,
+  { currency: Currency; label: string; short: string; term: 'retail' | 'wholesale' }
+> = {
+  retailSyp: { currency: 'SYP', label: 'المفرق — سوريا (ل.س)', short: 'مفرق ل.س', term: 'retail' },
+  retailLyd: { currency: 'LYD', label: 'المفرق — ليبيا (د.ل)', short: 'مفرق د.ل', term: 'retail' },
+  wholesale: { currency: 'USD', label: 'الجملة ($)', short: 'جملة $', term: 'wholesale' },
+};
+
+/** Minor units (string) → display. Without a currency it is USD, the reporting currency. */
+export function formatMoney(minor: string | null, currency: Currency = 'USD'): string {
   if (minor === null) return '—';
   const value = BigInt(minor);
-  const whole = value / 100n;
-  const cents = (value < 0n ? -value : value) % 100n;
-  const text = numberFormat.format(whole) + (cents ? `.${cents.toString().padStart(2, '0')}` : '');
-  return `${text} ${currency === 'SYP' ? 'ل.س' : '$'}`;
+  const scale = 10n ** BigInt(EXPONENT[currency]);
+  const whole = value / scale;
+  const fraction = (value < 0n ? -value : value) % scale;
+  const text =
+    numberFormat.format(whole) +
+    (fraction ? `.${fraction.toString().padStart(EXPONENT[currency], '0')}` : '');
+  return `${text} ${CURRENCY_SYMBOL[currency]}`;
 }
 
 /** A selling price, or a clear "no price yet". */
@@ -132,21 +151,31 @@ export function formatPrice(price: Money | null): string {
   return price ? formatMoney(price.amount, price.currency) : 'بدون سعر';
 }
 
-/** "250000" or "1.5" as typed → minor units as a string, without ever using a float. */
-export function toMinorUnits(text: string): string | null {
+/** Both retail prices on one line: "350,000 ل.س · 125.5 د.ل". */
+export function formatRetail(prices: Prices): string {
+  const both = [prices.retailSyp, prices.retailLyd].filter((p) => p !== null);
+  return both.length ? both.map(formatPrice).join(' · ') : 'بدون سعر';
+}
+
+/** "250000" or "1.5" as typed → minor units of `currency`, without ever using a float. */
+export function toMinorUnits(text: string, currency: Currency = 'USD'): string | null {
+  const digits = EXPONENT[currency];
   const clean = text.replace(/[,\s]/g, '');
-  const match = /^(\d{1,15})(?:\.(\d{1,2}))?$/.exec(clean);
+  const match = new RegExp(`^(\\d{1,15})(?:\\.(\\d{1,${digits}}))?$`).exec(clean);
   if (!match) return null;
-  return (BigInt(match[1]!) * 100n + BigInt((match[2] ?? '').padEnd(2, '0'))).toString();
+  const scale = 10n ** BigInt(digits);
+  return (BigInt(match[1]!) * scale + BigInt((match[2] ?? '').padEnd(digits, '0'))).toString();
 }
 
 /** Minor units → the text a person would type ("25000000" → "250000", "150" → "1.50"). Exact. */
-export function fromMinorUnits(minor: string): string {
+export function fromMinorUnits(minor: string, currency: Currency = 'USD'): string {
+  const digits = EXPONENT[currency];
+  const scale = 10n ** BigInt(digits);
   const value = BigInt(minor);
-  const cents = value % 100n;
-  return cents === 0n
-    ? (value / 100n).toString()
-    : `${value / 100n}.${cents.toString().padStart(2, '0')}`;
+  const fraction = value % scale;
+  return fraction === 0n
+    ? (value / scale).toString()
+    : `${value / scale}.${fraction.toString().padStart(digits, '0')}`;
 }
 
 /** "قطني، كتان , صوف" → ['قطني', 'كتان', 'صوف'] — Arabic and Latin commas both work. */

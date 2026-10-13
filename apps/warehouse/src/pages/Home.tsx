@@ -172,7 +172,7 @@ function SetupChecklist({
 
   const uncounted = locations.find((l) => l.isActive && !(piecesAt[l.id] ?? 0));
   const emptyCategory = categories.find((c) => c.productCount === 0);
-  const unpriced = products.find((p) => !p.prices.retail);
+  const unpriced = products.find((p) => !p.prices.retailSyp && !p.prices.retailLyd);
 
   const action = (step: SetupStep) => {
     switch (step.key) {

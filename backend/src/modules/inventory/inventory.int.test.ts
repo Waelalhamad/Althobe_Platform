@@ -34,7 +34,7 @@ describe('receiveStock', () => {
   it('100 → receive 20 → 120, with one PURCHASE movement', async () => {
     await stock(t.services, w, w.x, w.wh1, 100);
     const result = await inv.receiveStock(
-      { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: SYP(1000) },
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: USD(1000) },
       write(w.owner),
     );
     expect(result.movements).toHaveLength(1);
@@ -50,7 +50,7 @@ describe('receiveStock', () => {
     for (const quantity of [0, -5]) {
       await expect(
         inv.receiveStock(
-          { variantId: w.x.id, locationId: w.wh1.id, quantity, unitCost: SYP(1) },
+          { variantId: w.x.id, locationId: w.wh1.id, quantity, unitCost: USD(1) },
           write(w.owner),
         ),
       ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -61,7 +61,7 @@ describe('receiveStock', () => {
   it('rejects receiving at the store (location policy)', async () => {
     await expect(
       inv.receiveStock(
-        { variantId: w.x.id, locationId: w.store.id, quantity: 10, unitCost: SYP(1) },
+        { variantId: w.x.id, locationId: w.store.id, quantity: 10, unitCost: USD(1) },
         write(w.owner),
       ),
     ).rejects.toMatchObject({ code: 'MOVEMENT_NOT_ALLOWED_AT_LOCATION' });
@@ -71,7 +71,7 @@ describe('receiveStock', () => {
     const actor = withoutPermission(w.owner, PERMISSIONS.inventory.receive);
     await expect(
       inv.receiveStock(
-        { variantId: w.x.id, locationId: w.wh1.id, quantity: 1, unitCost: SYP(1) },
+        { variantId: w.x.id, locationId: w.wh1.id, quantity: 1, unitCost: USD(1) },
         write(actor),
       ),
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
@@ -255,7 +255,7 @@ describe('idempotency', () => {
   it('the same key twice acts once and returns the same result', async () => {
     await stock(t.services, w, w.x, w.wh1, 100);
     const ctx = write(w.owner, 'receive-key-0001');
-    const input = { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: SYP(1000) };
+    const input = { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: USD(1000) };
     const first = await inv.receiveStock(input, ctx);
     const second = await inv.receiveStock(input, ctx);
     expect(second).toEqual(first);
@@ -268,12 +268,12 @@ describe('idempotency', () => {
   it('the same key with a different request is refused', async () => {
     const ctx = write(w.owner, 'receive-key-0002');
     await inv.receiveStock(
-      { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: SYP(1) },
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 20, unitCost: USD(1) },
       ctx,
     );
     await expect(
       inv.receiveStock(
-        { variantId: w.x.id, locationId: w.wh1.id, quantity: 21, unitCost: SYP(1) },
+        { variantId: w.x.id, locationId: w.wh1.id, quantity: 21, unitCost: USD(1) },
         ctx,
       ),
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
@@ -303,18 +303,18 @@ describe('adjust and damage', () => {
   });
 });
 
-describe('moving weighted average (SYP + USD)', () => {
-  it('10 @ 1,000 SYP + 10 @ 1.00 USD (rate 13,000) → average 7,000 SYP', async () => {
-    await stock(t.services, w, w.x, w.wh1, 10, SYP(1000));
-    const usd = await inv.receiveStock(
-      { variantId: w.x.id, locationId: w.wh1.id, quantity: 10, unitCost: USD(1, '13000') },
+describe('moving weighted average (USD + SYP)', () => {
+  it('10 @ 10.00 USD + 10 @ 52,000 SYP (13,000 per dollar = 4.00 USD) → average 7.00 USD', async () => {
+    await stock(t.services, w, w.x, w.wh1, 10, USD(10));
+    const syp = await inv.receiveStock(
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 10, unitCost: SYP(52000, '13000') },
       write(w.owner),
     );
-    expect(usd.movements[0]).toMatchObject({
-      unitCost: { amount: 100n, currency: 'USD', rateToBase: '13000' },
-      unitCostBaseAmount: 1_300_000n,
+    expect(syp.movements[0]).toMatchObject({
+      unitCost: { amount: 5_200_000n, currency: 'SYP', rateToBase: '13000' },
+      unitCostBaseAmount: 400n,
     });
-    expect((await balanceOf(w.x.id, w.wh1.id)).averageCostBaseAmount).toBe(700_000n);
+    expect((await balanceOf(w.x.id, w.wh1.id)).averageCostBaseAmount).toBe(700n);
 
     // Issues leave at the average; a transfer carries the average to the destination.
     await inv.issueStock({ variantId: w.x.id, locationId: w.wh1.id, quantity: 5 }, write(w.owner));
@@ -324,23 +324,23 @@ describe('moving weighted average (SYP + USD)', () => {
     );
     expect(await balanceOf(w.x.id, w.wh1.id)).toMatchObject({
       quantity: 10,
-      averageCostBaseAmount: 700_000n,
-      valueBaseAmount: 7_000_000n,
+      averageCostBaseAmount: 700n,
+      valueBaseAmount: 7_000n,
     });
     expect(await balanceOf(w.x.id, w.wh2.id)).toMatchObject({
       quantity: 5,
-      averageCostBaseAmount: 700_000n,
+      averageCostBaseAmount: 700n,
     });
   });
 
   it('taking the last unit leaves zero value, with no rounding residue', async () => {
-    await stock(t.services, w, w.x, w.wh1, 3, { amount: 100n, currency: 'SYP' });
+    await stock(t.services, w, w.x, w.wh1, 3, { amount: 100n, currency: 'USD' });
     await inv.receiveStock(
       {
         variantId: w.x.id,
         locationId: w.wh1.id,
         quantity: 1,
-        unitCost: { amount: 101n, currency: 'SYP' },
+        unitCost: { amount: 101n, currency: 'USD' },
       },
       write(w.owner),
     );
@@ -375,7 +375,7 @@ describe('moving weighted average (SYP + USD)', () => {
 describe('ledger guarantees', () => {
   it('balances always equal the sum of their movements', async () => {
     await stock(t.services, w, w.x, w.wh1, 100);
-    await stock(t.services, w, w.y, w.wh1, 40, USD(2.5, '13100.25'));
+    await stock(t.services, w, w.y, w.wh1, 40, SYP(32751, '13100.25'));
     await inv.transferStock(
       { variantId: w.x.id, fromLocationId: w.wh1.id, toLocationId: w.store.id, quantity: 33 },
       write(w.owner),

@@ -13,8 +13,15 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { api, type Product, type Variant } from '../api';
-import { choosableValues, errorText, formatPrice, fromMinorUnits, valueLabel } from '../format';
+import { api, PRICE_KEYS, type PriceKey, type Product, type Variant } from '../api';
+import {
+  choosableValues,
+  errorText,
+  formatPrice,
+  fromMinorUnits,
+  PRICE_META,
+  valueLabel,
+} from '../format';
 import { PAGES } from '../help';
 import { can, categoriesQuery, meQuery, optionGroupsQuery, productQuery } from '../queries';
 import { EditableAmount, useCatalogueRefresh } from './catalogue-parts';
@@ -84,7 +91,7 @@ export function ProductDetailPage() {
 function PricesCard({ product, canPrice }: { product: Product; canPrice: boolean }) {
   const refresh = useCatalogueRefresh();
   const toast = useToast();
-  const save = (list: 'retail' | 'wholesale') => async (amount: string | null) => {
+  const save = (list: PriceKey) => async (amount: string | null) => {
     await api.setProductPrices({ productIds: [product.id], [list]: amount });
     toast('تم حفظ السعر');
     await refresh();
@@ -93,16 +100,21 @@ function PricesCard({ product, canPrice }: { product: Product; canPrice: boolean
     <Card>
       <h2 className="mb-3 text-lg font-bold">السعر (لكل المقاسات)</h2>
       <div className="flex flex-wrap gap-8">
-        {(['retail', 'wholesale'] as const).map((list) => (
+        {PRICE_KEYS.map((list) => (
           <div key={list}>
             <div className="text-sm text-ink-muted">
-              {list === 'retail' ? 'المفرق' : 'الجملة'} <TermHint term={list} />
+              {PRICE_META[list].label} <TermHint term={PRICE_META[list].term} />
             </div>
             <div className="tabular text-2xl font-bold">
               <EditableAmount
                 text={formatPrice(product.prices[list])}
-                initial={product.prices[list] ? fromMinorUnits(product.prices[list].amount) : ''}
-                label={list === 'retail' ? 'سعر المفرق' : 'سعر الجملة'}
+                initial={
+                  product.prices[list]
+                    ? fromMinorUnits(product.prices[list].amount, PRICE_META[list].currency)
+                    : ''
+                }
+                label={PRICE_META[list].label}
+                currency={PRICE_META[list].currency}
                 editable={canPrice}
                 muted={!product.prices[list]}
                 onSave={save(list)}
@@ -180,7 +192,7 @@ function SizesTable({
       setError(e);
     }
   };
-  const savePrice = (v: Variant, list: 'retail' | 'wholesale') => async (amount: string | null) => {
+  const savePrice = (v: Variant, list: PriceKey) => async (amount: string | null) => {
     await api.setPrices({ variantIds: [v.id], [list]: amount });
     await refresh();
   };
@@ -200,8 +212,11 @@ function SizesTable({
             <th className="p-3 text-start">
               الباركود <TermHint term="barcode" />
             </th>
-            <th className="p-3 text-start">المفرق</th>
-            <th className="p-3 text-start">الجملة</th>
+            {PRICE_KEYS.map((key) => (
+              <th key={key} className="p-3 text-start">
+                {PRICE_META[key].short}
+              </th>
+            ))}
             {canWrite && (
               <th className="p-3 text-end">
                 إيقاف / حذف <TermHint term="stopped" />
@@ -219,13 +234,18 @@ function SizesTable({
               <td className="p-3">
                 <Code>{v.barcode}</Code>
               </td>
-              {(['retail', 'wholesale'] as const).map((list) => (
+              {PRICE_KEYS.map((list) => (
                 <td key={list} className="tabular p-3">
                   <EditableAmount
                     // A size's own price is marked ★; the product's price shows muted.
                     text={formatPrice(v.prices[list]) + (v.ownPrices[list] ? ' ★' : '')}
-                    initial={v.prices[list] ? fromMinorUnits(v.prices[list].amount) : ''}
-                    label={list === 'retail' ? 'سعر المفرق' : 'سعر الجملة'}
+                    initial={
+                      v.prices[list]
+                        ? fromMinorUnits(v.prices[list].amount, PRICE_META[list].currency)
+                        : ''
+                    }
+                    label={PRICE_META[list].label}
+                    currency={PRICE_META[list].currency}
                     editable={canPrice}
                     muted={!v.ownPrices[list]}
                     onSave={savePrice(v, list)}

@@ -326,7 +326,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     getMovements: readMovements,
 
     /**
-     * Stock on hand per location and product: pieces, and value in SYP for those allowed to see
+     * Stock on hand per location and product: pieces, and value in USD for those allowed to see
      * cost. Products come from the catalogue through its service, never its tables.
      */
     async stockSummary(ctx: ActorContext): Promise<StockSummaryRow[]> {
@@ -402,7 +402,7 @@ export interface StockSummaryRow {
   /** Variants of this product with stock at this location. */
   variants: number;
   quantity: number;
-  /** SYP minor units; null when the actor cannot see cost. */
+  /** USD cents; null when the actor cannot see cost. */
   valueBaseAmount: bigint | null;
 }
 

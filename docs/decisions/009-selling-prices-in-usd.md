@@ -1,6 +1,6 @@
 # ADR-009: Selling prices per variant, held in USD
 
-- Status: **Accepted**
+- Status: **Accepted** — retail **changed by ADR-012** (SYP and LYD prices; wholesale stays USD)
 - Date: 2026-10-06
 
 ## Decision

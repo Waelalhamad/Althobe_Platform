@@ -63,6 +63,7 @@ employees.read
 employees.salary.read
 admin.users.write
 admin.locations.write
+admin.rates.write
 admin.roles.write
 ```
 

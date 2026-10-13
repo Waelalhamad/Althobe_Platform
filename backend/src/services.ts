@@ -3,6 +3,7 @@ import type { PhotoStorage } from './shared/storage.js';
 import { createAuthService } from './modules/auth/auth.service.js';
 import { createCatalogueService } from './modules/catalogue/catalogue.service.js';
 import { createPhotoService } from './modules/catalogue/photo.service.js';
+import { createRatesService } from './modules/currency/rates.service.js';
 import { createLocationsService } from './modules/locations/locations.service.js';
 import { createInventoryService } from './modules/inventory/inventory.service.js';
 import { createScanSessionService } from './modules/inventory/scan-session.service.js';
@@ -19,6 +20,7 @@ export function createServices(db: Db, options: { storage?: PhotoStorage | null 
     catalogue,
     photos: createPhotoService(db, options.storage ?? null),
     locations,
+    rates: createRatesService(db),
     inventory: createInventoryService(db, ledgerDeps),
     scanSessions: createScanSessionService(db, ledgerDeps),
     stocktakes: createStocktakeService(db, ledgerDeps),

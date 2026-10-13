@@ -25,8 +25,12 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 
 **Photos (2026-10-07, ADR-010):** product photos in the private S3 bucket — uploaded from phone or
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
-and the scan screen show the best-matching photo. **Next for products:** categories, then display
-currency (SYP / LYD) by exchange rate.
+and the scan screen show the best-matching photo. **Next for products:** categories.
+
+**Currencies (2026-10-13, ADR-012):** retail prices typed per country — SYP for Syria, LYD (3
+decimals) for Libya; wholesale stays USD. Stock value, average cost and reports are in USD (the
+ledger was converted by replaying it). The owner sets the SYP and LYD rates on «أسعار الصرف»
+(`admin.rates.write`); a cost in SYP or LYD starts at that rate.
 
 **Category → product → size (2026-10-11, ADR-011):** ثوب and طقم are categories (a tree, up to
 three levels); a product is one design (its options except the size) with its own photos and

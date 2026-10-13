@@ -1,13 +1,15 @@
 import type { PriceList, Prisma } from '@prisma/client';
 import type { Queryable, Tx } from '../../shared/db.js';
-import type {
-  CategoryView,
-  OptionGroupView,
-  PriceView,
-  Prices,
-  ProductView,
-  VariantOption,
-  VariantView,
+import {
+  PRICE_KEYS,
+  PRICE_LISTS,
+  type CategoryView,
+  type OptionGroupView,
+  type PriceView,
+  type Prices,
+  type ProductView,
+  type VariantOption,
+  type VariantView,
 } from './catalogue.types.js';
 
 // ─── Option values: a value and up to two levels above it (جوخ هندي → مشخط) ──────────────────
@@ -82,10 +84,10 @@ function priceOn(prices: readonly PriceRow[], list: PriceList): PriceView | null
   return price ? { amount: price.amount, currency: price.currency } : null;
 }
 
-const pricesOf = (rows: readonly PriceRow[]): Prices => ({
-  retail: priceOn(rows, 'RETAIL'),
-  wholesale: priceOn(rows, 'WHOLESALE'),
-});
+const pricesOf = (rows: readonly PriceRow[]): Prices =>
+  Object.fromEntries(
+    PRICE_KEYS.map((key) => [key, priceOn(rows, PRICE_LISTS[key].list)]),
+  ) as Prices;
 
 const firstPhoto = {
   where: { deletedAt: null },
@@ -143,8 +145,11 @@ function toView(row: VariantRow): VariantView {
     options,
     title: options.map((o) => o.value).join(' · '),
     size: options.find((o) => o.groupKey === 'SIZE')?.value ?? null,
-    prices: { retail: own.retail ?? base.retail, wholesale: own.wholesale ?? base.wholesale },
-    ownPrices: { retail: own.retail !== null, wholesale: own.wholesale !== null },
+    prices: Object.fromEntries(PRICE_KEYS.map((k) => [k, own[k] ?? base[k]])) as Prices,
+    ownPrices: Object.fromEntries(PRICE_KEYS.map((k) => [k, own[k] !== null])) as Record<
+      keyof Prices,
+      boolean
+    >,
     photoId: product.photos[0]?.id ?? null,
     product: {
       id: product.id,

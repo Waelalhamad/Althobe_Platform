@@ -56,11 +56,11 @@ describe('RECEIVE session', () => {
     expect(await quantityAt(w.x.id, w.wh1.id)).toBe(0);
 
     await sessions.setLineCost(
-      { sessionId: session.id, variantId: w.x.id, unitCost: SYP(1500) },
+      { sessionId: session.id, variantId: w.x.id, unitCost: USD(1500) },
       w.owner,
     );
     await sessions.setLineCost(
-      { sessionId: session.id, variantId: w.y.id, unitCost: USD(2, '13000') },
+      { sessionId: session.id, variantId: w.y.id, unitCost: SYP(26000, '13000') },
       w.owner,
     );
 
@@ -219,7 +219,7 @@ describe('TRANSFER session', () => {
       w.owner,
     );
     await expect(
-      sessions.setLineCost({ sessionId: session.id, variantId: w.x.id, unitCost: SYP(1) }, w.owner),
+      sessions.setLineCost({ sessionId: session.id, variantId: w.x.id, unitCost: USD(1) }, w.owner),
     ).rejects.toMatchObject({ code: 'COST_NOT_ALLOWED' });
   });
 });
@@ -227,7 +227,7 @@ describe('TRANSFER session', () => {
 describe('SALE and RETURN sessions — goods leaving to and coming back from customers', () => {
   /** Puts `quantity` of X into the store the only legal way: received at WH1, then transferred. */
   async function stockTheStore(quantity: number) {
-    await stock(t.services, w, w.x, w.wh1, quantity, SYP(1000));
+    await stock(t.services, w, w.x, w.wh1, quantity, USD(1000));
     await t.services.inventory.transferStock(
       { variantId: w.x.id, fromLocationId: w.wh1.id, toLocationId: w.store.id, quantity },
       write(w.owner),
@@ -248,7 +248,7 @@ describe('SALE and RETURN sessions — goods leaving to and coming back from cus
       { type: 'SALE', quantity: -2, referenceType: 'SCAN_SESSION', note: 'فاتورة 1042 — أبو محمد' },
     ]);
     expect(await quantityAt(w.x.id, w.store.id)).toBe(3);
-    // Value leaves at the moving average (1,000 SYP each).
+    // Value leaves at the moving average (1,000 USD each).
     expect(result.movements[0]!.valueBaseAmount).toBe(-200_000n);
   });
 

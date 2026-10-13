@@ -92,6 +92,13 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       ),
     }));
 
+    // ── Exchange rates (ADR-012) ─────────────────────────────────────────────────────────────
+    priv.get('/rates', async () => ({ data: await s.rates.listRates() }));
+
+    priv.put('/rates', async (request) => ({
+      data: await s.rates.setRate(request.body as never, actorOf(request)),
+    }));
+
     // ── Categories → products → sizes (ADR-011) ─────────────────────────────────────────────
     priv.get('/categories', async (request) => ({
       data: await s.catalogue.listCategories(actorOf(request)),
@@ -131,7 +138,7 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       }),
     );
 
-    // One product or a filtered list at once: { productIds, retail?, wholesale? }.
+    // One product or a filtered list at once: { productIds, retailSyp?, retailLyd?, wholesale? }.
     priv.post('/products/prices', async (request) => ({
       data: await s.catalogue.setProductPrices(request.body as never, actorOf(request)),
     }));
@@ -152,7 +159,7 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.catalogue.deleteProduct(request.params.id, actorOf(request)),
     }));
 
-    // A size's own price, overriding its product's: { variantIds, retail?, wholesale? }.
+    // A size's own price, overriding its product's: { variantIds, retailSyp?, retailLyd?, wholesale? }.
     priv.post('/variants/prices', async (request) => ({
       data: await s.catalogue.setPrices(request.body as never, actorOf(request)),
     }));

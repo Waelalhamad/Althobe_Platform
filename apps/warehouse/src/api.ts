@@ -3,7 +3,13 @@
 
 export type LocationKind = 'WAREHOUSE' | 'STORE';
 export type SessionKind = 'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN';
-export type Currency = 'SYP' | 'USD';
+export type Currency = 'SYP' | 'USD' | 'LYD';
+
+/** ADR-012: retail in SYP (Syria) and LYD (Libya), wholesale in USD. One currency per list. */
+export const PRICE_KEYS = ['retailSyp', 'retailLyd', 'wholesale'] as const;
+export type PriceKey = (typeof PRICE_KEYS)[number];
+/** Prices to set: undefined leaves one alone, null removes it. Minor units of its currency. */
+export type PriceChanges = Partial<Record<PriceKey, string | null>>;
 
 export interface User {
   id: string;
@@ -37,10 +43,7 @@ export interface Category {
   productCount: number;
 }
 
-export interface Prices {
-  retail: Money | null;
-  wholesale: Money | null;
-}
+export type Prices = Record<PriceKey, Money | null>;
 
 /** One design in a category; its sizes are its variants. */
 export interface Product {
@@ -66,7 +69,7 @@ export interface VariantOption {
   value: string;
 }
 
-/** Minor units as a string (ADR-004); prices are in USD for now (ADR-009). */
+/** Minor units of `currency` as a string (ADR-004); LYD has 3 decimals, the others 2. */
 export interface Money {
   amount: string;
   currency: Currency;
@@ -86,7 +89,7 @@ export interface Variant {
   /** This size's own price, else the product's; null = not priced yet. */
   prices: Prices;
   /** Which prices are this size's own. */
-  ownPrices: { retail: boolean; wholesale: boolean };
+  ownPrices: Record<PriceKey, boolean>;
   /** The product's main photo. */
   photoId: string | null;
   product: {
@@ -131,6 +134,12 @@ export interface Photo {
   width: number;
   height: number;
   sortOrder: number;
+}
+
+export interface Rate {
+  currency: 'SYP' | 'LYD';
+  rate: string | null;
+  updatedAt: string | null;
 }
 
 export interface UnitCost {
@@ -318,7 +327,7 @@ export const api = {
     categoryId: string,
     input: {
       selections: { groupId: string; valueIds: string[] }[];
-      prices?: { retail?: string; wholesale?: string };
+      prices?: Partial<Record<PriceKey, string>>;
     },
   ) =>
     post<{ products: Product[]; created: Variant[]; existing: Variant[] }>(
@@ -333,11 +342,8 @@ export const api = {
     request<Product>('PATCH', `/products/${id}`, { isActive }),
   deleteProduct: async (id: string) => request<{ ok: true }>('DELETE', `/products/${id}`),
   /** Same price for every listed product (all their sizes); null removes it. Minor units. */
-  setProductPrices: async (input: {
-    productIds: string[];
-    retail?: string | null;
-    wholesale?: string | null;
-  }) => post<Product[]>('/products/prices', input),
+  setProductPrices: async (input: { productIds: string[] } & PriceChanges) =>
+    post<Product[]>('/products/prices', input),
 
   // One product's or category's sizes all at once; a search shows the first 200.
   variants: async (params: { productId?: string; categoryId?: string; q?: string }) =>
@@ -348,11 +354,13 @@ export const api = {
       })}`,
     ),
   /** A size's own price, overriding the product's; null goes back to the product's. */
-  setPrices: async (input: {
-    variantIds: string[];
-    retail?: string | null;
-    wholesale?: string | null;
-  }) => post<Variant[]>('/variants/prices', input),
+  setPrices: async (input: { variantIds: string[] } & PriceChanges) =>
+    post<Variant[]>('/variants/prices', input),
+
+  // Exchange rates (ADR-012): units of the currency per 1 USD; null until the owner sets one.
+  rates: async () => get<Rate[]>('/rates'),
+  setRate: async (currency: Rate['currency'], rate: string) =>
+    request<Rate>('PUT', '/rates', { currency, rate }),
   setVariantActive: async (id: string, isActive: boolean) =>
     request<Variant>('PATCH', `/variants/${id}`, { isActive }),
   deleteVariant: async (id: string) => request<{ ok: true }>('DELETE', `/variants/${id}`),

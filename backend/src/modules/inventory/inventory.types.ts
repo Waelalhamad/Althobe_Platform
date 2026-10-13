@@ -26,9 +26,9 @@ export interface BalanceView extends BalanceKey {
   quantity: number;
   reservedQuantity: number;
   availableQuantity: number;
-  /** Total stock value, SYP minor units. Null when the actor cannot see costs. */
+  /** Total stock value, USD cents. Null when the actor cannot see costs. */
   valueBaseAmount: bigint | null;
-  /** Moving weighted average unit cost, SYP minor units. Null when the actor cannot see costs. */
+  /** Moving weighted average unit cost, USD cents. Null when the actor cannot see costs. */
   averageCostBaseAmount: bigint | null;
 }
 

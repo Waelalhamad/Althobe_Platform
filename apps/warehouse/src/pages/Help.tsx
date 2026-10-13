@@ -10,6 +10,7 @@ const PAGE_LIST = [
   { to: '/products', name: 'التصنيفات والمنتجات', text: PAGES.categories },
   { to: '/labels', name: 'طباعة الملصقات', text: PAGES.labels },
   { to: '/locations', name: 'المواقع', text: PAGES.locations },
+  { to: '/rates', name: 'أسعار الصرف', text: PAGES.rates },
   { to: '/balances', name: 'الأرصدة', text: PAGES.balances },
   { to: '/stocktakes', name: 'الجرد', text: PAGES.stocktakes },
   { to: '/movements', name: 'السجل', text: PAGES.movements },

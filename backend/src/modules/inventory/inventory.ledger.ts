@@ -185,7 +185,7 @@ async function assertReferencesUsable(tx: Tx, deps: LedgerDeps, entries: Movemen
 
 /**
  * Stock rule check and value for one entry, against the locked balance *before* the entry applies.
- * Value is held as a total per balance (SYP minor units); the average is derived, never stored,
+ * Value is held as a total per balance (USD cents, ADR-012); the average is derived, never stored,
  * so repeated averaging cannot accumulate rounding error.
  */
 function valueOf(
@@ -231,7 +231,11 @@ function valueOf(
   }
 
   if (entry.unitCost) {
-    const unitCostBase = toBaseAmount(entry.unitCost.amount, entry.unitCost.rateToBase);
+    const unitCostBase = toBaseAmount(
+      entry.unitCost.amount,
+      entry.unitCost.currency,
+      entry.unitCost.rateToBase,
+    );
     return { value: unitCostBase * BigInt(qty), unitCostBase };
   }
 

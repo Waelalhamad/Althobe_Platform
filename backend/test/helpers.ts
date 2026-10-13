@@ -79,14 +79,14 @@ export function withoutPermission(actor: ActorContext, permission: Permission): 
   };
 }
 
-/** SYP amount in minor units. SYP(1000) is 1,000 SYP. */
-export function SYP(amount: number) {
-  return { amount: BigInt(amount) * 100n, currency: 'SYP' as const };
+/** USD (the base currency, ADR-012) in cents. USD(10) is 10.00 USD. */
+export function USD(amount: number) {
+  return { amount: BigInt(Math.round(amount * 100)), currency: 'USD' as const };
 }
 
-/** USD amount in minor units, with its rate. USD(1, '13000') is 1.00 USD at 13,000 SYP. */
-export function USD(amount: number, rateToBase: string) {
-  return { amount: BigInt(Math.round(amount * 100)), currency: 'USD' as const, rateToBase };
+/** SYP in minor units, with its rate. SYP(13000, '13000') is 13,000 SYP at 13,000 per dollar. */
+export function SYP(amount: number, rateToBase: string) {
+  return { amount: BigInt(amount) * 100n, currency: 'SYP' as const, rateToBase };
 }
 
 /** Puts `quantity` of a variant into a warehouse through the ledger (a costed receipt). */
@@ -96,7 +96,7 @@ export async function stock(
   variant: VariantView,
   location: LocationView,
   quantity: number,
-  unitCost: UnitCostInput = SYP(1000),
+  unitCost: UnitCostInput = USD(1000),
 ) {
   return services.inventory.receiveStock(
     { variantId: variant.id, locationId: location.id, quantity, unitCost },

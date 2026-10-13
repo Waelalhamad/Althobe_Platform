@@ -21,7 +21,7 @@ export const PERMISSIONS = {
     read: 'products.read',
     write: 'products.write',
   },
-  // Selling prices (ADR-009). Everyone with products.read sees them; few may change them.
+  // Selling prices (ADR-009, ADR-012). Everyone with products.read sees them; few may change them.
   prices: {
     write: 'prices.write',
   },
@@ -29,6 +29,8 @@ export const PERMISSIONS = {
     users: 'admin.users.write',
     // Renaming warehouses and the store.
     locations: 'admin.locations.write',
+    // The exchange rates (ADR-012).
+    rates: 'admin.rates.write',
   },
 } as const;
 

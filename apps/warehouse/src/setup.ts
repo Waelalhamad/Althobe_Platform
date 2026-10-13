@@ -29,7 +29,7 @@ export function setupSteps(d: SetupData): SetupStep[] {
   const activeGroups = d.groups.filter((g) => g.isActive);
   const filled = activeGroups.filter((g) => g.values.some((v) => v.isActive));
   const sizes = d.groups.find((g) => g.key === 'SIZE');
-  const priced = d.products.filter((p) => p.prices.retail);
+  const priced = d.products.filter((p) => p.prices.retailSyp || p.prices.retailLyd);
   const activeLocations = d.locations.filter((l) => l.isActive);
   const counted = activeLocations.filter((l) => (d.piecesAt[l.id] ?? 0) > 0);
   const anyStock = counted.length > 0;

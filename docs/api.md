@@ -39,12 +39,14 @@ stock endpoints arriving in Phase 3 will require it.
 | `GET` | `/auth/me` | authenticated |
 | `GET` | `/locations` | `inventory.view` |
 | `PATCH` | `/locations/:id` (`nameAr`, `nameEn`; code and kind never change) | `admin.locations.write` |
+| `GET` | `/rates` — `[{ currency: SYP \| LYD, rate (units per 1 USD) \| null, updatedAt }]` (ADR-012) | signed in |
+| `PUT` | `/rates` — `{ currency, rate }` | `admin.rates.write` |
 | `GET` / `POST` | `/categories` — `{ nameAr, code?, parentId?, groupIds? }` (ADR-011) | `products.read` / `products.write` |
 | `PATCH` / `DELETE` | `/categories/:id` — name, code, `parentId`, `groupIds`, `isActive`, `move`; delete only without stock | `products.write` |
 | `POST` | `/categories/:id/products/generate` — `{ selections: [{ groupId, valueIds }], prices? }` (a type left out = «بدون»; sizes required) | `products.write` (+ `prices.write` with prices) |
 | `GET` | `/products?categoryId=` · `/products/:id` (with its sizes) | `products.read` |
 | `PATCH` / `DELETE` | `/products/:id` — `{ isActive }`; delete only without stock | `products.write` |
-| `POST` | `/products/prices` — `{ productIds, retail?, wholesale? }` (minor units as strings; `null` clears) | `prices.write` |
+| `POST` | `/products/prices` — `{ productIds, retailSyp?, retailLyd?, wholesale? }` (minor units of SYP, LYD (3 decimals), USD as strings; `null` clears — ADR-012) | `prices.write` |
 | `GET` | `/variants?q=&productId=&categoryId=` | `products.read` |
 | `PATCH` / `DELETE` | `/variants/:id` — `{ isActive }`; delete only without stock | `products.write` |
 | `POST` | `/variants/prices` — a size's own price, overriding the product's; `null` goes back | `prices.write` |
@@ -69,8 +71,8 @@ stock endpoints arriving in Phase 3 will require it.
 
 A variant (one size of a product) is returned with `options: [{ groupId, groupKey, group, valueId,
 value }]` (the product's design, then the size, in type order), `title` (the values joined with
-« · »), `size`, `prices: { retail, wholesale }` (its own price, else the product's; each
-`{ amount, currency }` in USD minor units or null — ADR-009), `ownPrices`, `photoId` (the product's
+« · »), `size`, `prices: { retailSyp, retailLyd, wholesale }` (its own price, else the product's; each
+`{ amount, currency }` in minor units of SYP, LYD and USD, or null — ADR-012), `ownPrices`, `photoId` (the product's
 main photo) and `product: { id, code, nameAr (the category), title (the design), categoryId }`
 (ADR-011). Until 2026-10-05 it had `fabric`, `colour`, `size` instead (ADR-008).
 
