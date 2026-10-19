@@ -454,6 +454,73 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       await st.cancelStocktake({ stocktakeId: request.params.id }, actorOf(request));
       return { data: { ok: true } };
     });
+
+    // ── Accounting (ADR-013). Posting requires Idempotency-Key. ─────────────────────────────
+    const acc = s.accounting;
+    type Query = FastifyRequest<{ Querystring: Record<string, string> }>;
+
+    priv.get('/accounting/accounts', async (request) => ({
+      data: await acc.listAccounts(actorOf(request)),
+    }));
+
+    priv.post('/accounting/accounts', async (request) => ({
+      data: await acc.createAccount(request.body, actorOf(request)),
+    }));
+
+    priv.patch('/accounting/accounts/:id', async (request: Params<{ id: string }>) => ({
+      data: await acc.updateAccount(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.get(
+      '/accounting/accounts/:id/statement',
+      async (request: FastifyRequest<{ Params: { id: string }; Querystring: object }>) => ({
+        data: await acc.statement(request.params.id, request.query, actorOf(request)),
+      }),
+    );
+
+    priv.get('/accounting/boxes', async (request) => ({
+      data: await acc.boxes(actorOf(request)),
+    }));
+
+    priv.get('/accounting/entries', async (request: Query) => ({
+      data: await acc.entries(request.query, actorOf(request)),
+    }));
+
+    priv.post('/accounting/entries', async (request) => ({
+      data: await acc.postVoucher(request.body as never, writeContextOf(request)),
+    }));
+
+    priv.get('/accounting/entries/:id', async (request: Params<{ id: string }>) => ({
+      data: await acc.entry(request.params.id, actorOf(request)),
+    }));
+
+    priv.post('/accounting/entries/:id/reverse', async (request: Params<{ id: string }>) => ({
+      data: await acc.reverseEntry(request.params.id, request.body, writeContextOf(request)),
+    }));
+
+    priv.get('/accounting/reports/trial-balance', async (request: Query) => ({
+      data: await acc.trialBalance(request.query, actorOf(request)),
+    }));
+
+    priv.get('/accounting/reports/income', async (request: Query) => ({
+      data: await acc.incomeStatement(request.query, actorOf(request)),
+    }));
+
+    priv.get('/accounting/reports/balance-sheet', async (request: Query) => ({
+      data: await acc.balanceSheet(request.query, actorOf(request)),
+    }));
+
+    priv.get('/accounting/check', async (request) => ({
+      data: await acc.checkBooks(actorOf(request)),
+    }));
+
+    priv.get('/accounting/periods', async (request) => ({
+      data: await acc.closingStatus(actorOf(request)),
+    }));
+
+    priv.post('/accounting/periods/close', async (request) => ({
+      data: await acc.closeMonth(request.body, actorOf(request)),
+    }));
     done();
   });
 }

@@ -22,11 +22,16 @@ const production = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
 
 const db = createDb();
+// Practice photos go under practice/ in the same bucket, apart from the real ones.
+const services = createServices(db, {
+  storage: createS3Storage(process.env, practice ? 'practice/' : undefined),
+});
+// The default chart of accounts (ADR-013): adds only what is missing, so it is safe every start.
+const installed = await services.accounting.installChart();
+if (installed) console.log(`accounting: installed ${installed} accounts`);
+
 const app = await buildServer({
-  // Practice photos go under practice/ in the same bucket, apart from the real ones.
-  services: createServices(db, {
-    storage: createS3Storage(process.env, practice ? 'practice/' : undefined),
-  }),
+  services,
   staticDir: join(import.meta.dirname, '..', '..', 'apps', 'warehouse', 'dist'),
   secureCookies: production,
   practice,

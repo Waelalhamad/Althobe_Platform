@@ -1,5 +1,6 @@
 import type { Db } from './shared/db.js';
 import type { PhotoStorage } from './shared/storage.js';
+import { createAccountingService } from './modules/accounting/accounting.service.js';
 import { createAuthService } from './modules/auth/auth.service.js';
 import { createCatalogueService } from './modules/catalogue/catalogue.service.js';
 import { createPhotoService } from './modules/catalogue/photo.service.js';
@@ -14,14 +15,17 @@ export function createServices(db: Db, options: { storage?: PhotoStorage | null 
   const catalogue = createCatalogueService(db);
   const locations = createLocationsService(db);
   const ledgerDeps = { catalogue, locations };
+  const rates = createRatesService(db);
+  const inventory = createInventoryService(db, ledgerDeps);
 
   return {
     auth: createAuthService(db),
     catalogue,
     photos: createPhotoService(db, options.storage ?? null),
     locations,
-    rates: createRatesService(db),
-    inventory: createInventoryService(db, ledgerDeps),
+    rates,
+    inventory,
+    accounting: createAccountingService(db, { inventory, locations, rates }),
     scanSessions: createScanSessionService(db, ledgerDeps),
     stocktakes: createStocktakeService(db, ledgerDeps),
   };

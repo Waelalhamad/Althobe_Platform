@@ -24,6 +24,9 @@ const STATUS_BY_CODE: Record<string, number> = {
   SCAN_SESSION_NOT_OPEN: 409,
   STOCKTAKE_INVALID_STATE: 409,
   OPENING_ALREADY_RECORDED: 409,
+  PERIOD_CLOSED: 409,
+  PERIOD_NOT_CLOSABLE: 409,
+  ENTRY_NOT_REVERSIBLE: 409,
 };
 
 export function statusFor(error: DomainError): number {

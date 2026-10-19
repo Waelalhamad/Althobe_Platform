@@ -1,6 +1,6 @@
 # ADR-012: Retail prices per country, USD reporting, owner-set exchange rates
 
-- Status: **Accepted**
+- Status: **Accepted** · the books built on it: ADR-013
 - Date: 2026-10-13
 - Changes: ADR-004 (the base currency becomes USD; LYD joins the list), ADR-009 (retail is no
   longer in USD)

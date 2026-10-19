@@ -280,8 +280,8 @@ Behaviour:
 - **Set quantity** — for a sealed carton of 20, scan once and type 20. The line quantity is set,
   not added to.
 - **Set cost** (RECEIVE and OPENING) — unit cost, currency (USD, SYP or LYD), and the exchange rate in
-  force (units per 1 USD, starting at the owner's rate — ADR-012). **Required on every RECEIVE line** before commit; optional for OPENING (costs may be
-  unknown at the first count, and that stock then enters at zero value until corrected).
+  force (units per 1 USD, starting at the owner's rate — ADR-012). **Required on every RECEIVE and OPENING line** before commit (ADR-013: stock that enters at
+  zero would show in the books as free, and every sale of it as pure profit).
 - **Every scan carries a client-generated `scanId`.** A double trigger pull sends the same
   `scanId` twice and is counted once. Every scan is recorded as an event, so a session shows who
   scanned what, and when.

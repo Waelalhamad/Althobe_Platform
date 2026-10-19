@@ -25,6 +25,12 @@ import { StocktakesPage } from './pages/Stocktakes';
 import { LocationsPage } from './pages/Locations';
 import { RatesPage } from './pages/Rates';
 import { UsersPage } from './pages/Users';
+import { AccountsPage, StatementPage } from './pages/Accounts';
+import { ClosePage } from './pages/Close';
+import { EntriesPage, EntryPage } from './pages/Entries';
+import { FinancePage } from './pages/Finance';
+import { FinanceReportsPage, type ReportTab } from './pages/FinanceReports';
+import { VoucherPage, type VoucherKind } from './pages/Voucher';
 import { meQuery } from './queries';
 
 interface RouterContext {
@@ -116,6 +122,47 @@ const routes = [
     path: '/stocktakes/$stocktakeId',
     component: StocktakePage,
   }),
+  // Accounting (ADR-013)
+  createRoute({ getParentRoute: () => appRoute, path: '/finance', component: FinancePage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/new',
+    validateSearch: (search: Record<string, unknown>): { kind: VoucherKind } => ({
+      kind: (['RECEIPT', 'PAYMENT', 'TRANSFER', 'EXCHANGE', 'JOURNAL'] as const).includes(
+        search.kind as VoucherKind,
+      )
+        ? (search.kind as VoucherKind)
+        : 'RECEIPT',
+    }),
+    component: VoucherPage,
+  }),
+  createRoute({ getParentRoute: () => appRoute, path: '/finance/entries', component: EntriesPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/entries/$entryId',
+    component: EntryPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/accounts',
+    component: AccountsPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/accounts/$accountId',
+    component: StatementPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/reports',
+    validateSearch: (search: Record<string, unknown>): { tab: ReportTab } => ({
+      tab: (['income', 'trial', 'balance', 'book'] as const).includes(search.tab as ReportTab)
+        ? (search.tab as ReportTab)
+        : 'income',
+    }),
+    component: FinanceReportsPage,
+  }),
+  createRoute({ getParentRoute: () => appRoute, path: '/finance/close', component: ClosePage }),
 ];
 
 const routeTree = rootRoute.addChildren([loginRoute, appRoute.addChildren(routes)]);

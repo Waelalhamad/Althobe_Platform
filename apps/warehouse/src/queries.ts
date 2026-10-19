@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api, type User } from './api';
+import { api, type Branch, type Range, type User, type VoucherType } from './api';
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
@@ -75,3 +75,46 @@ export function can(user: User | undefined, permission: string): boolean {
 
 /** Exchange rates (ADR-012): read by whoever enters a cost; changed only by the owner. */
 export const ratesQuery = queryOptions({ queryKey: ['rates'], queryFn: api.rates });
+
+// ─── Accounting (ADR-013). Every key starts with 'books', so one invalidation refreshes all. ──
+export const glAccountsQuery = queryOptions({
+  queryKey: ['books', 'accounts'],
+  queryFn: api.glAccounts,
+});
+export const boxesQuery = queryOptions({ queryKey: ['books', 'boxes'], queryFn: api.boxes });
+export const booksCheckQuery = queryOptions({
+  queryKey: ['books', 'check'],
+  queryFn: api.checkBooks,
+});
+export const closingQuery = queryOptions({
+  queryKey: ['books', 'closing'],
+  queryFn: api.closingStatus,
+});
+
+export const entriesQuery = (params: Range & { voucherType?: VoucherType }) =>
+  queryOptions({
+    queryKey: ['books', 'entries', params],
+    queryFn: async () => api.entries(params),
+  });
+export const entryQuery = (id: string) =>
+  queryOptions({ queryKey: ['books', 'entry', id], queryFn: async () => api.entry(id) });
+export const statementQuery = (id: string, range: Range) =>
+  queryOptions({
+    queryKey: ['books', 'statement', id, range],
+    queryFn: async () => api.statement(id, range),
+  });
+export const trialBalanceQuery = (range: Range) =>
+  queryOptions({
+    queryKey: ['books', 'trial', range],
+    queryFn: async () => api.trialBalance(range),
+  });
+export const incomeQuery = (range: Range) =>
+  queryOptions({
+    queryKey: ['books', 'income', range],
+    queryFn: async () => api.incomeStatement(range),
+  });
+export const balanceSheetQuery = (params: { asOf?: string; branch?: Branch }) =>
+  queryOptions({
+    queryKey: ['books', 'balance-sheet', params],
+    queryFn: async () => api.balanceSheet(params),
+  });

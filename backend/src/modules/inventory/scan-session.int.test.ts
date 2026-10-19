@@ -151,17 +151,30 @@ describe('scanning', () => {
 });
 
 describe('OPENING session — the first real use', () => {
-  it('counts stock in without cost, once per variant per location', async () => {
+  it('counts stock in at its cost, once per variant per location', async () => {
     const first = await sessions.openSession({ kind: 'OPENING', locationId: w.wh1.id }, w.owner);
     await scan(first.id, w.x.barcode);
     await scan(first.id, w.x.barcode);
+    // ADR-013: opening stock needs its cost, or the books would show it as free.
+    await expect(sessions.commitSession({ sessionId: first.id }, w.owner)).rejects.toMatchObject({
+      code: 'SCAN_SESSION_MISSING_COST',
+      details: { variantIds: [w.x.id] },
+    });
+    await sessions.setLineCost(
+      { sessionId: first.id, variantId: w.x.id, unitCost: USD(12) },
+      w.owner,
+    );
     const result = await sessions.commitSession({ sessionId: first.id }, w.owner);
     expect(result.movements).toMatchObject([
-      { type: 'OPENING', quantity: 2, referenceType: 'OPENING' },
+      { type: 'OPENING', quantity: 2, referenceType: 'OPENING', valueBaseAmount: 2_400n },
     ]);
 
     const second = await sessions.openSession({ kind: 'OPENING', locationId: w.wh1.id }, w.owner);
     await scan(second.id, w.x.barcode);
+    await sessions.setLineCost(
+      { sessionId: second.id, variantId: w.x.id, unitCost: USD(12) },
+      w.owner,
+    );
     await expect(sessions.commitSession({ sessionId: second.id }, w.owner)).rejects.toMatchObject({
       code: 'OPENING_ALREADY_RECORDED',
     });

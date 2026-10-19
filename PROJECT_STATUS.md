@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-10-05
+Last updated: 2026-10-19
 
 Read this first in every session. It is the only file that describes what actually exists.
 If it disagrees with the code, the code wins — and this file gets fixed in the same PR.
@@ -26,6 +26,24 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 **Photos (2026-10-07, ADR-010):** product photos in the private S3 bucket — uploaded from phone or
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
+
+**Accounting — ledger core (2026-10-19, ADR-013):**
+- **Books:** double entry in USD, with each line's own currency (SYP, LYD), tagged Syria or Libya.
+  The database itself refuses unbalanced, edited or deleted entries, and anything dated in a closed
+  month.
+- **Stock posts by itself:** every stock movement posts at its stored value (a stock account per
+  location, goods in transit, cost of goods sold, damage, stock differences, suppliers). The books
+  check compares each location's stock account with its stock value.
+- **Vouchers** on «المالية»: سند قبض, سند صرف, تحويل, صرافة and قيد يومية, posted once per request
+  (idempotent), with gap-free numbers. Corrections are reversing entries.
+- **Reports:** box balances, account statements, the daybook (printable), profit and loss, the
+  balance sheet, the trial balance, and the دفتر الجرد print.
+- **Month close:** SYP and LYD are revalued at the owner's rate, then the month is locked.
+- **Chart of accounts:** installed at start-up, with three boxes (store SYP/USD, Libya LYD/USD,
+  owner's safe USD). The owner can add accounts.
+- **Permissions:** `accounting.view` / `.post` / `.close`. The accountant role has view and post.
+- **Opening counts now require a unit cost**, like receipts.
+- **Next:** 7b, suppliers and customers with their statements.
 
 **Currencies (2026-10-13, ADR-012):** retail prices typed per country — SYP for Syria, LYD (3
 decimals) for Libya; wholesale stays USD. Stock value, average cost and reports are in USD (the
@@ -62,7 +80,7 @@ yellow «وضع التدريب» banner — for learning the scanner and printer
 | 4 | Store / POS | |
 | 5 | Purchasing | |
 | 6 | Sales + customers | |
-| 7 | Accounting | |
+| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7b parties · 7c POS posting · 7d payroll |
 
 MVP path: Products/Variants → Barcode → Locations → Receive → Transfer → Count → Balance → Audit →
 Scanner UI, then connect the store.

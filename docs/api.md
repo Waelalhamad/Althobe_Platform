@@ -96,6 +96,32 @@ scan-session endpoints above (`kind: TRANSFER` with `toLocationId`, `kind: DAMAG
 | `PATCH` | `/users/:id` (`roles`, `isActive`, `nameAr`) | `admin.users.write` |
 | `POST` | `/users/:id/reset-password` | `admin.users.write` |
 
+## Endpoints — Accounting (ADR-013) — implemented
+
+Amounts are strings: `amountBase` in USD cents (debit positive), `amountCurrency` in minor units of
+`currency`. Every read posts pending stock movements first.
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `GET` | `/accounting/accounts` | `accounting.view` |
+| `POST` | `/accounting/accounts` — `{ parentId, nameAr, kind?: GENERAL \| CASH, currency?, branch? }` | `accounting.close` |
+| `PATCH` | `/accounting/accounts/:id` — `{ nameAr?, isActive?, branch? }` | `accounting.close` |
+| `GET` | `/accounting/accounts/:id/statement?from=&to=&branch=` | `accounting.view` |
+| `GET` | `/accounting/boxes` (each cash box: balance in its currency, book value in USD) | `accounting.view` |
+| `GET` | `/accounting/entries?from=&to=&branch=&voucherType=` | `accounting.view` |
+| `POST` | `/accounting/entries` — a voucher (`kind`: RECEIPT, PAYMENT, TRANSFER, EXCHANGE, JOURNAL) — **requires `Idempotency-Key`** | `accounting.post` |
+| `GET` | `/accounting/entries/:id` | `accounting.view` |
+| `POST` | `/accounting/entries/:id/reverse` — **requires `Idempotency-Key`** | `accounting.post` |
+| `GET` | `/accounting/reports/trial-balance` · `/income` (`from`, `to`, `branch`) · `/balance-sheet` (`asOf`, `branch`) | `accounting.view` |
+| `GET` | `/accounting/check` (stock accounts = stock value per location) | `accounting.view` |
+| `GET` | `/accounting/periods` (next closable month, revaluation preview, closed months) | `accounting.view` |
+| `POST` | `/accounting/periods/close` — `{ period: "2026-10" }` | `accounting.close` |
+
+Errors: `PERIOD_CLOSED` (409), `PERIOD_NOT_CLOSABLE` (409), `ENTRY_NOT_REVERSIBLE` (409),
+`ENTRY_NOT_BALANCED`, `ACCOUNT_NOT_USABLE`, `CURRENCY_MISMATCH`, `RATE_NOT_SET`, `DATE_IN_FUTURE`,
+`AMOUNT_TOO_SMALL`, `ACCOUNT_IS_SYSTEM` (422). `PUT /rates` also takes `officialRate` (reference
+only, nullable).
+
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).
 

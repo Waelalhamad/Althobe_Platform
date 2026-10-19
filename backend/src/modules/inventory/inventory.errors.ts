@@ -71,7 +71,7 @@ export class EmptyScanSessionError extends DomainError {
 
 export class MissingCostError extends DomainError {
   constructor(sessionId: string, variantIds: string[]) {
-    super('SCAN_SESSION_MISSING_COST', 'Every received line needs a unit cost', {
+    super('SCAN_SESSION_MISSING_COST', 'Every received or opening line needs a unit cost', {
       sessionId,
       variantIds,
     });

@@ -37,12 +37,18 @@ test('phase 3: transfer, damage, stocktake, adjust, history, report, users', asy
     barcode: a.barcode,
     scanId: crypto.randomUUID(),
   });
-  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${a.id}`, { quantity: 10 });
+  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${a.id}`, {
+    quantity: 10,
+    unitCost: { amount: '1000', currency: 'USD' },
+  });
   await api(rq, 'POST', `/scan-sessions/${opening.id}/scans`, {
     barcode: b.barcode,
     scanId: crypto.randomUUID(),
   });
-  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${b.id}`, { quantity: 5 });
+  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${b.id}`, {
+    quantity: 5,
+    unitCost: { amount: '1000', currency: 'USD' },
+  });
   await api(rq, 'POST', `/scan-sessions/${opening.id}/commit`);
   await page.reload();
 

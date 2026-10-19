@@ -58,7 +58,9 @@ sales.order.create
 sales.order.discount
 invoicing.issue
 invoicing.void
-accounting.read
+accounting.view        (implemented, ADR-013)
+accounting.post        (implemented: vouchers, reversals)
+accounting.close       (implemented: close a month, edit the chart)
 employees.read
 employees.salary.read
 admin.users.write

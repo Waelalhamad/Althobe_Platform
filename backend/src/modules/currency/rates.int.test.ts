@@ -14,17 +14,18 @@ afterAll(async () => t.close());
 describe('exchange rates (ADR-012)', () => {
   it('start empty; the owner sets and changes them, and each change is audited', async () => {
     expect(await rates.listRates()).toEqual([
-      { currency: 'SYP', rate: null, updatedAt: null },
-      { currency: 'LYD', rate: null, updatedAt: null },
+      { currency: 'SYP', rate: null, officialRate: null, updatedAt: null },
+      { currency: 'LYD', rate: null, officialRate: null, updatedAt: null },
     ]);
     await rates.setRate({ currency: 'SYP', rate: '14000' }, w.owner);
-    await rates.setRate({ currency: 'SYP', rate: '13500.5' }, w.owner);
+    // ADR-013: the central bank's rate is kept beside it, for reference; omitting it keeps it.
+    await rates.setRate({ currency: 'SYP', rate: '13500.5', officialRate: '11000' }, w.owner);
     await rates.setRate({ currency: 'LYD', rate: '7.25' }, w.owner);
 
     const list = await rates.listRates();
-    expect(list.map((r) => [r.currency, r.rate])).toEqual([
-      ['SYP', '13500.5'],
-      ['LYD', '7.25'],
+    expect(list.map((r) => [r.currency, r.rate, r.officialRate])).toEqual([
+      ['SYP', '13500.5', '11000'],
+      ['LYD', '7.25', null],
     ]);
     expect(await t.db.auditLog.count({ where: { action: 'rates.set' } })).toBe(3);
   });

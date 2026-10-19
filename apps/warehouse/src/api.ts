@@ -139,7 +139,197 @@ export interface Photo {
 export interface Rate {
   currency: 'SYP' | 'LYD';
   rate: string | null;
+  /** The central bank's rate, for reference (ADR-013). */
+  officialRate: string | null;
   updatedAt: string | null;
+}
+
+// ─── Accounting (ADR-013). Amounts: USD cents ("base") or minor units of `currency`. ──────────
+
+export type VoucherType =
+  | 'RECEIPT'
+  | 'PAYMENT'
+  | 'TRANSFER'
+  | 'EXCHANGE'
+  | 'JOURNAL'
+  | 'INVENTORY'
+  | 'REVALUATION'
+  | 'REVERSAL';
+export type Branch = 'SY' | 'LY';
+
+/** One account of the chart (دليل الحسابات). */
+export interface GlAccount {
+  id: string;
+  code: string;
+  nameAr: string;
+  class: number;
+  parentId: string | null;
+  isPostable: boolean;
+  currency: Currency | null;
+  kind: 'GENERAL' | 'CASH' | 'INVENTORY';
+  systemRole: string | null;
+  locationId: string | null;
+  branch: Branch | null;
+  isActive: boolean;
+}
+
+export interface JournalLine {
+  lineNo: number;
+  account: { id: string; code: string; nameAr: string };
+  amountBase: string;
+  currency: Currency;
+  amountCurrency: string;
+  rate: string;
+  branch: Branch | null;
+  locationId: string | null;
+  memo: string | null;
+}
+
+export interface JournalEntry {
+  id: string;
+  voucherType: VoucherType;
+  voucherYear: number;
+  voucherNo: number;
+  entryDate: string;
+  memo: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  reversesId: string | null;
+  reversedById: string | null;
+  createdBy: { id: string; nameAr: string };
+  createdAt: string;
+  lines: JournalLine[];
+}
+
+export interface CashBox {
+  account: GlAccount;
+  /** In the box's own currency. */
+  balance: string;
+  /** USD cents in the books. */
+  bookValue: string;
+  rate: string | null;
+}
+
+export type Voucher =
+  | {
+      kind: 'RECEIPT' | 'PAYMENT';
+      date?: string;
+      boxId: string;
+      counterAccountId: string;
+      amount: string;
+      rate?: string;
+      memo: string;
+    }
+  | {
+      kind: 'TRANSFER';
+      date?: string;
+      fromBoxId: string;
+      toBoxId: string;
+      amount: string;
+      rate?: string;
+      memo?: string;
+    }
+  | {
+      kind: 'EXCHANGE';
+      date?: string;
+      fromBoxId: string;
+      fromAmount: string;
+      toBoxId: string;
+      toAmount: string;
+      rate?: string;
+      memo?: string;
+    }
+  | {
+      kind: 'JOURNAL';
+      date?: string;
+      memo: string;
+      branch?: Branch;
+      lines: { accountId: string; debit?: string; credit?: string; memo?: string }[];
+    };
+
+export interface StatementRow {
+  entry: Pick<
+    JournalEntry,
+    'id' | 'voucherType' | 'voucherYear' | 'voucherNo' | 'entryDate' | 'memo'
+  >;
+  memo: string | null;
+  currency: Currency;
+  amountCurrency: string;
+  amountBase: string;
+  rate: string;
+  balanceBase: string;
+  balanceCurrency: string;
+}
+
+export interface Statement {
+  account: GlAccount;
+  opening: { base: string; currency: string };
+  rows: StatementRow[];
+  closing: { base: string; currency: string };
+}
+
+export type AccountRef = Pick<GlAccount, 'id' | 'code' | 'nameAr' | 'class'>;
+
+export interface TrialBalance {
+  rows: { account: AccountRef; opening: string; debit: string; credit: string; closing: string }[];
+  totals: { opening: string; debit: string; credit: string; closing: string };
+}
+
+export interface IncomeStatement {
+  sections: {
+    key: 'revenue' | 'costOfSales' | 'expenses' | 'exchange';
+    rows: { account: AccountRef; amount: string }[];
+    total: string;
+  }[];
+  grossProfit: string;
+  netProfit: string;
+}
+
+export interface SheetGroup {
+  rows: { account: AccountRef; amount: string }[];
+  total: string;
+}
+
+export interface BalanceSheet {
+  asOf: string;
+  assets: SheetGroup;
+  liabilities: SheetGroup;
+  equity: SheetGroup;
+  profit: string;
+  totalLiabilitiesAndEquity: string;
+}
+
+export interface BooksCheck {
+  ok: boolean;
+  locations: {
+    locationId: string;
+    nameAr: string;
+    books: string;
+    stock: string;
+    difference: string;
+  }[];
+  transit: string;
+}
+
+export interface ClosingStatus {
+  closedThrough: string | null;
+  next: string | null;
+  rates: Record<string, string>;
+  missingRates: string[];
+  preview: { accountId: string; currency: Currency; amountBase: string; rate: string }[];
+  closed: {
+    period: string;
+    endsOn: string;
+    closedBy: string;
+    closedAt: string;
+    revaluationEntryId: string | null;
+  }[];
+}
+
+export interface Range {
+  from?: string;
+  to?: string;
+  branch?: Branch;
 }
 
 export interface UnitCost {
@@ -359,8 +549,8 @@ export const api = {
 
   // Exchange rates (ADR-012): units of the currency per 1 USD; null until the owner sets one.
   rates: async () => get<Rate[]>('/rates'),
-  setRate: async (currency: Rate['currency'], rate: string) =>
-    request<Rate>('PUT', '/rates', { currency, rate }),
+  setRate: async (currency: Rate['currency'], rate: string, officialRate?: string | null) =>
+    request<Rate>('PUT', '/rates', { currency, rate, officialRate }),
   setVariantActive: async (id: string, isActive: boolean) =>
     request<Variant>('PATCH', `/variants/${id}`, { isActive }),
   deleteVariant: async (id: string) => request<{ ok: true }>('DELETE', `/variants/${id}`),
@@ -460,4 +650,57 @@ export const api = {
   resetPassword: async (id: string) => post<{ password: string }>(`/users/${id}/reset-password`),
   changePassword: async (currentPassword: string, newPassword: string) =>
     post<{ ok: true }>('/auth/change-password', { currentPassword, newPassword }),
+
+  // Accounting (ADR-013). Posting carries an Idempotency-Key, so a double click posts once.
+  glAccounts: async () => get<GlAccount[]>('/accounting/accounts'),
+  createGlAccount: async (input: {
+    parentId: string;
+    nameAr: string;
+    kind?: 'GENERAL' | 'CASH';
+    currency?: Currency;
+    branch?: Branch | null;
+  }) => post<GlAccount>('/accounting/accounts', input),
+  updateGlAccount: async (
+    id: string,
+    patch: { nameAr?: string; isActive?: boolean; branch?: Branch | null },
+  ) => request<GlAccount>('PATCH', `/accounting/accounts/${id}`, patch),
+  statement: async (id: string, range: Range) =>
+    get<Statement>(`/accounting/accounts/${id}/statement?${query(range)}`),
+  boxes: async () => get<CashBox[]>('/accounting/boxes'),
+  entries: async (params: Range & { voucherType?: VoucherType }) =>
+    get<JournalEntry[]>(`/accounting/entries?${query(params)}`),
+  entry: async (id: string) => get<JournalEntry>(`/accounting/entries/${id}`),
+  postVoucher: async (voucher: Voucher, idempotencyKey: string) =>
+    request<JournalEntry>('POST', '/accounting/entries', voucher, {
+      'idempotency-key': idempotencyKey,
+    }),
+  reverseEntry: async (id: string, idempotencyKey: string) =>
+    request<JournalEntry>(
+      'POST',
+      `/accounting/entries/${id}/reverse`,
+      {},
+      { 'idempotency-key': idempotencyKey },
+    ),
+  trialBalance: async (range: Range) =>
+    get<TrialBalance>(`/accounting/reports/trial-balance?${query(range)}`),
+  incomeStatement: async (range: Range) =>
+    get<IncomeStatement>(`/accounting/reports/income?${query(range)}`),
+  balanceSheet: async (params: { asOf?: string; branch?: Branch }) =>
+    get<BalanceSheet>(`/accounting/reports/balance-sheet?${query(params)}`),
+  checkBooks: async () => get<BooksCheck>('/accounting/check'),
+  closingStatus: async () => get<ClosingStatus>('/accounting/periods'),
+  closeMonth: async (period: string) =>
+    post<{ period: string; endsOn: string; revaluationEntryId: string | null }>(
+      '/accounting/periods/close',
+      { period },
+    ),
 };
+
+/** A query string of the parameters that are set. */
+function query(params: object): string {
+  return new URLSearchParams(
+    Object.entries(params).filter(
+      (e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '',
+    ),
+  ).toString();
+}

@@ -23,7 +23,13 @@ export const ROLES = {
   ],
   // Until the POS exists, the store records its own sales and returns as scan sessions.
   store_staff: [P.inventory.view, P.inventory.issue, P.inventory.return, P.products.read],
-  accountant: [P.inventory.view, P.inventory.costView, P.products.read],
+  accountant: [
+    P.inventory.view,
+    P.inventory.costView,
+    P.products.read,
+    P.accounting.view,
+    P.accounting.post,
+  ],
 } satisfies Record<string, readonly Permission[]>;
 
 export type RoleName = keyof typeof ROLES;

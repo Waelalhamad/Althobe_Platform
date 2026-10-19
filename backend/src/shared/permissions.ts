@@ -25,6 +25,13 @@ export const PERMISSIONS = {
   prices: {
     write: 'prices.write',
   },
+  // The books (ADR-013): read the ledger and reports; post vouchers and reversals; close a month
+  // and edit the chart of accounts.
+  accounting: {
+    view: 'accounting.view',
+    post: 'accounting.post',
+    close: 'accounting.close',
+  },
   admin: {
     users: 'admin.users.write',
     // Renaming warehouses and the store.

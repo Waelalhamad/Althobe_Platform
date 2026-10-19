@@ -389,7 +389,9 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         ).filter((line) => line.quantity > 0);
         if (lines.length === 0) throw new EmptyScanSessionError(session.id);
 
-        if (session.kind === 'RECEIVE') {
+        // Opening stock needs its cost too (ADR-013): stock that enters at zero would make the
+        // books show it as free and every sale of it as pure profit.
+        if (COSTED_KINDS.has(session.kind)) {
           const uncosted = lines
             .filter((line) => costOf(line) === null)
             .map((line) => line.variantId);

@@ -81,6 +81,11 @@ export function createLocationsService(db: Db) {
     async locationsByIds(q: Queryable, ids: string[]): Promise<LocationView[]> {
       return q.location.findMany({ where: { id: { in: ids } }, select });
     },
+
+    /** Trusted call: every location, for accounting's per-location inventory accounts. */
+    async allLocations(q: Queryable): Promise<LocationView[]> {
+      return q.location.findMany({ select, orderBy: [{ kind: 'asc' }, { code: 'asc' }] });
+    },
   };
 }
 

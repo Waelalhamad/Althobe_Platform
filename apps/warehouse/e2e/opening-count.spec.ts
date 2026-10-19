@@ -103,6 +103,14 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await qty.press('Enter');
   await expect(page.getByText('المجموع: 57 قطعة · 2 صنف')).toBeVisible();
 
+  // Opening stock carries its cost (ADR-013); each cost saves itself on Enter.
+  for (const row of [0, 1]) {
+    const cost = page.locator('tbody tr').nth(row).getByPlaceholder('$');
+    await cost.fill('10');
+    await cost.press('Enter');
+  }
+  await expect(page.getByRole('button', { name: 'حفظ', exact: true })).toHaveCount(0);
+
   // An unknown barcode is refused and says so.
   await scan(page, '2009999999997');
   await expect(page.getByText('الباركود غير معروف')).toBeVisible();

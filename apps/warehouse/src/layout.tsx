@@ -14,7 +14,12 @@ type To =
   | '/balances'
   | '/stocktakes'
   | '/movements'
-  | '/reports';
+  | '/reports'
+  | '/finance'
+  | '/finance/entries'
+  | '/finance/accounts'
+  | '/finance/reports'
+  | '/finance/close';
 
 interface NavItem {
   to: To;
@@ -23,10 +28,14 @@ interface NavItem {
   anyOf?: string[];
 }
 
-// Grouped by job, in the order the work happens. Each person sees only what they may use.
-const NAV: { group: string | null; items: NavItem[] }[] = [
-  { group: null, items: [{ to: '/', label: 'الرئيسية' }] },
+type Section = 'stock' | 'finance';
+
+// Two sides of the app, switched at the top: the warehouse and the books (ADR-013). Within each,
+// grouped by job in the order the work happens. Each person sees only what they may use.
+const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
+  { section: 'stock', group: null, items: [{ to: '/', label: 'الرئيسية' }] },
   {
+    section: 'stock',
     group: 'الإعداد',
     items: [
       { to: '/options', label: 'الخيارات', anyOf: ['products.write'] },
@@ -37,6 +46,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
     ],
   },
   {
+    section: 'stock',
     group: 'المخزون',
     items: [
       { to: '/balances', label: 'الأرصدة', anyOf: ['inventory.view'] },
@@ -49,9 +59,37 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
     ],
   },
   {
+    section: 'stock',
     group: 'التقارير',
     items: [{ to: '/reports', label: 'التقارير', anyOf: ['inventory.view'] }],
   },
+  {
+    section: 'finance',
+    group: null,
+    items: [{ to: '/finance', label: 'الصناديق', anyOf: ['accounting.view'] }],
+  },
+  {
+    section: 'finance',
+    group: 'الدفاتر',
+    items: [
+      { to: '/finance/entries', label: 'القيود', anyOf: ['accounting.view'] },
+      { to: '/finance/accounts', label: 'دليل الحسابات', anyOf: ['accounting.view'] },
+    ],
+  },
+  {
+    section: 'finance',
+    group: 'التقارير والإقفال',
+    items: [
+      { to: '/finance/reports', label: 'التقارير المالية', anyOf: ['accounting.view'] },
+      { to: '/finance/close', label: 'إقفال الشهر', anyOf: ['accounting.close'] },
+      { to: '/rates', label: 'أسعار الصرف', anyOf: ['admin.rates.write'] },
+    ],
+  },
+];
+
+const SECTIONS: { key: Section; label: string; home: '/' | '/finance' }[] = [
+  { key: 'stock', label: 'المخزون', home: '/' },
+  { key: 'finance', label: 'المالية', home: '/finance' },
 ];
 
 function visibleNav(user: User | undefined) {
@@ -59,6 +97,35 @@ function visibleNav(user: User | undefined) {
     ...g,
     items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => can(user, p))),
   })).filter((g) => g.items.length > 0);
+}
+
+/** Pages both sides use keep the side the person came from. */
+const SHARED = ['/rates', '/help', '/account', '/users'];
+
+function sectionOf(pathname: string, previous: Section): Section {
+  if (pathname.startsWith('/finance')) return 'finance';
+  return SHARED.some((p) => pathname.startsWith(p)) ? previous : 'stock';
+}
+
+/** المخزون | المالية: shown only to people who use both sides. */
+function SectionSwitch({ current, sections }: { current: Section; sections: typeof SECTIONS }) {
+  if (sections.length < 2) return null;
+  return (
+    <div className="flex rounded-full bg-white/10 p-1" role="group" aria-label="القسم">
+      {sections.map((s) => (
+        <Link
+          key={s.key}
+          to={s.home}
+          aria-current={s.key === current ? 'page' : undefined}
+          className={`rounded-full px-4 py-1 text-sm font-bold ${
+            s.key === current ? 'bg-white text-brand' : 'text-white/80 hover:bg-white/10'
+          }`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
 }
 
 export function AppLayout() {
@@ -69,6 +136,8 @@ export function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   useEffect(() => setMenuOpen(false), [pathname]);
+  const [section, setSection] = useState<Section>(() => sectionOf(pathname, 'stock'));
+  useEffect(() => setSection((previous) => sectionOf(pathname, previous)), [pathname]);
 
   const logout = async () => {
     await api.logout().catch(() => undefined);
@@ -76,7 +145,10 @@ export function AppLayout() {
     await navigate({ to: '/login' });
   };
 
-  const nav = visibleNav(user);
+  const allNav = visibleNav(user);
+  const sections = SECTIONS.filter((s) => allNav.some((g) => g.section === s.key));
+  const nav = allNav.filter((g) => g.section === section);
+  const home = SECTIONS.find((s) => s.key === section)!.home;
   const linkClass = 'rounded-lg px-3 py-1.5 font-medium text-white/85 hover:bg-white/10';
   const active = { className: 'bg-white/15 text-white' };
 
@@ -84,10 +156,11 @@ export function AppLayout() {
     <div className="min-h-screen print:min-h-0">
       <header className="bg-brand text-white print:hidden">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link to="/" className="flex items-center gap-3">
+          <Link to={home} className="flex items-center gap-3">
             <img src="/logo-mark.svg" alt="" className="size-10 rounded-full bg-white p-0.5" />
             <span className="text-lg font-bold">الثوب العربي</span>
           </Link>
+          <SectionSwitch current={section} sections={sections} />
 
           {/* Wide screens: groups side by side, each with a small heading. */}
           <nav className="hidden items-end gap-4 lg:flex">
@@ -101,7 +174,7 @@ export function AppLayout() {
                       to={item.to}
                       className={linkClass}
                       activeProps={active}
-                      activeOptions={{ exact: item.to === '/' }}
+                      activeOptions={{ exact: item.to === '/' || item.to === '/finance' }}
                     >
                       {item.label}
                     </Link>
@@ -150,7 +223,7 @@ export function AppLayout() {
                       to={item.to}
                       className={`${linkClass} py-2 text-base`}
                       activeProps={active}
-                      activeOptions={{ exact: item.to === '/' }}
+                      activeOptions={{ exact: item.to === '/' || item.to === '/finance' }}
                     >
                       {item.label}
                     </Link>

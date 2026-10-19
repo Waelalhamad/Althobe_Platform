@@ -151,6 +151,8 @@ model User {
   auditLogs          AuditLog[]
   productPhotos      ProductPhoto[]
   exchangeRates      ExchangeRate[]
+  journalEntries     JournalEntry[]
+  periodsClosed      AccountingPeriod[]
 
   @@map("users")
 }
@@ -159,10 +161,12 @@ model User {
 // per currency; each change is in the audit log. A cost stamps the rate it used, so changing a
 // rate never changes a past record.
 model ExchangeRate {
-  currency  String   @id @db.Char(3)
-  rate      Decimal  @db.Decimal(18, 6)
-  updatedBy String   @map("updated_by") @db.Uuid
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  currency     String   @id @db.Char(3)
+  rate         Decimal  @db.Decimal(18, 6)
+  // The central bank's rate, for reference only; postings use `rate` (ADR-013).
+  officialRate Decimal? @map("official_rate") @db.Decimal(18, 6)
+  updatedBy    String   @map("updated_by") @db.Uuid
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
 
   updater User @relation(fields: [updatedBy], references: [id])
 
@@ -482,6 +486,8 @@ model Location {
   scanSessionsFrom ScanSession[]       @relation("ScanSessionLocation")
   scanSessionsTo   ScanSession[]       @relation("ScanSessionToLocation")
   stocktakes       Stocktake[]
+  glAccount        GlAccount?
+  journalLines     JournalLine[]
 
   @@map("locations")
 }
@@ -697,4 +703,117 @@ model StocktakeScanEvent {
 
   @@unique([stocktakeId, scanId], map: "uq_stocktake_scan_events_stocktake_scan")
   @@map("stocktake_scan_events")
+}
+
+// ─── Accounting (ADR-013) ──────────────────────────────────────────────────────────────────────
+// Double entry in USD cents (the base). Entries and lines are append-only (trigger); every entry
+// balances (deferred constraint trigger); nothing is dated inside a closed month (trigger).
+
+// دليل الحسابات. Codes grow with depth (1 → 11 → 1101 → 110101); only postable accounts take
+// lines. A cash account holds one currency. system_role names the accounts code posts to.
+model GlAccount {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  code       String   @unique(map: "uq_gl_accounts_code")
+  nameAr     String   @map("name_ar")
+  // 1 assets · 2 liabilities · 3 equity · 4 revenue · 5 expenses
+  class      Int      @db.SmallInt
+  parentId   String?  @map("parent_id") @db.Uuid
+  isPostable Boolean  @default(true) @map("is_postable")
+  currency   String?  @db.Char(3)
+  // GENERAL · CASH (a cash box in one currency) · INVENTORY (posted only from stock movements)
+  kind       String   @default("GENERAL")
+  systemRole String?  @unique(map: "uq_gl_accounts_system_role") @map("system_role")
+  locationId String?  @unique(map: "uq_gl_accounts_location_id") @map("location_id") @db.Uuid
+  branch     String?  @db.Char(2)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  parent   GlAccount?    @relation("GlAccountTree", fields: [parentId], references: [id])
+  children GlAccount[]   @relation("GlAccountTree")
+  location Location?     @relation(fields: [locationId], references: [id])
+  lines    JournalLine[]
+
+  @@index([parentId], map: "idx_gl_accounts_parent_id")
+  @@map("gl_accounts")
+}
+
+// قيد يومية. One per voucher, or per stock movement (source_type/source_id, unique).
+model JournalEntry {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  voucherType String   @map("voucher_type")
+  voucherYear Int      @map("voucher_year") @db.SmallInt
+  voucherNo   Int      @map("voucher_no")
+  entryDate   DateTime @map("entry_date") @db.Date
+  memo        String?
+  sourceType  String?  @map("source_type")
+  sourceId    String?  @map("source_id")
+  reversesId  String?  @unique(map: "uq_journal_entries_reverses_id") @map("reverses_id") @db.Uuid
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  reverses   JournalEntry?      @relation("JournalReversal", fields: [reversesId], references: [id])
+  reversedBy JournalEntry?      @relation("JournalReversal")
+  createdBy  User               @relation(fields: [createdById], references: [id])
+  lines      JournalLine[]
+  periods    AccountingPeriod[]
+
+  @@unique([voucherType, voucherYear, voucherNo], map: "uq_journal_entries_voucher")
+  @@unique([sourceType, sourceId], map: "uq_journal_entries_source")
+  @@index([entryDate], map: "idx_journal_entries_entry_date")
+  @@map("journal_entries")
+}
+
+// amountBase: USD cents, debit positive. amountCurrency: the same in the line's currency (minor
+// units, same sign); rate: units of that currency per 1 USD.
+model JournalLine {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  entryId        String  @map("entry_id") @db.Uuid
+  lineNo         Int     @map("line_no") @db.SmallInt
+  accountId      String  @map("account_id") @db.Uuid
+  amountBase     BigInt  @map("amount_base")
+  currency       String  @db.Char(3)
+  amountCurrency BigInt  @map("amount_currency")
+  rate           Decimal @db.Decimal(18, 6)
+  branch         String? @db.Char(2)
+  locationId     String? @map("location_id") @db.Uuid
+  memo           String?
+
+  entry    JournalEntry @relation(fields: [entryId], references: [id])
+  account  GlAccount    @relation(fields: [accountId], references: [id])
+  location Location?    @relation(fields: [locationId], references: [id])
+
+  @@unique([entryId, lineNo], map: "uq_journal_lines_entry_line")
+  @@index([accountId], map: "idx_journal_lines_account_id")
+  @@map("journal_lines")
+}
+
+// A closed month ("2026-10"): no entry may be dated on or before ends_on any more.
+model AccountingPeriod {
+  period             String   @id @db.Char(7)
+  endsOn             DateTime @map("ends_on") @db.Date
+  revaluationEntryId String?  @map("revaluation_entry_id") @db.Uuid
+  closedById         String   @map("closed_by") @db.Uuid
+  closedAt           DateTime @default(now()) @map("closed_at") @db.Timestamptz(3)
+
+  revaluationEntry JournalEntry? @relation(fields: [revaluationEntryId], references: [id])
+  closedBy         User          @relation(fields: [closedById], references: [id])
+
+  @@map("accounting_periods")
+}
+
+model VoucherCounter {
+  voucherType String @map("voucher_type")
+  voucherYear Int    @map("voucher_year") @db.SmallInt
+  lastNo      Int    @map("last_no")
+
+  @@id([voucherType, voucherYear])
+  @@map("voucher_counters")
+}
+
+model AccountingSyncState {
+  name    String @id
+  lastSeq BigInt @map("last_seq")
+
+  @@map("accounting_sync_state")
 }

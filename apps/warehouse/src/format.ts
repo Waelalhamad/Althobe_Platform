@@ -59,6 +59,16 @@ const ERRORS: Record<string, string> = {
   EMAIL_TAKEN: 'يوجد حساب بهذا البريد الإلكتروني',
   IDEMPOTENCY_KEY_REQUIRED: 'خطأ داخلي في الطلب، أعد المحاولة',
   NETWORK: 'تعذّر الاتصال بالخادم',
+  PERIOD_CLOSED: 'هذا الشهر مُقفل: لا يمكن تسجيل شيء بتاريخ داخله',
+  PERIOD_NOT_CLOSABLE: 'تُقفل الأشهر بالترتيب، وبعد انتهاء الشهر فقط',
+  DATE_IN_FUTURE: 'لا يمكن أن يكون التاريخ بعد اليوم',
+  RATE_NOT_SET: 'لم يُحدَّد سعر الصرف لهذه العملة — أدخله في «أسعار الصرف» أو في السند',
+  ACCOUNT_NOT_USABLE: 'لا يمكن استخدام هذا الحساب هنا',
+  CURRENCY_MISMATCH: 'عملتا الحسابين مختلفتان — استخدم «صرافة» لتبديل العملة',
+  ENTRY_NOT_BALANCED: 'القيد غير متوازن: مجموع المدين يجب أن يساوي مجموع الدائن',
+  AMOUNT_TOO_SMALL: 'المبلغ أصغر من سنت واحد',
+  ENTRY_NOT_REVERSIBLE: 'لا يمكن عكس هذا القيد',
+  ACCOUNT_IS_SYSTEM: 'هذا الحساب يستخدمه النظام ولا يُوقف',
 };
 
 export function errorText(error: unknown): string {
@@ -92,6 +102,30 @@ export const MOVEMENT_TYPE: Record<string, string> = {
   DAMAGE: 'تالف',
   STOCKTAKE: 'فرق جرد',
 };
+
+/** سند قبض، سند صرف… — the name of each kind of journal entry (ADR-013). */
+export const VOUCHER_TYPE: Record<string, string> = {
+  RECEIPT: 'سند قبض',
+  PAYMENT: 'سند صرف',
+  TRANSFER: 'تحويل بين صناديق',
+  EXCHANGE: 'صرافة',
+  JOURNAL: 'قيد يومية',
+  INVENTORY: 'قيد مخزون',
+  REVALUATION: 'إعادة تقييم',
+  REVERSAL: 'قيد عكسي',
+};
+
+export const BRANCH: Record<string, string> = { SY: 'سوريا', LY: 'ليبيا' };
+
+/** "قبض 2026/0007": the number on the paper. */
+export function voucherNumber(e: { voucherYear: number; voucherNo: number }): string {
+  return `${e.voucherYear}/${String(e.voucherNo).padStart(4, '0')}`;
+}
+
+/** Today in Damascus as YYYY-MM-DD, the business date of the books. */
+export function today(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Damascus' }).format(new Date());
+}
 
 export const ROLE: Record<string, string> = {
   owner: 'المالك',
@@ -137,13 +171,25 @@ export const PRICE_META: Record<
 export function formatMoney(minor: string | null, currency: Currency = 'USD'): string {
   if (minor === null) return '—';
   const value = BigInt(minor);
+  // The sign is kept apart: -0.50 has a whole part of 0, which has no sign of its own.
+  const magnitude = value < 0n ? -value : value;
   const scale = 10n ** BigInt(EXPONENT[currency]);
-  const whole = value / scale;
-  const fraction = (value < 0n ? -value : value) % scale;
+  const fraction = magnitude % scale;
   const text =
-    numberFormat.format(whole) +
+    numberFormat.format(magnitude / scale) +
     (fraction ? `.${fraction.toString().padStart(EXPONENT[currency], '0')}` : '');
-  return `${text} ${CURRENCY_SYMBOL[currency]}`;
+  return `${value < 0n ? '-' : ''}${text} ${CURRENCY_SYMBOL[currency]}`;
+}
+
+/** Minor units of `currency` → USD cents at `rate` (units per 1 USD), exactly: no floats. */
+export function toUsdCents(minor: string, currency: Currency, rate: string): string {
+  const [whole = '0', fraction = ''] = rate.split('.');
+  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0').slice(0, 6));
+  if (micros === 0n) return '0';
+  const n = BigInt(minor) * 100n * 1_000_000n;
+  const d = 10n ** BigInt(EXPONENT[currency]) * micros;
+  const magnitude = ((n < 0n ? -n : n) * 2n + d) / (2n * d);
+  return (n < 0n ? -magnitude : magnitude).toString();
 }
 
 /** A selling price, or a clear "no price yet". */

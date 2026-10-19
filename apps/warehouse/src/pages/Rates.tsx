@@ -32,13 +32,27 @@ function RateCard({ rate }: { rate: Rate }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [value, setValue] = useState(rate.rate ? String(Number(rate.rate)) : '');
+  const [official, setOfficial] = useState(
+    rate.officialRate ? String(Number(rate.officialRate)) : '',
+  );
   const clean = value.replace(/[,\s]/g, '');
-  const valid = RATE_PATTERN.test(clean) && Number(clean) > 0;
-  const changed = rate.rate === null || Number(clean) !== Number(rate.rate);
+  const cleanOfficial = official.replace(/[,\s]/g, '');
+  const officialValid =
+    cleanOfficial === '' || (RATE_PATTERN.test(cleanOfficial) && Number(cleanOfficial) > 0);
+  const valid = RATE_PATTERN.test(clean) && Number(clean) > 0 && officialValid;
+  const changed =
+    rate.rate === null ||
+    Number(clean) !== Number(rate.rate) ||
+    (cleanOfficial === ''
+      ? rate.officialRate !== null
+      : Number(cleanOfficial) !== Number(rate.officialRate));
+  // Since 2026-01-01 one new pound is 100 old ones (about 122 per dollar in mid-2026). A rate in
+  // the thousands is almost surely the old pound.
+  const oldPound = rate.currency === 'SYP' && valid && Number(clean) >= 1000;
   const symbol = CURRENCY_SYMBOL[rate.currency];
 
   const save = useMutation({
-    mutationFn: async () => api.setRate(rate.currency, clean),
+    mutationFn: async () => api.setRate(rate.currency, clean, cleanOfficial || null),
     onSuccess: async (saved) => {
       toast(`تم حفظ السعر: 1 $ = ${Number(saved.rate)} ${symbol}`);
       await queryClient.invalidateQueries({ queryKey: ratesQuery.queryKey });
@@ -67,8 +81,26 @@ function RateCard({ rate }: { rate: Rate }) {
             inputMode="decimal"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={rate.currency === 'SYP' ? '14000' : '7'}
+            placeholder={rate.currency === 'SYP' ? '122' : '6.4'}
             className={value && !valid ? 'border-bad' : ''}
+          />
+        </Field>
+        {oldPound && (
+          <Alert tone="warn">
+            هذا يبدو سعر الليرة القديمة. منذ 1/1/2026 كل 100 ليرة قديمة = ليرة جديدة واحدة، فالسعر
+            اليوم حوالي {Math.round(Number(clean) / 100)}. تأكد قبل الحفظ.
+          </Alert>
+        )}
+        <Field
+          label="السعر الرسمي (المصرف المركزي) — للعلم فقط"
+          hint="اختياري. القيود تستخدم السعر أعلاه."
+        >
+          <Input
+            dir="ltr"
+            inputMode="decimal"
+            value={official}
+            onChange={(e) => setOfficial(e.target.value)}
+            className={official && !officialValid ? 'border-bad' : ''}
           />
         </Field>
         <div>

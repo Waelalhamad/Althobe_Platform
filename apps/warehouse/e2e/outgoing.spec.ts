@@ -44,7 +44,10 @@ test('sale and return at the store keep the balance true', async ({ page }) => {
     barcode: a.barcode,
     scanId: crypto.randomUUID(),
   });
-  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${a.id}`, { quantity: 10 });
+  await api(rq, 'PATCH', `/scan-sessions/${opening.id}/lines/${a.id}`, {
+    quantity: 10,
+    unitCost: { amount: '1000', currency: 'USD' },
+  });
   await api(rq, 'POST', `/scan-sessions/${opening.id}/commit`);
   const transfer = await api<{ id: string }>(rq, 'POST', '/scan-sessions', {
     kind: 'TRANSFER',

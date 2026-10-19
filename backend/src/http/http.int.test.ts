@@ -167,9 +167,17 @@ describe('opening count over HTTP — the first real use', () => {
       method: 'PATCH',
       url: `/api/v1/scan-sessions/${sessionId}/lines/${w.y.id}`,
       headers,
-      payload: { quantity: 20 },
+      payload: { quantity: 20, unitCost: { amount: '1500', currency: 'USD' } },
     });
     expect(dataOf<{ quantity: number }>(patched).quantity).toBe(20);
+    // Opening stock carries its cost (ADR-013).
+    const costed = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/scan-sessions/${sessionId}/lines/${w.x.id}`,
+      headers,
+      payload: { unitCost: { amount: '1500', currency: 'USD' } },
+    });
+    expect(costed.statusCode).toBe(200);
 
     const committed = await post(`/scan-sessions/${sessionId}/commit`);
     expect(committed.statusCode).toBe(200);
@@ -201,6 +209,12 @@ describe('opening count over HTTP — the first real use', () => {
     const second = await post('/scan-sessions', { kind: 'OPENING', locationId: w.wh1.id });
     const secondId = dataOf<{ id: string }>(second).id;
     await post(`/scan-sessions/${secondId}/scans`, { barcode: w.x.barcode, scanId: randomUUID() });
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/scan-sessions/${secondId}/lines/${w.x.id}`,
+      headers,
+      payload: { unitCost: { amount: '1500', currency: 'USD' } },
+    });
     const conflict = await post(`/scan-sessions/${secondId}/commit`);
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json()).toMatchObject({ error: { code: 'OPENING_ALREADY_RECORDED' } });

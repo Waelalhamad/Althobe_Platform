@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { writeAudit } from '../../shared/audit.js';
-import { inTransaction, type Db, type Tx } from '../../shared/db.js';
+import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { withIdempotency } from '../../shared/idempotency.js';
 import {
@@ -324,6 +324,33 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     },
 
     getMovements: readMovements,
+
+    /**
+     * Trusted call for accounting (ADR-013): movements after `afterSeq` in ledger order, with
+     * their values. Accounting posts them to the general ledger; it never reads this table itself.
+     */
+    async movementsAfter(q: Queryable, afterSeq: bigint, limit: number): Promise<MovementView[]> {
+      const rows = await q.inventoryMovement.findMany({
+        where: { seq: { gt: afterSeq } },
+        orderBy: { seq: 'asc' },
+        take: limit,
+      });
+      return rows.map(toMovementView);
+    },
+
+    /** Trusted call for accounting's books check: total stock value per location, USD cents. */
+    async valueByLocation(
+      q: Queryable,
+    ): Promise<{ locationId: string; valueBaseAmount: bigint }[]> {
+      const rows = await q.inventoryBalance.groupBy({
+        by: ['locationId'],
+        _sum: { valueBaseAmount: true },
+      });
+      return rows.map((r) => ({
+        locationId: r.locationId,
+        valueBaseAmount: r._sum.valueBaseAmount ?? 0n,
+      }));
+    },
 
     /**
      * Stock on hand per location and product: pieces, and value in USD for those allowed to see

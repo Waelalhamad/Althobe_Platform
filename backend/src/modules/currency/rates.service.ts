@@ -11,14 +11,18 @@ export type RateCurrency = (typeof RATE_CURRENCIES)[number];
 
 export const setRateSchema = z.object({
   currency: z.enum(RATE_CURRENCIES),
-  /** Units of the currency per 1 USD, e.g. "14000". */
+  /** Units of the currency per 1 USD, e.g. "122" (new Syrian pounds since 2026-01-01). */
   rate: rateSchema,
+  /** The central bank's rate, kept for reference (ADR-013). Omit to keep it; null clears it. */
+  officialRate: rateSchema.nullable().optional(),
 });
 
 export interface RateView {
   currency: RateCurrency;
   /** Units per 1 USD; null until the owner sets it. */
   rate: string | null;
+  /** The central bank's rate, for reference only. */
+  officialRate: string | null;
   updatedAt: Date | null;
 }
 
@@ -32,6 +36,7 @@ export function createRatesService(db: Db) {
         return {
           currency,
           rate: row ? row.rate.toString() : null,
+          officialRate: row?.officialRate?.toString() ?? null,
           updatedAt: row?.updatedAt ?? null,
         };
       });
@@ -42,20 +47,38 @@ export function createRatesService(db: Db) {
       const data = parse(setRateSchema, input);
       return inTransaction(db, async (tx) => {
         const before = await tx.exchangeRate.findUnique({ where: { currency: data.currency } });
+        const official = data.officialRate === undefined ? {} : { officialRate: data.officialRate };
         const row = await tx.exchangeRate.upsert({
           where: { currency: data.currency },
-          create: { currency: data.currency, rate: data.rate, updatedBy: ctx.userId },
-          update: { rate: data.rate, updatedBy: ctx.userId, updatedAt: new Date() },
+          create: { currency: data.currency, rate: data.rate, updatedBy: ctx.userId, ...official },
+          update: { rate: data.rate, updatedBy: ctx.userId, updatedAt: new Date(), ...official },
         });
         await writeAudit(tx, {
           actorId: ctx.userId,
           action: 'rates.set',
           entityType: 'exchange_rate',
-          before: before ? { currency: before.currency, rate: before.rate.toString() } : null,
-          after: { currency: data.currency, rate: row.rate.toString() },
+          before: before
+            ? {
+                currency: before.currency,
+                rate: before.rate.toString(),
+                officialRate: before.officialRate?.toString() ?? null,
+              }
+            : null,
+          after: {
+            currency: data.currency,
+            rate: row.rate.toString(),
+            officialRate: row.officialRate?.toString() ?? null,
+          },
         });
-        return { currency: data.currency, rate: row.rate.toString(), updatedAt: row.updatedAt };
+        return {
+          currency: data.currency,
+          rate: row.rate.toString(),
+          officialRate: row.officialRate?.toString() ?? null,
+          updatedAt: row.updatedAt,
+        };
       });
     },
   };
 }
+
+export type RatesService = ReturnType<typeof createRatesService>;
