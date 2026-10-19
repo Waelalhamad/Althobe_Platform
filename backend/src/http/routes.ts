@@ -521,6 +521,54 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     priv.post('/accounting/periods/close', async (request) => ({
       data: await acc.closeMonth(request.body, actorOf(request)),
     }));
+
+    // ── Point of sale (ADR-014). Sales and refunds require Idempotency-Key. ─────────────────
+    const pos = s.retail;
+    type Id = FastifyRequest<{ Params: { id: string } }>;
+
+    priv.get('/retail/shifts/current', async (request: Query) => ({
+      data: await pos.currentShift(request.query.locationId ?? '', actorOf(request)),
+    }));
+
+    priv.get('/retail/shifts', async (request: Query) => ({
+      data: await pos.listShifts(request.query, actorOf(request)),
+    }));
+
+    priv.post('/retail/shifts', async (request) => ({
+      data: await pos.openShift(request.body, actorOf(request)),
+    }));
+
+    priv.get('/retail/shifts/:id', async (request: Id) => ({
+      data: await pos.getShift(request.params.id, actorOf(request)),
+    }));
+
+    priv.post('/retail/shifts/:id/close', async (request: Id) => ({
+      data: await pos.closeShift(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.get('/retail/lookup', async (request: Query) => ({
+      data: await pos.lookup(
+        request.query.barcode ?? '',
+        request.query.locationId ?? '',
+        actorOf(request),
+      ),
+    }));
+
+    priv.get('/retail/sales', async (request: Query) => ({
+      data: await pos.listSales(request.query, actorOf(request)),
+    }));
+
+    priv.post('/retail/sales', async (request) => ({
+      data: await pos.sell(request.body as never, writeContextOf(request)),
+    }));
+
+    priv.get('/retail/sales/:id', async (request: Id) => ({
+      data: await pos.getSale(request.params.id, actorOf(request)),
+    }));
+
+    priv.post('/retail/sales/:id/refund', async (request: Id) => ({
+      data: await pos.refund(request.params.id, request.body as never, writeContextOf(request)),
+    }));
     done();
   });
 }

@@ -6,7 +6,7 @@ import { assertPermission, PERMISSIONS, type ActorContext } from '../../shared/p
 import { parse } from '../../shared/validation.js';
 
 /** ADR-012: the currencies with a rate against the dollar (the base, always 1). */
-export const RATE_CURRENCIES = ['SYP', 'LYD'] as const;
+export const RATE_CURRENCIES = ['SYP', 'LYD', 'TRY'] as const;
 export type RateCurrency = (typeof RATE_CURRENCIES)[number];
 
 export const setRateSchema = z.object({

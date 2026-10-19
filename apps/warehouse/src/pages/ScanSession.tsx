@@ -510,6 +510,7 @@ function CostEditor({
           <option value="USD">$</option>
           <option value="SYP">ل.س</option>
           <option value="LYD">د.ل</option>
+          <option value="TRY">ل.ت</option>
         </Select>
       </div>
       {currency !== 'USD' && (

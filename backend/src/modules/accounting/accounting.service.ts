@@ -60,6 +60,25 @@ import {
 import * as reports from './reports.js';
 import { revaluationLines, type ForeignBalance } from './revaluation.js';
 
+/** A closed POS shift, as retail hands it to the books (ADR-014). */
+export interface RetailShiftPosting {
+  shiftId: string;
+  createdById: string;
+  memo: string;
+  cash: {
+    currency: 'SYP' | 'USD' | 'TRY';
+    /** Net cash the shift took in (payments − change − refunds), minor units. */
+    net: bigint;
+    /** Counted − expected, minor units. */
+    difference: bigint;
+    /** Today's rate, units per 1 USD ("1" for USD). */
+    rate: string;
+  }[];
+  /** USD cents of the sales, valued when rung up. */
+  salesBase: bigint;
+  refundsBase: bigint;
+}
+
 export interface AccountingDeps {
   inventory: InventoryService;
   locations: LocationsService;
@@ -316,6 +335,54 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
 
   return {
     syncInventory,
+
+    /**
+     * Trusted call for retail (ADR-014): one entry for a closed POS shift, in the caller's
+     * transaction. The drawer's net cash goes into the store box of each currency (valued at
+     * today's rate); sales and refunds are valued as rung up; a counted difference goes to
+     * over/short; what remains is the exchange difference between the two valuations.
+     * Returns null when the shift moved nothing.
+     */
+    async postRetailShift(tx: Tx, shift: RetailShiftPosting): Promise<string | null> {
+      const lines: DraftLine[] = [];
+      const branch: Branch = 'SY';
+      for (const c of shift.cash) {
+        const box = await accountByRole(tx, `STORE_CASH_${c.currency}`);
+        if (c.net !== 0n) lines.push(line(box, c.currency, c.net, c.rate, { branch }));
+        if (c.difference !== 0n) {
+          const diff = line(box, c.currency, c.difference, c.rate, { branch });
+          const overShort = await accountByRole(tx, 'CASH_OVER_SHORT');
+          lines.push(diff, line(overShort, 'USD', -diff.amountBase, '1', { branch }));
+        }
+      }
+      if (shift.salesBase !== 0n) {
+        const sales = await accountByRole(tx, 'RETAIL_SALES_SY');
+        lines.push(line(sales, 'USD', -shift.salesBase, '1', { branch }));
+      }
+      if (shift.refundsBase !== 0n) {
+        const returns = await accountByRole(tx, 'SALES_RETURNS');
+        lines.push(line(returns, 'USD', shift.refundsBase, '1', { branch }));
+      }
+      const kept = lines.filter((l) => l.amountBase !== 0n || l.amountCurrency !== 0n);
+      const residual = kept.reduce((s, l) => s + l.amountBase, 0n);
+      if (residual !== 0n) {
+        const fx = await accountByRole(tx, 'FX_REALIZED');
+        kept.push(line(fx, 'USD', -residual, '1', { branch }));
+      }
+      if (kept.length < 2) return null;
+      const [id] = await postEntries(tx, [
+        {
+          voucherType: 'RETAIL',
+          entryDate: businessDate(new Date()),
+          memo: shift.memo,
+          sourceType: 'POS_SHIFT',
+          sourceId: shift.shiftId,
+          createdById: shift.createdById,
+          lines: kept,
+        },
+      ]);
+      return id!;
+    },
 
     /** At start-up (main.ts) and in tests: the default chart, once. */
     async installChart(): Promise<number> {

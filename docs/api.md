@@ -122,6 +122,25 @@ Errors: `PERIOD_CLOSED` (409), `PERIOD_NOT_CLOSABLE` (409), `ENTRY_NOT_REVERSIBL
 `AMOUNT_TOO_SMALL`, `ACCOUNT_IS_SYSTEM` (422). `PUT /rates` also takes `officialRate` (reference
 only, nullable).
 
+## Endpoints — Point of sale (ADR-014) — implemented
+
+Amounts in SYP minor units, except payments (their own currency). Sales and refunds **require
+`Idempotency-Key`**.
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `GET` | `/retail/shifts/current?locationId=` (the open shift, or null) | `retail.sell` |
+| `GET` / `POST` | `/retail/shifts?locationId=` / `{ locationId, opening: { SYP?, USD?, TRY? } }` | `retail.sell` |
+| `GET` | `/retail/shifts/:id` (drawer per currency: opening, takings, change, refunds, expected, counted) | `retail.sell` |
+| `POST` | `/retail/shifts/:id/close` — `{ counted: { SYP?, USD?, TRY? } }` (another person's: `retail.manage`) | `retail.sell` |
+| `GET` | `/retail/lookup?barcode=&locationId=` (the piece, its SYP price or null, available) | `retail.sell` |
+| `POST` | `/retail/sales` — `{ shiftId, lines: [{ variantId, quantity }], discount?, payments: [{ currency, amount }] }` | `retail.sell` (discount: `retail.manage`) |
+| `GET` | `/retail/sales?shiftId=` or `?receipt=2026/15` · `/retail/sales/:id` | `retail.sell` |
+| `POST` | `/retail/sales/:id/refund` — `{ shiftId, lines: [{ lineNo, quantity }], reason }` | `retail.manage` |
+
+Errors: `SHIFT_ALREADY_OPEN`, `SHIFT_NOT_OPEN` (409), `LOCATION_NOT_A_STORE`, `NO_RETAIL_PRICE`,
+`PAYMENT_TOO_LOW`, `REFUND_EXCEEDS_SALE`, `NOT_REFUNDABLE`, `RATE_NOT_SET` (422).
+
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).
 

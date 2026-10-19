@@ -27,6 +27,8 @@ const STATUS_BY_CODE: Record<string, number> = {
   PERIOD_CLOSED: 409,
   PERIOD_NOT_CLOSABLE: 409,
   ENTRY_NOT_REVERSIBLE: 409,
+  SHIFT_ALREADY_OPEN: 409,
+  SHIFT_NOT_OPEN: 409,
 };
 
 export function statusFor(error: DomainError): number {

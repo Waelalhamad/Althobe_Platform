@@ -27,6 +27,18 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Point of sale (2026-10-20, ADR-014):**
+- «المتجر» is the third side of the switch.
+- **Shifts:** a shift opens with the drawer counted in SYP, USD and TRY, and closes with it
+  counted again; the shortage or overage is shown per currency.
+- **Selling:** scan, take SYP, dollars and/or Turkish lira at the owner's rates, change in SYP,
+  and the receipt prints on 80 mm.
+- **Refunds and discounts** are a manager's (`retail.manage`). Refunds come back at the cost the
+  pieces left with.
+- **The books:** each closed shift posts one entry (cash per currency, sales, returns,
+  over/short).
+- **The Turkish lira** is a fourth currency: rates, a store box, costs.
+
 **Accounting — ledger core (2026-10-19, ADR-013):**
 - **Books:** double entry in USD, with each line's own currency (SYP, LYD), tagged Syria or Libya.
   The database itself refuses unbalanced, edited or deleted entries, and anything dated in a closed
@@ -77,10 +89,10 @@ yellow «وضع التدريب» banner — for learning the scanner and printer
 | 1 | Inventory foundation — the ledger | ✅ Done |
 | 2 | Thin slice to the scanner — login, products, labels, opening count, receive | ✅ Done |
 | 3 | Warehouse app, complete — transfer, damage, stocktake, adjustment, history, reports, user management | ✅ Done (OpenAPI client deferred) |
-| 4 | Store / POS | |
+| 4 | Store / POS | ✅ Syrian store (2026-10-20, ADR-014) |
 | 5 | Purchasing | |
 | 6 | Sales + customers | |
-| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7b parties · 7c POS posting · 7d payroll |
+| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7c ✅ POS posting (2026-10-20) · 7b parties · 7d payroll |
 
 MVP path: Products/Variants → Barcode → Locations → Receive → Transfer → Count → Balance → Audit →
 Scanner UI, then connect the store.

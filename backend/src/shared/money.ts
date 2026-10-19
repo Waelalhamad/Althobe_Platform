@@ -2,12 +2,13 @@ import { z } from 'zod';
 
 // ADR-004 / ADR-012: integer minor units with each currency's ISO 4217 exponent, base (reporting)
 // currency USD. Nothing in this file ever touches a floating-point number.
-export const CURRENCIES = ['SYP', 'USD', 'LYD'] as const;
+// TRY (ADR-014): the store is paid in Turkish lira too.
+export const CURRENCIES = ['SYP', 'USD', 'LYD', 'TRY'] as const;
 export type Currency = (typeof CURRENCIES)[number];
 export const BASE_CURRENCY = 'USD' satisfies Currency;
 
 /** Decimal places: the Libyan dinar has 1000 dirhams, the others 100 subunits. */
-export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3 };
+export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3, TRY: 2 };
 
 // Rates are held as a decimal string with at most 6 fractional digits ("13000", "13000.5"),
 // matching numeric(18,6) in the database. A rate is units of the currency per 1 USD.

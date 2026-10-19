@@ -10,6 +10,8 @@ export const VOUCHER_TYPES = [
   'INVENTORY',
   'REVALUATION',
   'REVERSAL',
+  // A closed POS shift (ADR-014).
+  'RETAIL',
 ] as const;
 export type VoucherType = (typeof VOUCHER_TYPES)[number];
 
@@ -34,7 +36,14 @@ export type SystemRole =
   | 'DAMAGE'
   | 'STOCK_ADJUSTMENT'
   | 'FX_REALIZED'
-  | 'FX_UNREALIZED';
+  | 'FX_UNREALIZED'
+  // The store drawer, one account per currency, and its counted differences (ADR-014).
+  | 'STORE_CASH_SYP'
+  | 'STORE_CASH_USD'
+  | 'STORE_CASH_TRY'
+  | 'CASH_OVER_SHORT'
+  | 'RETAIL_SALES_SY'
+  | 'SALES_RETURNS';
 
 /** A line about to be posted. amountBase is USD cents, debit positive. */
 export interface DraftLine {

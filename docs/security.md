@@ -61,6 +61,8 @@ invoicing.void
 accounting.view        (implemented, ADR-013)
 accounting.post        (implemented: vouchers, reversals)
 accounting.close       (implemented: close a month, edit the chart)
+retail.sell            (implemented, ADR-014: sell, open and close one's own shift)
+retail.manage          (implemented: discounts, refunds, closing another person's shift)
 employees.read
 employees.salary.read
 admin.users.write

@@ -32,6 +32,12 @@ export const PERMISSIONS = {
     post: 'accounting.post',
     close: 'accounting.close',
   },
+  // The store's point of sale (ADR-014): ring up sales and run one's own shift; refunds,
+  // discounts and closing someone else's shift are for a manager.
+  retail: {
+    sell: 'retail.sell',
+    manage: 'retail.manage',
+  },
   admin: {
     users: 'admin.users.write',
     // Renaming warehouses and the store.

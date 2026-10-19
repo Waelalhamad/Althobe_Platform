@@ -3,6 +3,7 @@ import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
+  Ref,
   SelectHTMLAttributes,
 } from 'react';
 
@@ -39,7 +40,11 @@ export function Button({
   );
 }
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+// React 19 passes `ref` as an ordinary prop; it reaches the <input> through the spread.
+export function Input({
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   return (
     <input
       // Number fields otherwise render Arabic-Indic digits under lang="ar"; the app uses Latin

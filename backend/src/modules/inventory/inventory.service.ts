@@ -326,6 +326,49 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     getMovements: readMovements,
 
     /**
+     * Trusted call for retail (ADR-014): a POS sale takes its pieces out of the store (SALE), a
+     * refund puts them back (RETURN) at the cost they left with. Runs inside the caller's
+     * transaction, so the receipt and the stock change commit together or not at all.
+     */
+    async postRetailMovements(
+      tx: Tx,
+      input: {
+        kind: 'SALE' | 'REFUND';
+        locationId: string;
+        saleId: string;
+        lines: { variantId: string; quantity: number; unitCostBase?: bigint }[];
+        note?: string | null;
+      },
+      ctx: { userId: string },
+    ): Promise<MovementView[]> {
+      const result = await applyMovements(
+        tx,
+        deps,
+        input.lines.map((l) => ({
+          variantId: l.variantId,
+          locationId: input.locationId,
+          type: input.kind === 'SALE' ? ('SALE' as const) : ('RETURN' as const),
+          quantity: input.kind === 'SALE' ? -l.quantity : l.quantity,
+          referenceType: input.kind === 'SALE' ? ('SALES_ORDER' as const) : ('RETURN' as const),
+          referenceId: input.saleId,
+          reason: input.kind === 'REFUND' ? (input.note ?? null) : null,
+          note: input.kind === 'SALE' ? (input.note ?? null) : null,
+          unitCost:
+            input.kind === 'REFUND' && l.unitCostBase !== undefined
+              ? { amount: l.unitCostBase, currency: 'USD' as const, rateToBase: '1' }
+              : null,
+        })),
+        { userId: ctx.userId },
+        {
+          action: input.kind === 'SALE' ? 'retail.sale' : 'retail.refund',
+          entityType: 'pos_sale',
+          entityId: input.saleId,
+        },
+      );
+      return result.movements;
+    },
+
+    /**
      * Trusted call for accounting (ADR-013): movements after `afterSeq` in ledger order, with
      * their values. Accounting posts them to the general ledger; it never reads this table itself.
      */

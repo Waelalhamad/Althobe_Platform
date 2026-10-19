@@ -19,7 +19,9 @@ type To =
   | '/finance/entries'
   | '/finance/accounts'
   | '/finance/reports'
-  | '/finance/close';
+  | '/finance/close'
+  | '/pos'
+  | '/pos/shifts';
 
 interface NavItem {
   to: To;
@@ -28,9 +30,10 @@ interface NavItem {
   anyOf?: string[];
 }
 
-type Section = 'stock' | 'finance';
+type Section = 'stock' | 'store' | 'finance';
 
-// Two sides of the app, switched at the top: the warehouse and the books (ADR-013). Within each,
+// Three sides of the app, switched at the top: the warehouse, the store's till (ADR-014) and the
+// books (ADR-013). Within each,
 // grouped by job in the order the work happens. Each person sees only what they may use.
 const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
   { section: 'stock', group: null, items: [{ to: '/', label: 'الرئيسية' }] },
@@ -64,6 +67,14 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
     items: [{ to: '/reports', label: 'التقارير', anyOf: ['inventory.view'] }],
   },
   {
+    section: 'store',
+    group: null,
+    items: [
+      { to: '/pos', label: 'نقطة البيع', anyOf: ['retail.sell'] },
+      { to: '/pos/shifts', label: 'الورديات والفواتير', anyOf: ['retail.sell'] },
+    ],
+  },
+  {
     section: 'finance',
     group: null,
     items: [{ to: '/finance', label: 'الصناديق', anyOf: ['accounting.view'] }],
@@ -87,8 +98,9 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
   },
 ];
 
-const SECTIONS: { key: Section; label: string; home: '/' | '/finance' }[] = [
+const SECTIONS: { key: Section; label: string; home: '/' | '/pos' | '/finance' }[] = [
   { key: 'stock', label: 'المخزون', home: '/' },
+  { key: 'store', label: 'المتجر', home: '/pos' },
   { key: 'finance', label: 'المالية', home: '/finance' },
 ];
 
@@ -104,6 +116,7 @@ const SHARED = ['/rates', '/help', '/account', '/users'];
 
 function sectionOf(pathname: string, previous: Section): Section {
   if (pathname.startsWith('/finance')) return 'finance';
+  if (pathname.startsWith('/pos')) return 'store';
   return SHARED.some((p) => pathname.startsWith(p)) ? previous : 'stock';
 }
 
@@ -174,7 +187,9 @@ export function AppLayout() {
                       to={item.to}
                       className={linkClass}
                       activeProps={active}
-                      activeOptions={{ exact: item.to === '/' || item.to === '/finance' }}
+                      activeOptions={{
+                        exact: item.to === '/' || item.to === '/finance' || item.to === '/pos',
+                      }}
                     >
                       {item.label}
                     </Link>
@@ -223,7 +238,9 @@ export function AppLayout() {
                       to={item.to}
                       className={`${linkClass} py-2 text-base`}
                       activeProps={active}
-                      activeOptions={{ exact: item.to === '/' || item.to === '/finance' }}
+                      activeOptions={{
+                        exact: item.to === '/' || item.to === '/finance' || item.to === '/pos',
+                      }}
                     >
                       {item.label}
                     </Link>

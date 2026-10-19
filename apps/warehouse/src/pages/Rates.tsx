@@ -9,6 +9,7 @@ import { ratesQuery } from '../queries';
 const NAMES: Record<Rate['currency'], string> = {
   SYP: 'الليرة السورية',
   LYD: 'الدينار الليبي',
+  TRY: 'الليرة التركية',
 };
 
 const RATE_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
@@ -81,7 +82,7 @@ function RateCard({ rate }: { rate: Rate }) {
             inputMode="decimal"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={rate.currency === 'SYP' ? '122' : '6.4'}
+            placeholder={{ SYP: '122', LYD: '6.4', TRY: '41' }[rate.currency]}
             className={value && !valid ? 'border-bad' : ''}
           />
         </Field>

@@ -153,6 +153,9 @@ model User {
   exchangeRates      ExchangeRate[]
   journalEntries     JournalEntry[]
   periodsClosed      AccountingPeriod[]
+  shiftsOpened       PosShift[]           @relation("PosShiftOpenedBy")
+  shiftsClosed       PosShift[]           @relation("PosShiftClosedBy")
+  posSales           PosSale[]
 
   @@map("users")
 }
@@ -393,6 +396,7 @@ model ProductVariant {
   scanEvents       ScanSessionEvent[]
   stocktakeLines   StocktakeLine[]
   stocktakeEvents  StocktakeScanEvent[]
+  posSaleLines     PosSaleLine[]
 
   @@unique([productId, optionKey], map: "uq_product_variants_option_key")
   @@index([productId], map: "idx_product_variants_product_id")
@@ -488,6 +492,8 @@ model Location {
   stocktakes       Stocktake[]
   glAccount        GlAccount?
   journalLines     JournalLine[]
+  posShifts        PosShift[]
+  posSales         PosSale[]
 
   @@map("locations")
 }
@@ -757,6 +763,7 @@ model JournalEntry {
   createdBy  User               @relation(fields: [createdById], references: [id])
   lines      JournalLine[]
   periods    AccountingPeriod[]
+  posShifts  PosShift[]
 
   @@unique([voucherType, voucherYear, voucherNo], map: "uq_journal_entries_voucher")
   @@unique([sourceType, sourceId], map: "uq_journal_entries_source")
@@ -816,4 +823,122 @@ model AccountingSyncState {
   lastSeq BigInt @map("last_seq")
 
   @@map("accounting_sync_state")
+}
+
+// ─── Retail: the store's point of sale (ADR-014) ───────────────────────────────────────────────
+// Prices and totals are SYP minor units. Sales, their lines and payments are append-only (trigger);
+// a refund is a new receipt. At most one OPEN shift per location (partial unique index in SQL).
+
+model PosShift {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  locationId     String    @map("location_id") @db.Uuid
+  // OPEN · CLOSED
+  status         String    @default("OPEN")
+  openedById     String    @map("opened_by") @db.Uuid
+  openedAt       DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
+  closedById     String?   @map("closed_by") @db.Uuid
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(3)
+  journalEntryId String?   @map("journal_entry_id") @db.Uuid
+
+  location     Location       @relation(fields: [locationId], references: [id])
+  openedBy     User           @relation("PosShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy     User?          @relation("PosShiftClosedBy", fields: [closedById], references: [id])
+  journalEntry JournalEntry?  @relation(fields: [journalEntryId], references: [id])
+  cash         PosShiftCash[]
+  sales        PosSale[]
+
+  @@index([locationId, openedAt(sort: Desc)], map: "idx_pos_shifts_location_opened")
+  @@map("pos_shifts")
+}
+
+// The drawer per currency (SYP, USD, TRY): at opening, and as counted at closing.
+model PosShiftCash {
+  shiftId  String  @map("shift_id") @db.Uuid
+  currency String  @db.Char(3)
+  opening  BigInt
+  counted  BigInt?
+
+  shift PosShift @relation(fields: [shiftId], references: [id])
+
+  @@id([shiftId, currency])
+  @@map("pos_shift_cash")
+}
+
+model PosSale {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  // SALE · REFUND
+  kind        String
+  receiptYear Int      @map("receipt_year") @db.SmallInt
+  receiptNo   Int      @map("receipt_no")
+  shiftId     String   @map("shift_id") @db.Uuid
+  locationId  String   @map("location_id") @db.Uuid
+  refundOfId  String?  @map("refund_of_id") @db.Uuid
+  subtotal    BigInt
+  discount    BigInt   @default(0)
+  total       BigInt
+  // The total in USD cents at the SYP rate of the moment.
+  totalBase   BigInt   @map("total_base")
+  // Change given back, in SYP.
+  change      BigInt   @default(0)
+  sypRate     Decimal  @map("syp_rate") @db.Decimal(18, 6)
+  note        String?
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  shift     PosShift      @relation(fields: [shiftId], references: [id])
+  location  Location      @relation(fields: [locationId], references: [id])
+  refundOf  PosSale?      @relation("PosRefund", fields: [refundOfId], references: [id])
+  refunds   PosSale[]     @relation("PosRefund")
+  createdBy User          @relation(fields: [createdById], references: [id])
+  lines     PosSaleLine[]
+  payments  PosPayment[]
+
+  @@unique([kind, receiptYear, receiptNo], map: "uq_pos_sales_receipt")
+  @@index([shiftId], map: "idx_pos_sales_shift_id")
+  @@index([refundOfId], map: "idx_pos_sales_refund_of_id")
+  @@map("pos_sales")
+}
+
+model PosSaleLine {
+  saleId       String @map("sale_id") @db.Uuid
+  lineNo       Int    @map("line_no") @db.SmallInt
+  variantId    String @map("variant_id") @db.Uuid
+  quantity     Int
+  unitPrice    BigInt @map("unit_price")
+  // After its share of the discount.
+  netTotal     BigInt @map("net_total")
+  refundOfLine Int?   @map("refund_of_line") @db.SmallInt
+  // One piece's cost, USD cents, as the stock ledger valued it.
+  unitCostBase BigInt @map("unit_cost_base")
+
+  sale    PosSale        @relation(fields: [saleId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@id([saleId, lineNo])
+  @@index([variantId], map: "idx_pos_sale_lines_variant_id")
+  @@map("pos_sale_lines")
+}
+
+model PosPayment {
+  saleId   String  @map("sale_id") @db.Uuid
+  currency String  @db.Char(3)
+  // Minor units handed over; negative when money goes back (a refund).
+  amount   BigInt
+  // Units of the currency per 1 USD; 1 for USD.
+  rate     Decimal @db.Decimal(18, 6)
+  base     BigInt
+
+  sale PosSale @relation(fields: [saleId], references: [id])
+
+  @@id([saleId, currency])
+  @@map("pos_payments")
+}
+
+model PosCounter {
+  kind   String
+  year   Int    @db.SmallInt
+  lastNo Int    @map("last_no")
+
+  @@id([kind, year])
+  @@map("pos_counters")
 }

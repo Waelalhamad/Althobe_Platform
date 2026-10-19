@@ -31,6 +31,9 @@ import { EntriesPage, EntryPage } from './pages/Entries';
 import { FinancePage } from './pages/Finance';
 import { FinanceReportsPage, type ReportTab } from './pages/FinanceReports';
 import { VoucherPage, type VoucherKind } from './pages/Voucher';
+import { PosPage } from './pages/Pos';
+import { PosShiftPage, PosShiftsPage } from './pages/PosShifts';
+import { ReceiptPage } from './pages/Receipt';
 import { meQuery } from './queries';
 
 interface RouterContext {
@@ -163,6 +166,23 @@ const routes = [
     component: FinanceReportsPage,
   }),
   createRoute({ getParentRoute: () => appRoute, path: '/finance/close', component: ClosePage }),
+  // Point of sale (ADR-014)
+  createRoute({ getParentRoute: () => appRoute, path: '/pos', component: PosPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/pos/receipts/$saleId',
+    // print=true: straight from the till, the receipt prints at once.
+    validateSearch: (search: Record<string, unknown>): { print: boolean } => ({
+      print: search.print === true || search.print === 'true',
+    }),
+    component: ReceiptPage,
+  }),
+  createRoute({ getParentRoute: () => appRoute, path: '/pos/shifts', component: PosShiftsPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/pos/shifts/$shiftId',
+    component: PosShiftPage,
+  }),
 ];
 
 const routeTree = rootRoute.addChildren([loginRoute, appRoute.addChildren(routes)]);

@@ -3,7 +3,7 @@
 
 export type LocationKind = 'WAREHOUSE' | 'STORE';
 export type SessionKind = 'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN';
-export type Currency = 'SYP' | 'USD' | 'LYD';
+export type Currency = 'SYP' | 'USD' | 'LYD' | 'TRY';
 
 /** ADR-012: retail in SYP (Syria) and LYD (Libya), wholesale in USD. One currency per list. */
 export const PRICE_KEYS = ['retailSyp', 'retailLyd', 'wholesale'] as const;
@@ -137,7 +137,7 @@ export interface Photo {
 }
 
 export interface Rate {
-  currency: 'SYP' | 'LYD';
+  currency: 'SYP' | 'LYD' | 'TRY';
   rate: string | null;
   /** The central bank's rate, for reference (ADR-013). */
   officialRate: string | null;
@@ -154,8 +154,87 @@ export type VoucherType =
   | 'JOURNAL'
   | 'INVENTORY'
   | 'REVALUATION'
-  | 'REVERSAL';
+  | 'REVERSAL'
+  | 'RETAIL';
 export type Branch = 'SY' | 'LY';
+
+// ─── Point of sale (ADR-014). SYP minor units unless a currency says otherwise. ───────────────
+
+export type DrawerCurrency = 'SYP' | 'USD' | 'TRY';
+
+export interface ShiftCash {
+  currency: DrawerCurrency;
+  opening: string;
+  takings: string;
+  change: string;
+  refunds: string;
+  expected: string;
+  counted: string | null;
+  difference: string | null;
+}
+
+export interface Shift {
+  id: string;
+  locationId: string;
+  status: 'OPEN' | 'CLOSED';
+  openedBy: { id: string; nameAr: string };
+  openedAt: string;
+  closedBy: { id: string; nameAr: string } | null;
+  closedAt: string | null;
+  journalEntryId: string | null;
+  cash: ShiftCash[];
+  salesCount: number;
+  refundsCount: number;
+  salesTotal: string;
+  refundsTotal: string;
+}
+
+export interface PosSaleLine {
+  lineNo: number;
+  variant: {
+    id: string;
+    sku: string;
+    barcode: string;
+    title: string;
+    size: string | null;
+    productName: string;
+  };
+  quantity: number;
+  unitPrice: string;
+  netTotal: string;
+  refundOfLine: number | null;
+  refunded: number;
+}
+
+export interface PosSale {
+  id: string;
+  kind: 'SALE' | 'REFUND';
+  receiptYear: number;
+  receiptNo: number;
+  shiftId: string;
+  locationId: string;
+  refundOfId: string | null;
+  subtotal: string;
+  discount: string;
+  total: string;
+  totalBase: string;
+  change: string;
+  sypRate: string;
+  note: string | null;
+  createdBy: { id: string; nameAr: string };
+  createdAt: string;
+  lines: PosSaleLine[];
+  payments: { currency: DrawerCurrency; amount: string; rate: string; base: string }[];
+}
+
+export interface PosLookup {
+  variant: Variant;
+  /** SYP minor units, or null: no retail price yet. */
+  price: string | null;
+  available: number | null;
+}
+
+export type CashCount = Partial<Record<DrawerCurrency, string>>;
 
 /** One account of the chart (دليل الحسابات). */
 export interface GlAccount {
@@ -650,6 +729,38 @@ export const api = {
   resetPassword: async (id: string) => post<{ password: string }>(`/users/${id}/reset-password`),
   changePassword: async (currentPassword: string, newPassword: string) =>
     post<{ ok: true }>('/auth/change-password', { currentPassword, newPassword }),
+
+  // Point of sale (ADR-014). A sale or refund carries an Idempotency-Key: one receipt per click.
+  currentShift: async (locationId: string) =>
+    get<Shift | null>(`/retail/shifts/current?${query({ locationId })}`),
+  shifts: async (locationId: string) => get<Shift[]>(`/retail/shifts?${query({ locationId })}`),
+  shift: async (id: string) => get<Shift>(`/retail/shifts/${id}`),
+  openShift: async (locationId: string, opening: CashCount) =>
+    post<Shift>('/retail/shifts', { locationId, opening }),
+  closeShift: async (id: string, counted: CashCount) =>
+    post<Shift>(`/retail/shifts/${id}/close`, { counted }),
+  posLookup: async (barcode: string, locationId: string) =>
+    get<PosLookup>(`/retail/lookup?${query({ barcode, locationId })}`),
+  posSales: async (params: { shiftId?: string; receipt?: string }) =>
+    get<PosSale[]>(`/retail/sales?${query(params)}`),
+  posSale: async (id: string) => get<PosSale>(`/retail/sales/${id}`),
+  sell: async (
+    input: {
+      shiftId: string;
+      lines: { variantId: string; quantity: number }[];
+      discount?: string;
+      payments: { currency: DrawerCurrency; amount: string }[];
+    },
+    idempotencyKey: string,
+  ) => request<PosSale>('POST', '/retail/sales', input, { 'idempotency-key': idempotencyKey }),
+  refund: async (
+    saleId: string,
+    input: { shiftId: string; lines: { lineNo: number; quantity: number }[]; reason: string },
+    idempotencyKey: string,
+  ) =>
+    request<PosSale>('POST', `/retail/sales/${saleId}/refund`, input, {
+      'idempotency-key': idempotencyKey,
+    }),
 
   // Accounting (ADR-013). Posting carries an Idempotency-Key, so a double click posts once.
   glAccounts: async () => get<GlAccount[]>('/accounting/accounts'),

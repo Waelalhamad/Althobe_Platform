@@ -275,28 +275,32 @@ describe('corrections and the database rules', () => {
 
     const cash = await account('110102');
     await expect(
-      t.db.$transaction(async (tx) => {
-        const row = await tx.journalEntry.create({
-          data: {
-            voucherType: 'JOURNAL',
-            voucherYear: 2026,
-            voucherNo: 999,
-            entryDate: new Date(`${today}T00:00:00Z`),
-            createdById: w.owner.userId,
-          },
-        });
-        await tx.journalLine.create({
-          data: {
-            entryId: row.id,
-            lineNo: 1,
-            accountId: cash.id,
-            amountBase: 100n,
-            currency: 'USD',
-            amountCurrency: 100n,
-            rate: '1',
-          },
-        });
-      }),
+      t.db.$transaction(
+        async (tx) => {
+          const row = await tx.journalEntry.create({
+            data: {
+              voucherType: 'JOURNAL',
+              voucherYear: 2026,
+              voucherNo: 999,
+              entryDate: new Date(`${today}T00:00:00Z`),
+              createdById: w.owner.userId,
+            },
+          });
+          await tx.journalLine.create({
+            data: {
+              entryId: row.id,
+              lineNo: 1,
+              accountId: cash.id,
+              amountBase: 100n,
+              currency: 'USD',
+              amountCurrency: 100n,
+              rate: '1',
+            },
+          });
+          // The app's own limits (shared/db.ts): Prisma's 5 s default is too short over Neon.
+        },
+        { maxWait: 10_000, timeout: 20_000 },
+      ),
     ).rejects.toThrow(/not balanced/);
   });
 });

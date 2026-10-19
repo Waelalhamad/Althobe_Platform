@@ -172,6 +172,7 @@ function NewAccount() {
                 <option value="USD">دولار</option>
                 <option value="SYP">ليرة سورية</option>
                 <option value="LYD">دينار ليبي</option>
+                <option value="TRY">ليرة تركية</option>
               </Select>
             </Field>
           </div>

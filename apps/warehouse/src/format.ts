@@ -69,6 +69,13 @@ const ERRORS: Record<string, string> = {
   AMOUNT_TOO_SMALL: 'المبلغ أصغر من سنت واحد',
   ENTRY_NOT_REVERSIBLE: 'لا يمكن عكس هذا القيد',
   ACCOUNT_IS_SYSTEM: 'هذا الحساب يستخدمه النظام ولا يُوقف',
+  LOCATION_NOT_A_STORE: 'نقطة البيع تعمل في المتجر فقط',
+  SHIFT_ALREADY_OPEN: 'يوجد وردية مفتوحة في هذا المتجر',
+  SHIFT_NOT_OPEN: 'الوردية مغلقة — افتح وردية جديدة',
+  NO_RETAIL_PRICE: 'هذه القطعة ليس لها سعر مفرق بالليرة السورية بعد — اطلب من المدير وضع السعر',
+  PAYMENT_TOO_LOW: 'المبلغ المدفوع أقل من المطلوب',
+  REFUND_EXCEEDS_SALE: 'الكمية أكبر مما بقي في الفاتورة',
+  NOT_REFUNDABLE: 'لا يمكن إرجاع هذه الفاتورة هنا',
 };
 
 export function errorText(error: unknown): string {
@@ -113,6 +120,7 @@ export const VOUCHER_TYPE: Record<string, string> = {
   INVENTORY: 'قيد مخزون',
   REVALUATION: 'إعادة تقييم',
   REVERSAL: 'قيد عكسي',
+  RETAIL: 'وردية المتجر',
 };
 
 export const BRANCH: Record<string, string> = { SY: 'سوريا', LY: 'ليبيا' };
@@ -154,8 +162,20 @@ export function formatQuantity(n: number): string {
 }
 
 /** ISO 4217 decimals: the Libyan dinar has 1000 dirhams (ADR-012). */
-export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3 };
-export const CURRENCY_SYMBOL: Record<Currency, string> = { SYP: 'ل.س', USD: '$', LYD: 'د.ل' };
+export const EXPONENT: Record<Currency, number> = { SYP: 2, USD: 2, LYD: 3, TRY: 2 };
+export const CURRENCY_SYMBOL: Record<Currency, string> = {
+  SYP: 'ل.س',
+  USD: '$',
+  LYD: 'د.ل',
+  TRY: 'ل.ت',
+};
+
+export const CURRENCY_NAME: Record<Currency, string> = {
+  SYP: 'ليرة سورية',
+  USD: 'دولار',
+  LYD: 'دينار ليبي',
+  TRY: 'ليرة تركية',
+};
 
 /** Each price list: its currency and its names on screen (ADR-012). */
 export const PRICE_META: Record<
@@ -190,6 +210,30 @@ export function toUsdCents(minor: string, currency: Currency, rate: string): str
   const d = 10n ** BigInt(EXPONENT[currency]) * micros;
   const magnitude = ((n < 0n ? -n : n) * 2n + d) / (2n * d);
   return (n < 0n ? -magnitude : magnitude).toString();
+}
+
+/**
+ * Minor units of a drawer currency → SYP minor units, through the dollar rates (units per
+ * 1 USD). The same rule as the server (retail/pos-money.ts), so the screen shows what it will
+ * charge.
+ */
+export function toSypMinor(
+  amount: bigint,
+  currency: Currency,
+  rates: Partial<Record<Currency, string>>,
+): bigint | null {
+  if (currency === 'SYP') return amount;
+  const micros = (rate: string | undefined) => {
+    if (!rate) return null;
+    const [whole = '0', fraction = ''] = rate.split('.');
+    return BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0').slice(0, 6));
+  };
+  const syp = micros(rates.SYP);
+  const own = currency === 'USD' ? 1_000_000n : micros(rates[currency]);
+  if (!syp || !own) return null;
+  const n = amount * syp * 10n ** BigInt(EXPONENT.SYP);
+  const d = own * 10n ** BigInt(EXPONENT[currency]);
+  return (n * 2n + d) / (2n * d);
 }
 
 /** A selling price, or a clear "no price yet". */

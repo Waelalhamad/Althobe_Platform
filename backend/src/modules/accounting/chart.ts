@@ -30,8 +30,16 @@ export const DEFAULT_CHART: AccountDef[] = [
     kind: 'CASH',
     currency: 'SYP',
     branch: 'SY',
+    role: 'STORE_CASH_SYP',
   },
-  { code: '110102', nameAr: 'صندوق المتجر — دولار', kind: 'CASH', currency: 'USD', branch: 'SY' },
+  {
+    code: '110102',
+    nameAr: 'صندوق المتجر — دولار',
+    kind: 'CASH',
+    currency: 'USD',
+    branch: 'SY',
+    role: 'STORE_CASH_USD',
+  },
   {
     code: '110103',
     nameAr: 'صندوق ليبيا — دينار ليبي',
@@ -41,6 +49,14 @@ export const DEFAULT_CHART: AccountDef[] = [
   },
   { code: '110104', nameAr: 'صندوق ليبيا — دولار', kind: 'CASH', currency: 'USD', branch: 'LY' },
   { code: '110105', nameAr: 'خزنة المالك — دولار', kind: 'CASH', currency: 'USD', branch: 'SY' },
+  {
+    code: '110106',
+    nameAr: 'صندوق المتجر — ليرة تركية',
+    kind: 'CASH',
+    currency: 'TRY',
+    branch: 'SY',
+    role: 'STORE_CASH_TRY',
+  },
   { code: '1103', nameAr: 'الزبائن (ذمم مدينة)', role: 'RECEIVABLE' },
   { code: '1104', nameAr: 'سلف الموظفين' },
   { code: '1105', nameAr: 'المخزون', heading: true, role: 'INVENTORY_PARENT' },
@@ -68,10 +84,10 @@ export const DEFAULT_CHART: AccountDef[] = [
 
   { code: '4', nameAr: 'الإيرادات', heading: true },
   { code: '41', nameAr: 'المبيعات', heading: true },
-  { code: '4101', nameAr: 'مبيعات المفرق — سوريا', branch: 'SY' },
+  { code: '4101', nameAr: 'مبيعات المفرق — سوريا', branch: 'SY', role: 'RETAIL_SALES_SY' },
   { code: '4102', nameAr: 'مبيعات المفرق — ليبيا', branch: 'LY' },
   { code: '4103', nameAr: 'مبيعات الجملة' },
-  { code: '4109', nameAr: 'مردودات المبيعات' },
+  { code: '4109', nameAr: 'مردودات المبيعات', role: 'SALES_RETURNS' },
   { code: '42', nameAr: 'إيرادات أخرى', heading: true },
   { code: '4201', nameAr: 'إيرادات متنوعة' },
 
@@ -92,6 +108,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '5209', nameAr: 'الضيافة والنظافة' },
   { code: '5210', nameAr: 'الدعاية والتسويق' },
   { code: '5211', nameAr: 'الضرائب والرسوم' },
+  { code: '5298', nameAr: 'عجز وزيادة الصناديق', role: 'CASH_OVER_SHORT' },
   { code: '5299', nameAr: 'مصاريف متنوعة' },
   { code: '55', nameAr: 'فروقات الصرف', heading: true },
   { code: '5501', nameAr: 'فروقات صرف محققة', role: 'FX_REALIZED' },
@@ -109,11 +126,22 @@ export function parentCodeOf(code: string, codes: Iterable<string>): string | nu
 
 /**
  * Adds every missing default account, and an inventory account per location. Idempotent: an
- * account that exists (by code) is left as the owner has it.
+ * account that exists (by code) is left as the owner has it, except that it gets a role added
+ * since it was installed (the store boxes, ADR-014) when no other account already has that role.
  */
 export async function installChart(tx: Tx, locations: LocationView[]): Promise<number> {
-  const existing = await tx.glAccount.findMany({ select: { id: true, code: true } });
+  const existing = await tx.glAccount.findMany({
+    select: { id: true, code: true, systemRole: true },
+  });
   const idByCode = new Map(existing.map((a) => [a.code, a.id]));
+  const takenRoles = new Set(existing.flatMap((a) => (a.systemRole ? [a.systemRole] : [])));
+  for (const def of DEFAULT_CHART) {
+    const row = existing.find((a) => a.code === def.code);
+    if (row && def.role && !row.systemRole && !takenRoles.has(def.role)) {
+      await tx.glAccount.update({ where: { id: row.id }, data: { systemRole: def.role } });
+      takenRoles.add(def.role);
+    }
+  }
   const allCodes = [...idByCode.keys(), ...DEFAULT_CHART.map((d) => d.code)];
 
   const rows = [];

@@ -21,8 +21,14 @@ export const ROLES = {
     P.inventory.stocktakeCount,
     P.products.read,
   ],
-  // Until the POS exists, the store records its own sales and returns as scan sessions.
-  store_staff: [P.inventory.view, P.inventory.issue, P.inventory.return, P.products.read],
+  // The store sells at the POS (ADR-014); scan sessions for sales and returns remain.
+  store_staff: [
+    P.inventory.view,
+    P.inventory.issue,
+    P.inventory.return,
+    P.products.read,
+    P.retail.sell,
+  ],
   accountant: [
     P.inventory.view,
     P.inventory.costView,
