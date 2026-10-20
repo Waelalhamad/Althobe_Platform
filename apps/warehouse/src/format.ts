@@ -121,7 +121,10 @@ export const VOUCHER_TYPE: Record<string, string> = {
   REVALUATION: 'إعادة تقييم',
   REVERSAL: 'قيد عكسي',
   RETAIL: 'وردية المتجر',
+  PAYROLL: 'كشف رواتب',
 };
+
+export const FREQUENCY: Record<string, string> = { MONTHLY: 'شهري', WEEKLY: 'أسبوعي' };
 
 export const BRANCH: Record<string, string> = { SY: 'سوريا', LY: 'ليبيا' };
 

@@ -58,7 +58,7 @@ export const DEFAULT_CHART: AccountDef[] = [
     role: 'STORE_CASH_TRY',
   },
   { code: '1103', nameAr: 'الزبائن (ذمم مدينة)', role: 'RECEIVABLE' },
-  { code: '1104', nameAr: 'سلف الموظفين' },
+  { code: '1104', nameAr: 'سلف الموظفين', role: 'EMPLOYEE_ADVANCES' },
   { code: '1105', nameAr: 'المخزون', heading: true, role: 'INVENTORY_PARENT' },
   {
     code: '110599',
@@ -72,7 +72,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '2', nameAr: 'الخصوم', heading: true },
   { code: '21', nameAr: 'الخصوم المتداولة', heading: true },
   { code: '2101', nameAr: 'الموردون (ذمم دائنة)', role: 'PAYABLE' },
-  { code: '2102', nameAr: 'رواتب مستحقة' },
+  { code: '2102', nameAr: 'رواتب مستحقة', role: 'SALARIES_PAYABLE' },
   { code: '2103', nameAr: 'ضرائب ورسوم مستحقة' },
   { code: '2104', nameAr: 'دفعات مقدمة من الزبائن' },
 
@@ -98,7 +98,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '5103', nameAr: 'فروقات الجرد والتعديلات', role: 'STOCK_ADJUSTMENT' },
   { code: '52', nameAr: 'المصاريف التشغيلية', heading: true },
   { code: '5201', nameAr: 'الإيجار' },
-  { code: '5202', nameAr: 'الرواتب والأجور' },
+  { code: '5202', nameAr: 'الرواتب والأجور', role: 'SALARIES_EXPENSE' },
   { code: '5203', nameAr: 'الكهرباء والمولدة' },
   { code: '5204', nameAr: 'النقل والشحن' },
   { code: '5205', nameAr: 'الجمارك والتخليص' },

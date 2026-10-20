@@ -12,6 +12,7 @@ import {
   doesStockWork,
   meQuery,
   openSessionsQuery,
+  payrollSummaryQuery,
   posTodayQuery,
   ratesQuery,
 } from '../queries';
@@ -97,6 +98,9 @@ function TodayPage() {
         {can(user, 'inventory.view') && (
           <Tile to="/balances" title="الأرصدة" hint="كم قطعة في كل مكان" />
         )}
+        {can(user, 'payroll.manage') && (
+          <Tile to="/finance/payroll" title="الرواتب" hint="الموظفون والسلف والكشوف" />
+        )}
         <Tile to="/finance/reports" title="الأرباح" hint="هذا الشهر بالدولار" />
       </div>
     </>
@@ -109,7 +113,7 @@ function Tile({
   title,
   hint,
 }: {
-  to: '/pos' | '/stock' | '/finance/new' | '/balances' | '/finance/reports';
+  to: '/pos' | '/stock' | '/finance/new' | '/balances' | '/finance/reports' | '/finance/payroll';
   kind?: 'PAYMENT' | 'RECEIPT';
   title: string;
   hint: string;
@@ -152,6 +156,10 @@ function Attention() {
   const { data: rates = [] } = useQuery(ratesQuery);
   const { data: sessions = [] } = useQuery(openSessionsQuery);
   const { data: check } = useQuery(booksCheckQuery);
+  const { data: payroll } = useQuery({
+    ...payrollSummaryQuery,
+    enabled: can(user, 'payroll.manage'),
+  });
 
   const items: ReactNode[] = [];
   const unpriced = storeStock.filter((r) => r.balance.quantity > 0 && !r.variant.prices.retailSyp);
@@ -189,6 +197,27 @@ function Attention() {
     items.push(
       <Link key="sessions" to="/stock" className="text-brand">
         {sessions.length} عملية مسح لم تُؤكَّد بعد
+      </Link>,
+    );
+  }
+  if (payroll?.unpaidEmployees) {
+    items.push(
+      <Link key="unpaid" to="/finance/payroll" className="text-brand">
+        رواتب معتمدة لم تُدفع بعد ({payroll.unpaidEmployees} موظف)
+      </Link>,
+    );
+  }
+  if (payroll?.missingMonth) {
+    items.push(
+      <Link key="sheet" to="/finance/payroll" className="text-brand">
+        كشف رواتب شهر {payroll.missingMonth} لم يُعمل بعد
+      </Link>,
+    );
+  }
+  if (payroll && !payroll.books.ok) {
+    items.push(
+      <Link key="payroll-books" to="/finance/payroll" className="text-bad">
+        السلف أو الرواتب في الدفاتر لا تطابق صفحات الموظفين
       </Link>,
     );
   }

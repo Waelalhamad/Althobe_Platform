@@ -11,7 +11,7 @@ import { Link } from '@tanstack/react-router';
 import { api } from '../api';
 import { CURRENCY_SYMBOL, errorText, formatMoney } from '../format';
 import { PAGES } from '../help';
-import { closingQuery, glAccountsQuery } from '../queries';
+import { can, closingQuery, glAccountsQuery, meQuery, payrollRunsQuery } from '../queries';
 import { useRefreshBooks } from './finance-parts';
 
 /** إقفال الشهر: revalue SYP and LYD at today's rates, then lock the month for good. */
@@ -19,6 +19,14 @@ export function ClosePage() {
   const { data: status, isLoading } = useQuery(closingQuery);
   const { data: accounts = [] } = useQuery(glAccountsQuery);
   const name = (id: string) => accounts.find((a) => a.id === id)?.nameAr ?? id;
+  const { data: user } = useQuery(meQuery);
+  const { data: runs } = useQuery({ ...payrollRunsQuery, enabled: can(user, 'payroll.manage') });
+  // Salaries are expensed when a sheet is approved: close the month after its sheet (ADR-015).
+  const sheet = (period: string) =>
+    runs?.find(
+      (r) =>
+        r.frequency === 'MONTHLY' && r.status !== 'CANCELLED' && r.periodStart.startsWith(period),
+    );
   const refresh = useRefreshBooks();
   const toast = useToast();
 
@@ -66,6 +74,18 @@ export function ClosePage() {
                   </span>
                 ))}
               </p>
+              {runs && runs.length > 0 && sheet(status.next)?.status !== 'APPROVED' && (
+                <div className="mb-3">
+                  <Alert tone="warn">
+                    كشف رواتب شهر {status.next}{' '}
+                    {sheet(status.next) ? 'لم يُعتمد بعد' : 'لم يُعمل بعد'} — اعتمده من{' '}
+                    <Link to="/finance/payroll" className="font-bold underline">
+                      الرواتب
+                    </Link>{' '}
+                    قبل الإقفال، حتى تدخل رواتب الشهر في أرباحه.
+                  </Alert>
+                </div>
+              )}
               {status.missingRates.length > 0 && (
                 <div className="mb-3">
                   <Alert tone="warn">

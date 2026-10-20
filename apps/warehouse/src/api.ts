@@ -155,7 +155,8 @@ export type VoucherType =
   | 'INVENTORY'
   | 'REVALUATION'
   | 'REVERSAL'
-  | 'RETAIL';
+  | 'RETAIL'
+  | 'PAYROLL';
 export type Branch = 'SY' | 'LY';
 
 // ─── Point of sale (ADR-014). SYP minor units unless a currency says otherwise. ───────────────
@@ -563,6 +564,115 @@ async function request<T>(
 const get = async <T>(path: string) => request<T>('GET', path);
 const post = async <T>(path: string, body: unknown = {}) => request<T>('POST', path, body);
 
+// ─── Payroll (ADR-015). Amounts are minor units of the employee's currency. ────────────────────
+
+export type Frequency = 'MONTHLY' | 'WEEKLY';
+
+export interface Employee {
+  id: string;
+  nameAr: string;
+  phone: string | null;
+  jobTitle: string | null;
+  branch: Branch;
+  frequency: Frequency;
+  isActive: boolean;
+  /** Null without payroll.manage. */
+  currency: Currency | null;
+  salary: string | null;
+  advanceBalance: string | null;
+  notes: string | null;
+}
+
+export interface EmployeeDetail extends Employee {
+  advances: {
+    id: string;
+    kind: 'GIVEN' | 'REPAID' | 'DEDUCTED' | 'RESTORED';
+    amount: string;
+    note: string | null;
+    createdBy: string;
+    createdAt: string;
+    journalEntryId: string | null;
+  }[];
+  pay: {
+    runId: string;
+    frequency: Frequency;
+    periodStart: string;
+    periodEnd: string;
+    status: PayrollRun['status'];
+    gross: string;
+    advanceDeduct: string;
+    net: string;
+    paidAt: string | null;
+  }[];
+}
+
+export interface EmployeeInput {
+  nameAr: string;
+  phone?: string;
+  jobTitle?: string;
+  branch: Branch;
+  currency: Currency;
+  salary: string;
+  frequency: Frequency;
+  notes?: string;
+}
+
+export interface PayrollRun {
+  id: string;
+  frequency: Frequency;
+  periodStart: string;
+  periodEnd: string;
+  status: 'DRAFT' | 'APPROVED' | 'CANCELLED';
+  accrualEntryId: string | null;
+  reversalEntryId: string | null;
+  createdBy: string;
+  createdAt: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  totals: { currency: Currency; gross: string; net: string; unpaid: string }[];
+  employees: number;
+  unpaidEmployees: number;
+}
+
+export interface PayrollLine {
+  id: string;
+  employee: { id: string; nameAr: string; jobTitle: string | null };
+  currency: Currency;
+  branch: Branch;
+  salary: string;
+  bonus: string;
+  deduction: string;
+  deductionNote: string | null;
+  advanceDeduct: string;
+  gross: string;
+  net: string;
+  advanceBalance: string;
+  paid: { paymentId: string; boxName: string; paidAt: string } | null;
+}
+
+export type PayrollRunDetail = PayrollRun & { lines: PayrollLine[] };
+
+export interface PayrollSummary {
+  advances: { currency: Currency; amount: string }[];
+  unpaid: { currency: Currency; amount: string }[];
+  unpaidEmployees: number;
+  drafts: number;
+  missingMonth: string | null;
+  books: {
+    ok: boolean;
+    advances: { books: string; detail: string };
+    payable: { books: string; detail: string };
+  };
+}
+
+export type LinePatch = Partial<{
+  salary: string;
+  bonus: string;
+  deduction: string;
+  deductionNote: string;
+  advanceDeduct: string;
+}>;
+
 export const api = {
   mode: async () => get<{ practice: boolean; photos: boolean }>('/mode'),
   login: async (email: string, password: string) => post<User>('/auth/login', { email, password }),
@@ -810,6 +920,40 @@ export const api = {
     get<BalanceSheet>(`/accounting/reports/balance-sheet?${query(params)}`),
   checkBooks: async () => get<BooksCheck>('/accounting/check'),
   closingStatus: async () => get<ClosingStatus>('/accounting/periods'),
+  employees: async (includeInactive = false) =>
+    get<Employee[]>(`/payroll/employees?${query({ includeInactive: String(includeInactive) })}`),
+  employee: async (id: string) => get<EmployeeDetail>(`/payroll/employees/${id}`),
+  createEmployee: async (input: EmployeeInput) => post<Employee>('/payroll/employees', input),
+  updateEmployee: async (id: string, patch: Partial<EmployeeInput> & { isActive?: boolean }) =>
+    request<Employee>('PATCH', `/payroll/employees/${id}`, patch),
+  advance: async (
+    employeeId: string,
+    kind: 'advances' | 'repayments',
+    input: { boxId: string; amount: string; note?: string },
+    idempotencyKey: string,
+  ) =>
+    request<{ balance: string }>('POST', `/payroll/employees/${employeeId}/${kind}`, input, {
+      'idempotency-key': idempotencyKey,
+    }),
+  payrollSummary: async () => get<PayrollSummary>('/payroll/summary'),
+  payrollRuns: async () => get<PayrollRun[]>('/payroll/runs'),
+  payrollRun: async (id: string) => get<PayrollRunDetail>(`/payroll/runs/${id}`),
+  createPayrollRun: async (
+    input: { frequency: 'MONTHLY'; period: string } | { frequency: 'WEEKLY'; weekStart: string },
+  ) => post<PayrollRunDetail>('/payroll/runs', input),
+  updatePayrollLine: async (runId: string, lineId: string, patch: LinePatch) =>
+    request<PayrollRunDetail>('PATCH', `/payroll/runs/${runId}/lines/${lineId}`, patch),
+  removePayrollLine: async (runId: string, lineId: string) =>
+    request<PayrollRunDetail>('DELETE', `/payroll/runs/${runId}/lines/${lineId}`),
+  payrollAction: async (
+    runId: string,
+    action: 'approve' | 'cancel' | 'pay',
+    idempotencyKey: string,
+    body: { boxId?: string; lineIds?: string[] } = {},
+  ) =>
+    request<PayrollRunDetail>('POST', `/payroll/runs/${runId}/${action}`, body, {
+      'idempotency-key': idempotencyKey,
+    }),
   closeMonth: async (period: string) =>
     post<{ period: string; endsOn: string; revaluationEntryId: string | null }>(
       '/accounting/periods/close',

@@ -48,6 +48,11 @@ import type {
 } from './accounting.types.js';
 import { ensureLocationAccounts, installChart } from './chart.js';
 import { entryForMovement, INVENTORY_SOURCE, type InventoryAccounts } from './inventory-posting.js';
+import type {
+  AdvanceCashPosting,
+  PayrollAccrualPosting,
+  PayrollPaymentPosting,
+} from './payroll-posting.js';
 import {
   businessDate,
   closedThroughDate,
@@ -306,6 +311,10 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     if (!account.isActive) throw new AccountNotUsableError(id, 'INACTIVE');
     // Stock accounts move only with the goods (the books check depends on it).
     if (account.kind === 'INVENTORY') throw new AccountNotUsableError(id, 'INVENTORY');
+    // Advances and salaries owed move only with the payroll, whose detail they total.
+    if (account.systemRole === 'EMPLOYEE_ADVANCES' || account.systemRole === 'SALARIES_PAYABLE') {
+      throw new AccountNotUsableError(id, 'PAYROLL');
+    }
     if (use === 'cash' && account.kind !== 'CASH') throw new AccountNotUsableError(id, 'NOT_CASH');
     // Box to box is a transfer or an exchange, not a receipt.
     if (use === 'counter' && account.kind === 'CASH')
@@ -382,6 +391,148 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
         },
       ]);
       return id!;
+    },
+
+    // ─── Payroll (ADR-015): trusted calls, in the caller's transaction ───────────────────────
+
+    /**
+     * An advance handed out of a box (GIVE), or paid back into one (REPAY). Returns the USD value
+     * it adds to or takes from 1104: a repayment clears `clearedBase`, the value the advance was
+     * carried at; the box takes today's value, and the difference is an exchange difference.
+     */
+    async postAdvanceCash(
+      tx: Tx,
+      a: AdvanceCashPosting,
+    ): Promise<{ entryId: string; base: bigint }> {
+      const box = await usableAccount(tx, a.boxId, 'cash');
+      if (box.currency !== a.currency) {
+        throw new CurrencyMismatchError({ box: box.currency, employee: a.currency });
+      }
+      const rate = await rateFor(a.currency, undefined);
+      const advances = await accountByRole(tx, 'EMPLOYEE_ADVANCES');
+      const give = a.kind === 'GIVE';
+      const boxLine = line(box.id, a.currency, give ? -a.amount : a.amount, rate, {
+        branch: box.branch as Branch | null,
+      });
+      if (boxLine.amountBase === 0n) throw new AmountTooSmallError();
+      const base = give ? -boxLine.amountBase : (a.clearedBase ?? boxLine.amountBase);
+      const lines = [
+        boxLine,
+        lineAtBase(advances, a.currency, give ? a.amount : -a.amount, give ? base : -base, {
+          branch: a.branch,
+        }),
+      ];
+      const [entryId] = await postEntries(tx, [
+        {
+          voucherType: give ? 'PAYMENT' : 'RECEIPT',
+          entryDate: businessDate(new Date()),
+          memo: a.memo,
+          sourceType: 'EMPLOYEE_ADVANCE',
+          sourceId: a.sourceId,
+          createdById: a.createdById,
+          lines: await withExchangeDifference(tx, lines, a.branch),
+        },
+      ]);
+      return { entryId: entryId!, base };
+    },
+
+    /**
+     * An approved pay sheet: the expense at today's rate, the advances taken back at the value
+     * they were carried at, the net owed (2102) at today's rate. Returns each line's net value,
+     * which its payment later clears; no entry when the sheet is all zeros.
+     */
+    async postPayrollAccrual(
+      tx: Tx,
+      p: PayrollAccrualPosting,
+    ): Promise<{ entryId: string | null; netBases: bigint[] }> {
+      const expense = await accountByRole(tx, 'SALARIES_EXPENSE');
+      const advances = await accountByRole(tx, 'EMPLOYEE_ADVANCES');
+      const payable = await accountByRole(tx, 'SALARIES_PAYABLE');
+      const lines: DraftLine[] = [];
+      const netBases: bigint[] = [];
+      for (const l of p.lines) {
+        const rate = await rateFor(l.currency, undefined);
+        const extra = { branch: l.branch, memo: l.memo };
+        const owed = line(payable, l.currency, -l.net, rate, extra);
+        const own = [line(expense, l.currency, l.gross, rate, extra), owed];
+        if (l.advanceAmount > 0n) {
+          own.push(lineAtBase(advances, l.currency, -l.advanceAmount, -l.advanceBase, extra));
+        }
+        // Each employee's exchange difference stays in their own country.
+        lines.push(...(await withExchangeDifference(tx, own, l.branch)));
+        netBases.push(-owed.amountBase);
+      }
+      const kept = lines.filter((l) => l.amountBase !== 0n || l.amountCurrency !== 0n);
+      if (kept.length < 2) return { entryId: null, netBases };
+      const [entryId] = await postEntries(tx, [
+        {
+          voucherType: 'PAYROLL',
+          entryDate: p.entryDate,
+          memo: p.memo,
+          sourceType: 'PAYROLL_RUN',
+          sourceId: p.runId,
+          createdById: p.createdById,
+          lines: kept,
+        },
+      ]);
+      return { entryId: entryId!, netBases };
+    },
+
+    /** Net pay handed out of one box: 2102 cleared at the value owed, the box at today's rate. */
+    async postPayrollPayment(tx: Tx, p: PayrollPaymentPosting): Promise<string | null> {
+      const box = await usableAccount(tx, p.boxId, 'cash');
+      if (box.currency !== p.currency) {
+        throw new CurrencyMismatchError({ box: box.currency, employee: p.currency });
+      }
+      const rate = await rateFor(p.currency, undefined);
+      const payable = await accountByRole(tx, 'SALARIES_PAYABLE');
+      const total = p.items.reduce((s, i) => s + i.net, 0n);
+      const lines = [
+        ...p.items.map((i) =>
+          lineAtBase(payable, p.currency, i.net, i.netBase, { branch: i.branch, memo: i.memo }),
+        ),
+        line(box.id, p.currency, -total, rate, { branch: box.branch as Branch | null }),
+      ].filter((l) => l.amountBase !== 0n || l.amountCurrency !== 0n);
+      if (lines.length < 2) return null;
+      const [entryId] = await postEntries(tx, [
+        {
+          voucherType: 'PAYMENT',
+          entryDate: businessDate(new Date()),
+          memo: p.memo,
+          sourceType: 'PAYROLL_PAYMENT',
+          sourceId: p.paymentId,
+          createdById: p.createdById,
+          lines: await withExchangeDifference(tx, lines, box.branch as Branch | null),
+        },
+      ]);
+      return entryId!;
+    },
+
+    /** Undoes, today, an entry posted for another module (a cancelled pay sheet). */
+    async reverseSystemEntry(
+      tx: Tx,
+      entryId: string,
+      r: { createdById: string; memo: string },
+    ): Promise<string> {
+      const entry = await reports.getEntry(tx, entryId);
+      if (!entry) throw new NotFoundError('entry', entryId);
+      if (entry.reversedById) throw new EntryNotReversibleError(entryId, 'ALREADY_REVERSED');
+      const [id] = await postEntries(tx, [reversalOf(entry, businessDate(new Date()), r)]);
+      return id!;
+    },
+
+    /** USD cents on the account with this role, all dates: what payroll checks itself against. */
+    async balanceOfRole(q: Queryable, role: SystemRole): Promise<bigint> {
+      const id = await accountByRole(q, role);
+      return (await reports.sumsByAccount(q)).get(id)?.base ?? 0n;
+    },
+
+    /** A cash box's currency, for a caller choosing whom a box can pay. */
+    async cashBox(q: Queryable, id: string): Promise<{ id: string; currency: Currency }> {
+      const row = await q.glAccount.findUnique({ where: { id } });
+      if (!row) throw new NotFoundError('account', id);
+      if (row.kind !== 'CASH') throw new AccountNotUsableError(id, 'NOT_CASH');
+      return { id: row.id, currency: row.currency as Currency };
     },
 
     /** At start-up (main.ts) and in tests: the default chart, once. */
@@ -497,7 +648,9 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
           async () => {
             const entry = await reports.getEntry(tx, id);
             if (!entry) throw new NotFoundError('entry', id);
-            if (entry.sourceType === INVENTORY_SOURCE || entry.voucherType === 'REVALUATION') {
+            // An entry another module posted (stock, a POS shift, payroll) is undone there, so its
+            // own records stay in step with the books.
+            if (entry.sourceType || entry.voucherType === 'REVALUATION') {
               throw new EntryNotReversibleError(id, 'SYSTEM');
             }
             if (entry.voucherType === 'REVERSAL') {
@@ -509,23 +662,7 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
             if (entryDate > today) throw new DateInFutureError(entryDate);
             return postOne(
               tx,
-              {
-                voucherType: 'REVERSAL',
-                entryDate,
-                memo: data.memo || `عكس القيد ${entry.voucherYear}/${entry.voucherNo}`,
-                reversesId: entry.id,
-                createdById: ctx.userId,
-                lines: entry.lines.map((l) => ({
-                  accountId: l.account.id,
-                  amountBase: -l.amountBase,
-                  currency: l.currency,
-                  amountCurrency: -l.amountCurrency,
-                  rate: l.rate,
-                  branch: l.branch,
-                  locationId: l.locationId,
-                  memo: l.memo,
-                })),
-              },
+              reversalOf(entry, entryDate, { createdById: ctx.userId, memo: data.memo }),
               'accounting.reverse',
               ctx,
             );
@@ -697,6 +834,18 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     return monthEnd(period) < businessDate(new Date()) ? period : null;
   }
 
+  /** Whatever the lines leave unbalanced (two valuations of one amount) goes to FX_REALIZED. */
+  async function withExchangeDifference(
+    q: Queryable,
+    lines: DraftLine[],
+    branch: Branch | null,
+  ): Promise<DraftLine[]> {
+    const residual = lines.reduce((s, l) => s + l.amountBase, 0n);
+    if (residual === 0n) return lines;
+    const fx = await accountByRole(q, 'FX_REALIZED');
+    return [...lines, line(fx, 'USD', -residual, '1', { branch })];
+  }
+
   async function revaluationFor(q: Queryable, endsOn: string, rates: Map<Currency, string>) {
     const foreign = (await accounts(q)).filter(
       (a) => a.isPostable && a.currency !== null && a.currency !== 'USD',
@@ -721,6 +870,31 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     const fx = await accountByRole(q, 'FX_UNREALIZED');
     return { lines: revaluationLines(balances, rates, fx), missingRates };
   }
+}
+
+/** قيد عكسي: the same lines with opposite signs. */
+function reversalOf(
+  entry: EntryView,
+  entryDate: string,
+  r: { createdById: string; memo?: string | undefined },
+): DraftEntry {
+  return {
+    voucherType: 'REVERSAL',
+    entryDate,
+    memo: r.memo || `عكس القيد ${entry.voucherYear}/${entry.voucherNo}`,
+    reversesId: entry.id,
+    createdById: r.createdById,
+    lines: entry.lines.map((l) => ({
+      accountId: l.account.id,
+      amountBase: -l.amountBase,
+      currency: l.currency,
+      amountCurrency: -l.amountCurrency,
+      rate: l.rate,
+      branch: l.branch,
+      locationId: l.locationId,
+      memo: l.memo,
+    })),
+  };
 }
 
 /** The other side of a line: same amount and currency, opposite sign, on `accountId`. */

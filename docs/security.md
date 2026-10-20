@@ -63,8 +63,8 @@ accounting.post        (implemented: vouchers, reversals)
 accounting.close       (implemented: close a month, edit the chart)
 retail.sell            (implemented, ADR-014: sell, open and close one's own shift)
 retail.manage          (implemented: discounts, refunds, closing another person's shift)
-employees.read
-employees.salary.read
+employees.read         (implemented, ADR-015: names and jobs, no pay)
+payroll.manage         (implemented: salaries, advances, pay sheets, paying)
 admin.users.write
 admin.locations.write
 admin.rates.write
@@ -76,11 +76,11 @@ Starting roles:
 | Role | Arabic | Shape |
 | --- | --- | --- |
 | `owner` | مدير عام | everything |
-| `manager` | مدير | everything except `admin.*` and `employees.salary.*`; sets prices (`prices.write`) |
+| `manager` | مدير | everything except `admin.*` and `payroll.*`; sets prices (`prices.write`) |
 | `inventory_manager` | مدير مخزون | all `inventory.*`, including adjust, stocktake apply, and cost |
 | `warehouse_keeper` | أمين مستودع | view, receive, issue, return, transfer, damage, stocktake count; no adjust, no apply, no cost |
 | `store_staff` | موظف متجر | view stock, record sales (`inventory.issue`) and returns (`inventory.return`) until the POS exists; no cost |
-| `accountant` | محاسب | accounting, invoicing, `inventory.view`, `inventory.cost.view` |
+| `accountant` | محاسب | accounting, invoicing, payroll (`payroll.manage`), `inventory.view`, `inventory.cost.view` |
 | `wholesale_customer` | زبون جملة | own orders, own invoices, own prices, nothing else |
 
 The full inventory permission table, with what each allows, is in `docs/inventory.md`.

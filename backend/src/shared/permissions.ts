@@ -38,6 +38,14 @@ export const PERMISSIONS = {
     sell: 'retail.sell',
     manage: 'retail.manage',
   },
+  // Payroll (ADR-015). employees.read sees who works here, not what they earn; payroll.manage
+  // sees salaries and advances, keeps the employee list, and pays.
+  employees: {
+    read: 'employees.read',
+  },
+  payroll: {
+    manage: 'payroll.manage',
+  },
   admin: {
     users: 'admin.users.write',
     // Renaming warehouses and the store.

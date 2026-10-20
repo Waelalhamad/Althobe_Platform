@@ -141,6 +141,27 @@ Amounts in SYP minor units, except payments (their own currency). Sales and refu
 Errors: `SHIFT_ALREADY_OPEN`, `SHIFT_NOT_OPEN` (409), `LOCATION_NOT_A_STORE`, `NO_RETAIL_PRICE`,
 `PAYMENT_TOO_LOW`, `REFUND_EXCEEDS_SALE`, `NOT_REFUNDABLE`, `RATE_NOT_SET` (422).
 
+## Endpoints — Payroll (ADR-015) — implemented
+
+Amounts in minor units of the employee's currency. Advances, approving, paying and cancelling
+**require `Idempotency-Key`**.
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `GET` | `/payroll/employees?includeInactive=` (salary and advance balance only with `payroll.manage`) | `employees.read` or `payroll.manage` |
+| `POST` / `PATCH` | `/payroll/employees` · `/payroll/employees/:id` — `{ nameAr, jobTitle?, phone?, branch, currency, salary, frequency, notes?, isActive? }` | `payroll.manage` |
+| `GET` | `/payroll/employees/:id` (advances and pay history; audited) | `payroll.manage` |
+| `POST` | `/payroll/employees/:id/advances` · `/repayments` — `{ boxId, amount, note? }` | `payroll.manage` |
+| `GET` | `/payroll/summary` (advances and unpaid pay per currency, missing month, books check) | `payroll.manage` |
+| `GET` / `POST` | `/payroll/runs` / `{ frequency: 'MONTHLY', period: '2026-09' }` or `{ frequency: 'WEEKLY', weekStart }` | `payroll.manage` |
+| `GET` | `/payroll/runs/:id` | `payroll.manage` |
+| `PATCH` / `DELETE` | `/payroll/runs/:id/lines/:lineId` — `{ salary?, bonus?, deduction?, deductionNote?, advanceDeduct? }` (drafts only) | `payroll.manage` |
+| `POST` | `/payroll/runs/:id/approve` · `/cancel` · `/pay` — pay: `{ boxId, lineIds? }` | `payroll.manage` |
+
+Errors: `PAYROLL_PERIOD_TAKEN`, `PAYROLL_NOT_DRAFT`, `PAYROLL_NOT_APPROVED`,
+`PAYROLL_HAS_PAYMENTS`, `EMPLOYEE_CURRENCY_LOCKED` (409), `NO_EMPLOYEES`, `NOTHING_TO_PAY`,
+`ADVANCE_EXCEEDS_BALANCE`, `PAY_BELOW_ZERO`, `CURRENCY_MISMATCH`, `RATE_NOT_SET` (422).
+
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).
 

@@ -12,6 +12,8 @@ export const VOUCHER_TYPES = [
   'REVERSAL',
   // A closed POS shift (ADR-014).
   'RETAIL',
+  // An approved pay sheet: the period's salary expense (ADR-015).
+  'PAYROLL',
 ] as const;
 export type VoucherType = (typeof VOUCHER_TYPES)[number];
 
@@ -43,7 +45,11 @@ export type SystemRole =
   | 'STORE_CASH_TRY'
   | 'CASH_OVER_SHORT'
   | 'RETAIL_SALES_SY'
-  | 'SALES_RETURNS';
+  | 'SALES_RETURNS'
+  // Payroll (ADR-015). Advances and salaries owed are posted by the payroll module only.
+  | 'EMPLOYEE_ADVANCES'
+  | 'SALARIES_PAYABLE'
+  | 'SALARIES_EXPENSE';
 
 /** A line about to be posted. amountBase is USD cents, debit positive. */
 export interface DraftLine {

@@ -33,6 +33,7 @@ import { EntriesPage, EntryPage } from './pages/Entries';
 import { FinancePage } from './pages/Finance';
 import { FinanceReportsPage, type ReportTab } from './pages/FinanceReports';
 import { VoucherPage, type VoucherKind } from './pages/Voucher';
+import { EmployeePage, PayrollPage, PayrollRunPage } from './pages/Payroll';
 import { PosPage } from './pages/Pos';
 import { PosShiftPage, PosShiftsPage } from './pages/PosShifts';
 import { ReceiptPage } from './pages/Receipt';
@@ -171,6 +172,18 @@ const routes = [
     component: FinanceReportsPage,
   }),
   createRoute({ getParentRoute: () => appRoute, path: '/finance/close', component: ClosePage }),
+  // Payroll (ADR-015)
+  createRoute({ getParentRoute: () => appRoute, path: '/finance/payroll', component: PayrollPage }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/payroll/$runId',
+    component: PayrollRunPage,
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/finance/employees/$employeeId',
+    component: EmployeePage,
+  }),
   // Point of sale (ADR-014)
   createRoute({ getParentRoute: () => appRoute, path: '/pos', component: PosPage }),
   createRoute({

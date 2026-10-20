@@ -8,8 +8,9 @@ const inventoryAll = Object.values(P.inventory);
 
 export const ROLES = {
   owner: ALL_PERMISSIONS,
-  // docs/security.md: everything except admin.* — only the owner manages accounts.
-  manager: ALL_PERMISSIONS.filter((p) => !p.startsWith('admin.')),
+  // docs/security.md: everything except admin.* — only the owner manages accounts — and the
+  // salaries, which only the owner and the accountant see (ADR-015).
+  manager: ALL_PERMISSIONS.filter((p) => !p.startsWith('admin.') && !p.startsWith('payroll.')),
   inventory_manager: [...inventoryAll, P.products.read, P.products.write],
   warehouse_keeper: [
     P.inventory.view,
@@ -35,6 +36,8 @@ export const ROLES = {
     P.products.read,
     P.accounting.view,
     P.accounting.post,
+    P.employees.read,
+    P.payroll.manage,
   ],
 } satisfies Record<string, readonly Permission[]>;
 

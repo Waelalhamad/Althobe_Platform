@@ -78,7 +78,13 @@ export function VoucherPage() {
   const { data: user } = useQuery(meQuery);
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
-  const usable = accounts.filter((a) => a.isPostable && a.isActive);
+  // Advances and salaries owed move only with the payroll (ADR-015); the server refuses them too.
+  const usable = accounts.filter(
+    (a) =>
+      a.isPostable &&
+      a.isActive &&
+      !['EMPLOYEE_ADVANCES', 'SALARIES_PAYABLE'].includes(a.systemRole ?? ''),
+  );
   const boxes = usable.filter((a) => a.kind === 'CASH');
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const ownerRate = (c: Currency | null | undefined) =>

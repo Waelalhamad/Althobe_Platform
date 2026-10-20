@@ -141,3 +141,22 @@ export const balanceSheetQuery = (params: { asOf?: string; branch?: Branch }) =>
     queryKey: ['books', 'balance-sheet', params],
     queryFn: async () => api.balanceSheet(params),
   });
+
+// ─── Payroll (ADR-015). Keys start with 'payroll'; what it posts also changes 'books'. ─────────
+export const employeesQuery = (includeInactive = false) =>
+  queryOptions({
+    queryKey: ['payroll', 'employees', includeInactive],
+    queryFn: async () => api.employees(includeInactive),
+  });
+export const employeeQuery = (id: string) =>
+  queryOptions({ queryKey: ['payroll', 'employee', id], queryFn: async () => api.employee(id) });
+export const payrollSummaryQuery = queryOptions({
+  queryKey: ['payroll', 'summary'],
+  queryFn: api.payrollSummary,
+});
+export const payrollRunsQuery = queryOptions({
+  queryKey: ['payroll', 'runs'],
+  queryFn: api.payrollRuns,
+});
+export const payrollRunQuery = (id: string) =>
+  queryOptions({ queryKey: ['payroll', 'run', id], queryFn: async () => api.payrollRun(id) });

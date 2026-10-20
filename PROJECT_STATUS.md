@@ -27,6 +27,19 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Payroll and advances (2026-10-20, ADR-015):**
+- **Employees** with their salary, its currency (SYP, USD, LYD, TRY) and whether they are paid
+  monthly or weekly, under «المالية» → «الرواتب والسلف».
+- **Advances:** given out of a box, taken back on a pay sheet (the owner picks how much) or paid
+  back in cash; each employee's page shows what they owe and every movement.
+- **Pay sheets:** new sheet → edit bonus, deduction, advance → approve (the salary expense goes
+  into its own month) → pay from a box per currency, everyone or one by one. An approved sheet
+  nobody was paid from can be cancelled.
+- **The books stay in step:** 1104 and 2102 move only with payroll and are checked against it;
+  «اليوم» shows unpaid salaries and a missing sheet; «إقفال الشهر» warns before closing a month
+  without its sheet.
+- **Who sees salaries:** the owner and the accountant only.
+
 **Simpler app (2026-10-20, research report «تبسيط واجهة نظام الثوب»):**
 - **One home per job:** the owner lands on «اليوم» (sold today, money per box, what needs
   attention, six big actions); a cashier goes straight to the till; warehouse staff get «عمل
@@ -105,7 +118,7 @@ yellow «وضع التدريب» banner — for learning the scanner and printer
 | 4 | Store / POS | ✅ Syrian store (2026-10-20, ADR-014) |
 | 5 | Purchasing | |
 | 6 | Sales + customers | |
-| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7c ✅ POS posting (2026-10-20) · 7b parties · 7d payroll |
+| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7c ✅ POS posting (2026-10-20) · 7d ✅ payroll (2026-10-20, ADR-015) · 7b parties |
 
 MVP path: Products/Variants → Barcode → Locations → Receive → Transfer → Count → Balance → Audit →
 Scanner UI, then connect the store.

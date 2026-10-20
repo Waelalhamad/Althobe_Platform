@@ -14,7 +14,9 @@ financial reports, and closing a month. Base currency USD; each line also keeps 
 ## Used By
 
 - the warehouse app, under «المالية»
-- later: the POS (shift sales), purchasing (supplier bills) and payroll
+- payroll (ADR-015): `postAdvanceCash`, `postPayrollAccrual`, `postPayrollPayment`,
+  `reverseSystemEntry` — 1104 and 2102 move only this way
+- later: purchasing (supplier bills)
 
 ## Important Rules
 

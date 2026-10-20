@@ -573,6 +573,75 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     priv.post('/retail/sales/:id/refund', async (request: Id) => ({
       data: await pos.refund(request.params.id, request.body as never, writeContextOf(request)),
     }));
+
+    // ── Payroll (ADR-015). Advances, approving, paying and cancelling require Idempotency-Key.
+    const pay = s.payroll;
+    type LineId = FastifyRequest<{ Params: { id: string; lineId: string } }>;
+
+    priv.get('/payroll/employees', async (request: Query) => ({
+      data: await pay.listEmployees(request.query, actorOf(request)),
+    }));
+
+    priv.post('/payroll/employees', async (request) => ({
+      data: await pay.createEmployee(request.body, actorOf(request)),
+    }));
+
+    priv.get('/payroll/employees/:id', async (request: Id) => ({
+      data: await pay.getEmployee(request.params.id, actorOf(request)),
+    }));
+
+    priv.patch('/payroll/employees/:id', async (request: Id) => ({
+      data: await pay.updateEmployee(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.post('/payroll/employees/:id/advances', async (request: Id) => ({
+      data: await pay.giveAdvance(request.params.id, request.body, writeContextOf(request)),
+    }));
+
+    priv.post('/payroll/employees/:id/repayments', async (request: Id) => ({
+      data: await pay.repayAdvance(request.params.id, request.body, writeContextOf(request)),
+    }));
+
+    priv.get('/payroll/summary', async (request) => ({
+      data: await pay.summary(actorOf(request)),
+    }));
+
+    priv.get('/payroll/runs', async (request) => ({
+      data: await pay.listRuns(actorOf(request)),
+    }));
+
+    priv.post('/payroll/runs', async (request) => ({
+      data: await pay.createRun(request.body, actorOf(request)),
+    }));
+
+    priv.get('/payroll/runs/:id', async (request: Id) => ({
+      data: await pay.getRun(request.params.id, actorOf(request)),
+    }));
+
+    priv.patch('/payroll/runs/:id/lines/:lineId', async (request: LineId) => ({
+      data: await pay.updateLine(
+        request.params.id,
+        request.params.lineId,
+        request.body,
+        actorOf(request),
+      ),
+    }));
+
+    priv.delete('/payroll/runs/:id/lines/:lineId', async (request: LineId) => ({
+      data: await pay.removeLine(request.params.id, request.params.lineId, actorOf(request)),
+    }));
+
+    priv.post('/payroll/runs/:id/approve', async (request: Id) => ({
+      data: await pay.approveRun(request.params.id, writeContextOf(request)),
+    }));
+
+    priv.post('/payroll/runs/:id/pay', async (request: Id) => ({
+      data: await pay.payRun(request.params.id, request.body, writeContextOf(request)),
+    }));
+
+    priv.post('/payroll/runs/:id/cancel', async (request: Id) => ({
+      data: await pay.cancelRun(request.params.id, writeContextOf(request)),
+    }));
     done();
   });
 }

@@ -140,22 +140,26 @@ model User {
 
   sessions Session[]
 
-  movements          InventoryMovement[]
-  reservations       Reservation[]
-  scanSessions       ScanSession[]        @relation("ScanSessionCreatedBy")
-  scanSessionsClosed ScanSession[]        @relation("ScanSessionCommittedBy")
-  scanEvents         ScanSessionEvent[]
-  stocktakesCreated  Stocktake[]          @relation("StocktakeCreatedBy")
-  stocktakesApplied  Stocktake[]          @relation("StocktakeAppliedBy")
-  stocktakeEvents    StocktakeScanEvent[]
-  auditLogs          AuditLog[]
-  productPhotos      ProductPhoto[]
-  exchangeRates      ExchangeRate[]
-  journalEntries     JournalEntry[]
-  periodsClosed      AccountingPeriod[]
-  shiftsOpened       PosShift[]           @relation("PosShiftOpenedBy")
-  shiftsClosed       PosShift[]           @relation("PosShiftClosedBy")
-  posSales           PosSale[]
+  movements           InventoryMovement[]
+  reservations        Reservation[]
+  scanSessions        ScanSession[]        @relation("ScanSessionCreatedBy")
+  scanSessionsClosed  ScanSession[]        @relation("ScanSessionCommittedBy")
+  scanEvents          ScanSessionEvent[]
+  stocktakesCreated   Stocktake[]          @relation("StocktakeCreatedBy")
+  stocktakesApplied   Stocktake[]          @relation("StocktakeAppliedBy")
+  stocktakeEvents     StocktakeScanEvent[]
+  auditLogs           AuditLog[]
+  productPhotos       ProductPhoto[]
+  exchangeRates       ExchangeRate[]
+  journalEntries      JournalEntry[]
+  periodsClosed       AccountingPeriod[]
+  shiftsOpened        PosShift[]           @relation("PosShiftOpenedBy")
+  shiftsClosed        PosShift[]           @relation("PosShiftClosedBy")
+  posSales            PosSale[]
+  payrollRunsCreated  PayrollRun[]         @relation("PayrollRunCreatedBy")
+  payrollRunsApproved PayrollRun[]         @relation("PayrollRunApprovedBy")
+  payrollPayments     PayrollPayment[]
+  employeeAdvances    EmployeeAdvance[]
 
   @@map("users")
 }
@@ -735,10 +739,11 @@ model GlAccount {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  parent   GlAccount?    @relation("GlAccountTree", fields: [parentId], references: [id])
-  children GlAccount[]   @relation("GlAccountTree")
-  location Location?     @relation(fields: [locationId], references: [id])
-  lines    JournalLine[]
+  parent          GlAccount?       @relation("GlAccountTree", fields: [parentId], references: [id])
+  children        GlAccount[]      @relation("GlAccountTree")
+  location        Location?        @relation(fields: [locationId], references: [id])
+  lines           JournalLine[]
+  payrollPayments PayrollPayment[]
 
   @@index([parentId], map: "idx_gl_accounts_parent_id")
   @@map("gl_accounts")
@@ -758,12 +763,16 @@ model JournalEntry {
   createdById String   @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  reverses   JournalEntry?      @relation("JournalReversal", fields: [reversesId], references: [id])
-  reversedBy JournalEntry?      @relation("JournalReversal")
-  createdBy  User               @relation(fields: [createdById], references: [id])
-  lines      JournalLine[]
-  periods    AccountingPeriod[]
-  posShifts  PosShift[]
+  reverses         JournalEntry?      @relation("JournalReversal", fields: [reversesId], references: [id])
+  reversedBy       JournalEntry?      @relation("JournalReversal")
+  createdBy        User               @relation(fields: [createdById], references: [id])
+  lines            JournalLine[]
+  periods          AccountingPeriod[]
+  posShifts        PosShift[]
+  payrollAccruals  PayrollRun[]       @relation("PayrollRunAccrual")
+  payrollReversals PayrollRun[]       @relation("PayrollRunReversal")
+  payrollPayments  PayrollPayment[]
+  employeeAdvances EmployeeAdvance[]
 
   @@unique([voucherType, voucherYear, voucherNo], map: "uq_journal_entries_voucher")
   @@unique([sourceType, sourceId], map: "uq_journal_entries_source")
@@ -941,4 +950,121 @@ model PosCounter {
 
   @@id([kind, year])
   @@map("pos_counters")
+}
+
+// ─── Payroll (ADR-015) ──────────────────────────────────────────────────────────────────────
+
+model Employee {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  nameAr    String   @map("name_ar")
+  phone     String?
+  jobTitle  String?  @map("job_title")
+  // SY · LY
+  branch    String   @default("SY") @db.Char(2)
+  currency  String   @db.Char(3)
+  // Per pay period, minor units of `currency`.
+  salary    BigInt
+  // MONTHLY · WEEKLY
+  frequency String   @default("MONTHLY")
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lines    PayrollLine[]
+  advances EmployeeAdvance[]
+
+  @@map("employees")
+}
+
+model PayrollRun {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  // MONTHLY · WEEKLY
+  frequency       String
+  periodStart     DateTime  @map("period_start") @db.Date
+  periodEnd       DateTime  @map("period_end") @db.Date
+  // DRAFT · APPROVED · CANCELLED
+  status          String    @default("DRAFT")
+  accrualEntryId  String?   @map("accrual_entry_id") @db.Uuid
+  reversalEntryId String?   @map("reversal_entry_id") @db.Uuid
+  createdById     String    @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  approvedById    String?   @map("approved_by") @db.Uuid
+  approvedAt      DateTime? @map("approved_at") @db.Timestamptz(3)
+  cancelledAt     DateTime? @map("cancelled_at") @db.Timestamptz(3)
+
+  accrualEntry  JournalEntry?    @relation("PayrollRunAccrual", fields: [accrualEntryId], references: [id])
+  reversalEntry JournalEntry?    @relation("PayrollRunReversal", fields: [reversalEntryId], references: [id])
+  createdBy     User             @relation("PayrollRunCreatedBy", fields: [createdById], references: [id])
+  approvedBy    User?            @relation("PayrollRunApprovedBy", fields: [approvedById], references: [id])
+  lines         PayrollLine[]
+  payments      PayrollPayment[]
+
+  @@index([periodStart(sort: Desc)], map: "idx_payroll_runs_period_start")
+  @@map("payroll_runs")
+}
+
+model PayrollPayment {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  runId          String   @map("run_id") @db.Uuid
+  boxAccountId   String   @map("box_account_id") @db.Uuid
+  currency       String   @db.Char(3)
+  amount         BigInt
+  journalEntryId String?  @map("journal_entry_id") @db.Uuid
+  paidById       String   @map("paid_by") @db.Uuid
+  paidAt         DateTime @default(now()) @map("paid_at") @db.Timestamptz(3)
+
+  run          PayrollRun    @relation(fields: [runId], references: [id])
+  box          GlAccount     @relation(fields: [boxAccountId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  paidBy       User          @relation(fields: [paidById], references: [id])
+  lines        PayrollLine[]
+
+  @@map("payroll_payments")
+}
+
+model PayrollLine {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  runId         String  @map("run_id") @db.Uuid
+  employeeId    String  @map("employee_id") @db.Uuid
+  currency      String  @db.Char(3)
+  branch        String  @db.Char(2)
+  salary        BigInt
+  bonus         BigInt  @default(0)
+  deduction     BigInt  @default(0)
+  deductionNote String? @map("deduction_note")
+  advanceDeduct BigInt  @default(0) @map("advance_deduct")
+  netBase       BigInt? @map("net_base")
+  paymentId     String? @map("payment_id") @db.Uuid
+
+  run      PayrollRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee Employee          @relation(fields: [employeeId], references: [id])
+  payment  PayrollPayment?   @relation(fields: [paymentId], references: [id])
+  advances EmployeeAdvance[]
+
+  @@unique([runId, employeeId], map: "uq_payroll_lines_run_employee")
+  @@index([employeeId], map: "idx_payroll_lines_employee_id")
+  @@map("payroll_lines")
+}
+
+model EmployeeAdvance {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  employeeId     String   @map("employee_id") @db.Uuid
+  // GIVEN · REPAID · DEDUCTED · RESTORED
+  kind           String
+  amount         BigInt
+  amountBase     BigInt   @map("amount_base")
+  journalEntryId String?  @map("journal_entry_id") @db.Uuid
+  payrollLineId  String?  @map("payroll_line_id") @db.Uuid
+  note           String?
+  createdById    String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee     Employee      @relation(fields: [employeeId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  payrollLine  PayrollLine?  @relation(fields: [payrollLineId], references: [id])
+  createdBy    User          @relation(fields: [createdById], references: [id])
+
+  @@index([employeeId, createdAt], map: "idx_employee_advances_employee")
+  @@map("employee_advances")
 }

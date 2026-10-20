@@ -26,7 +26,8 @@ export class RateNotSetError extends DomainError {
 export class AccountNotUsableError extends DomainError {
   constructor(
     accountId: string,
-    reason: 'HEADING' | 'INACTIVE' | 'NOT_CASH' | 'INVENTORY' | 'SAME_ACCOUNT' | 'IS_CASH',
+    reason:
+      'HEADING' | 'INACTIVE' | 'NOT_CASH' | 'INVENTORY' | 'SAME_ACCOUNT' | 'IS_CASH' | 'PAYROLL',
   ) {
     super('ACCOUNT_NOT_USABLE', 'This account cannot be used here', { accountId, reason });
   }
