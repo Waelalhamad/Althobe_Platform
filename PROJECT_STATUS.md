@@ -27,6 +27,19 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Simpler app (2026-10-20, research report «تبسيط واجهة نظام الثوب»):**
+- **One home per job:** the owner lands on «اليوم» (sold today, money per box, what needs
+  attention, six big actions); a cashier goes straight to the till; warehouse staff get «عمل
+  المخزون».
+- **The switch** المخزون | المتجر | المالية shows only to people with more than one side.
+- **Setup in one place:** «الإعدادات» holds options, rates (once), locations, users and the
+  chart of accounts.
+- **Selling at the store is the POS only;** the warehouse keeps «إخراج بضاعة».
+- **Money in plain words:** مصروف، مصاري دخلت، تحويل، صرافة, with the expense form showing
+  expense accounts first. Entries, the chart and closing a month are grouped «للمحاسب».
+- **Small fixes:** Arabic-Indic digits are accepted in amounts and barcodes; an offline banner
+  shows when the connection drops; bigger buttons at the till.
+
 **Point of sale (2026-10-20, ADR-014):**
 - «المتجر» is the third side of the switch.
 - **Shifts:** a shift opens with the drawer counted in SYP, USD and TRY, and closes with it

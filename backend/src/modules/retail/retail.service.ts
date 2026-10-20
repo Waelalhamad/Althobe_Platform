@@ -362,6 +362,48 @@ export function createRetailService(db: Db, deps: RetailDeps) {
       return { variant, price: variant.prices.retailSyp?.amount ?? null, available };
     },
 
+    /**
+     * «اليوم» for the owner: what the store sold since midnight in Damascus (UTC+3), and what it
+     * earned over what the pieces cost. Refunds count against both.
+     */
+    async today(ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.retail.sell);
+      const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Damascus' }).format(
+        new Date(),
+      );
+      const since = new Date(`${day}T00:00:00+03:00`);
+      const rows = await db.posSale.findMany({
+        where: { createdAt: { gte: since } },
+        select: {
+          kind: true,
+          total: true,
+          totalBase: true,
+          lines: { select: { quantity: true, unitCostBase: true } },
+        },
+      });
+      const sign = (kind: string) => (kind === 'SALE' ? 1n : -1n);
+      const sum = (f: (r: (typeof rows)[number]) => bigint) =>
+        rows.reduce((s, r) => s + sign(r.kind) * f(r), 0n);
+      const salesBase = sum((r) => r.totalBase);
+      const costBase = sum((r) =>
+        r.lines.reduce((s, l) => s + l.unitCostBase * BigInt(l.quantity), 0n),
+      );
+      return {
+        day,
+        receipts: rows.filter((r) => r.kind === 'SALE').length,
+        refunds: rows.filter((r) => r.kind === 'REFUND').length,
+        /** Net of refunds: SYP minor units, and USD cents. */
+        total: sum((r) => r.total),
+        totalBase: salesBase,
+        /** Sales − what the pieces cost, USD cents. */
+        profitBase: salesBase - costBase,
+        pieces: rows.reduce(
+          (s, r) => s + Number(sign(r.kind)) * r.lines.reduce((n, l) => n + l.quantity, 0),
+          0,
+        ),
+      };
+    },
+
     /** One sale: the pieces leave the store, the receipt is issued, all in one transaction. */
     async sell(input: SaleInput, ctx: WriteContext): Promise<SaleView> {
       assertPermission(ctx, PERMISSIONS.retail.sell);

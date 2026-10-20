@@ -685,7 +685,11 @@ export function createCatalogueService(db: Db) {
      * never guessed.
      */
     async lookupBarcode(q: Queryable, rawCode: string): Promise<VariantView> {
-      const code = rawCode.trim();
+      // A keyboard or scanner set to Arabic types ٠١٢… (or Persian ۰۱۲…): the same code.
+      const code = rawCode
+        .trim()
+        .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
       const found =
         (/^\d{13}$/.test(code) && !isMisreadEan13(code)
           ? await repo.findVariantByBarcode(q, code)

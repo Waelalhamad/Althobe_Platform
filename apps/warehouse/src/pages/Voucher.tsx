@@ -25,11 +25,41 @@ import {
   voucherNumber,
 } from '../format';
 import { PAGES } from '../help';
-import { glAccountsQuery, ratesQuery } from '../queries';
+import { can, glAccountsQuery, meQuery, ratesQuery } from '../queries';
 import { AccountSelect, useRefreshBooks } from './finance-parts';
 
 export type VoucherKind = 'RECEIPT' | 'PAYMENT' | 'TRANSFER' | 'EXCHANGE' | 'JOURNAL';
-const KINDS: VoucherKind[] = ['RECEIPT', 'PAYMENT', 'TRANSFER', 'EXCHANGE', 'JOURNAL'];
+const KINDS: VoucherKind[] = ['PAYMENT', 'RECEIPT', 'TRANSFER', 'EXCHANGE', 'JOURNAL'];
+
+/** What the person did, then the paper's familiar name. */
+const TITLE: Record<VoucherKind, string> = {
+  PAYMENT: 'مصروف — مصاري طلعت (سند صرف)',
+  RECEIPT: 'مصاري دخلت (سند قبض)',
+  TRANSFER: 'تحويل بين صناديق',
+  EXCHANGE: 'صرافة',
+  JOURNAL: 'قيد يومية (للمحاسب)',
+};
+const CHIP: Record<VoucherKind, string> = {
+  PAYMENT: 'مصروف',
+  RECEIPT: 'مصاري دخلت',
+  TRANSFER: 'تحويل',
+  EXCHANGE: 'صرافة',
+  JOURNAL: 'قيد يومية',
+};
+
+/**
+ * The accounts that answer "on what?" for most money in or out; the rest wait behind
+ * «كل الحسابات». Expenses for money out; sales, the owner and opening balances for money in.
+ */
+function commonFor(kind: VoucherKind, a: GlAccount): boolean {
+  if (kind === 'PAYMENT') {
+    return a.code.startsWith('52') || ['OWNER_CURRENT', 'PAYABLE'].includes(a.systemRole ?? '');
+  }
+  return (
+    a.code.startsWith('4') ||
+    ['OWNER_CURRENT', 'CAPITAL', 'OPENING_EQUITY', 'RECEIVABLE'].includes(a.systemRole ?? '')
+  );
+}
 
 const RATE_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
 
@@ -44,6 +74,8 @@ export function VoucherPage() {
   // One key per voucher: a double click or a retry posts it once.
   const [key, setKey] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [allAccounts, setAllAccounts] = useState(false);
+  const { data: user } = useQuery(meQuery);
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
   const usable = accounts.filter((a) => a.isPostable && a.isActive);
@@ -77,15 +109,15 @@ export function VoucherPage() {
 
   return (
     <>
-      <PageTitle intro={PAGES.voucher}>{VOUCHER_TYPE[kind]}</PageTitle>
+      <PageTitle intro={PAGES.voucher}>{TITLE[kind]}</PageTitle>
       <div className="mb-4 flex flex-wrap gap-2">
-        {KINDS.map((k) => (
+        {KINDS.filter((k) => k !== 'JOURNAL' || can(user, 'accounting.post')).map((k) => (
           <Chip
             key={k}
             selected={k === kind}
             onClick={() => void navigate({ to: '/finance/new', search: { kind: k } })}
           >
-            {VOUCHER_TYPE[k]}
+            {CHIP[k]}
           </Chip>
         ))}
       </div>
@@ -122,11 +154,21 @@ export function VoucherPage() {
                 }
                 accounts={usable.filter(
                   (a) =>
-                    a.kind === 'GENERAL' && (!a.currency || !box || a.currency === box.currency),
+                    a.kind === 'GENERAL' &&
+                    (!a.currency || !box || a.currency === box.currency) &&
+                    (allAccounts || commonFor(kind, a) || a.id === form.counterAccountId),
                 )}
                 value={form.counterAccountId}
                 onChange={(counterAccountId) => set({ counterAccountId })}
               />
+              <label className="-mt-2 flex items-center gap-2 text-sm text-ink-muted">
+                <input
+                  type="checkbox"
+                  checked={allAccounts}
+                  onChange={(e) => setAllAccounts(e.target.checked)}
+                />
+                كل الحسابات
+              </label>
               <AmountField
                 currency={box?.currency ?? null}
                 value={form.amount}
@@ -243,7 +285,7 @@ export function VoucherPage() {
           {post.isError && <Alert>{errorText(post.error)}</Alert>}
           <div>
             <Button type="submit" size="lg" disabled={!built.voucher || post.isPending}>
-              تسجيل {VOUCHER_TYPE[kind]}
+              تسجيل
             </Button>
           </div>
         </form>

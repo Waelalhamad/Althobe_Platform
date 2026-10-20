@@ -22,7 +22,7 @@ test('phase 3: transfer, damage, stocktake, adjust, history, report, users', asy
   await page.getByLabel('البريد الإلكتروني').fill(EMAIL);
   await page.getByLabel('كلمة المرور').fill(PASSWORD);
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
-  await expect(page.getByRole('heading', { name: 'المواقع' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'اليوم', exact: true })).toBeVisible();
 
   const rq = page.request;
   const locations = await api<{ id: string; code: string }[]>(rq, 'GET', '/locations');
@@ -50,7 +50,7 @@ test('phase 3: transfer, damage, stocktake, adjust, history, report, users', asy
     unitCost: { amount: '1000', currency: 'USD' },
   });
   await api(rq, 'POST', `/scan-sessions/${opening.id}/commit`);
-  await page.reload();
+  await page.goto('/stock');
 
   const wh1Card = page
     .locator('div.rounded-xl')
@@ -86,7 +86,7 @@ test('phase 3: transfer, damage, stocktake, adjust, history, report, users', asy
   await expect(page.getByText(/تم الحفظ في المخزون: 5 قطعة/)).toBeVisible();
 
   // ── Damage 1 of A at WH1, with a reason ────────────────────────────────────────────────────
-  await page.getByRole('link', { name: 'الرئيسية' }).click();
+  await page.getByRole('link', { name: 'عمل المخزون' }).click();
   await wh1Card.getByRole('button', { name: 'تالف' }).click();
   await wh1Card.getByRole('textbox').fill('بلل أثناء التخزين');
   await wh1Card.getByRole('button', { name: 'ابدأ تسجيل التالف' }).click();

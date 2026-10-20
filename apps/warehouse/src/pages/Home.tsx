@@ -25,7 +25,8 @@ type StartInput = {
   note?: string;
 };
 
-export function HomePage() {
+/** عمل المخزون: each location's jobs, the setup steps for whoever builds products. */
+export function StockHomePage() {
   const { data: user } = useQuery(meQuery);
   const { data: locations = [], isLoading } = useQuery(locationsQuery);
   const { data: openSessions = [] } = useQuery(openSessionsQuery);
@@ -49,7 +50,7 @@ export function HomePage() {
   return (
     <>
       <PageTitle intro={can(user, 'products.write') ? PAGES.home : PAGES.homeDaily}>
-        الرئيسية
+        عمل المخزون
       </PageTitle>
       {start.isError && (
         <div className="mb-4">
@@ -95,6 +96,7 @@ export function HomePage() {
               <StartActions
                 user={user}
                 location={location}
+                pieces={pieces}
                 others={locations.filter((l) => l.id !== location.id && l.isActive)}
                 onStart={(input) => start.mutate(input)}
                 busy={start.isPending}
@@ -297,12 +299,14 @@ function StepLink({
 function StartActions({
   user,
   location,
+  pieces,
   others,
   onStart,
   busy,
 }: {
   user: User | undefined;
   location: Location;
+  pieces: number;
   others: Location[];
   onStart: (input: StartInput) => void;
   busy: boolean;
@@ -426,8 +430,12 @@ function StartActions({
   }
 
   const canReceive = can(user, 'inventory.receive');
+  // The store sells and takes returns at the POS (ADR-014): one way to sell, not two.
+  const store = location.kind === 'STORE';
   const incoming = [
-    canReceive && (
+    // The opening count is the first job of an empty location; afterwards stock comes in by
+    // receipt or transfer.
+    canReceive && pieces === 0 && (
       <Button
         key="opening"
         variant="secondary"
@@ -443,14 +451,14 @@ function StartActions({
         {SESSION_KIND.RECEIVE}
       </Button>
     ),
-    can(user, 'inventory.return') && (
+    !store && can(user, 'inventory.return') && (
       <Button key="return" variant="secondary" disabled={busy} onClick={() => open('return')}>
         {SESSION_KIND.RETURN}
       </Button>
     ),
   ].filter(Boolean);
   const outgoing = [
-    can(user, 'inventory.issue') && (
+    !store && can(user, 'inventory.issue') && (
       <Button key="sale" disabled={busy} onClick={() => open('sale')}>
         {SESSION_KIND.SALE}
       </Button>
@@ -471,6 +479,11 @@ function StartActions({
     <div className="flex flex-col gap-3">
       {incoming.length > 0 && <ActionGroup label="وارد">{incoming}</ActionGroup>}
       {outgoing.length > 0 && <ActionGroup label="صادر">{outgoing}</ActionGroup>}
+      {store && can(user, 'retail.sell') && (
+        <Link to="/pos" className="text-sm font-medium text-brand">
+          البيع والمرتجع من «نقطة البيع» ←
+        </Link>
+      )}
     </div>
   );
 }

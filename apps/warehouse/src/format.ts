@@ -151,7 +151,9 @@ export const SESSION_KIND: Record<SessionKind, string> = {
   RECEIVE: 'إدخال بضاعة',
   TRANSFER: 'نقل بضاعة',
   DAMAGE: 'تالف',
-  SALE: 'إخراج / بيع',
+  // At a warehouse: goods going out (wholesale, until it has its own screens). The store sells
+  // at the POS (ADR-014).
+  SALE: 'إخراج بضاعة',
   RETURN: 'مرتجع',
 };
 
@@ -247,10 +249,22 @@ export function formatRetail(prices: Prices): string {
   return both.length ? both.map(formatPrice).join(' · ') : 'بدون سعر';
 }
 
+/**
+ * Arabic-Indic (٠١٢) and Persian (۰۱۲) digits, and the Arabic decimal and thousands marks, as
+ * the plain 0-9 . , that the rest of the app reads. A keyboard set to Arabic types them.
+ */
+export function normalizeDigits(text: string): string {
+  return text
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/\u066b/g, '.')
+    .replace(/[\u066c\u060c]/g, ',');
+}
+
 /** "250000" or "1.5" as typed → minor units of `currency`, without ever using a float. */
 export function toMinorUnits(text: string, currency: Currency = 'USD'): string | null {
   const digits = EXPONENT[currency];
-  const clean = text.replace(/[,\s]/g, '');
+  const clean = normalizeDigits(text).replace(/[,\s]/g, '');
   const match = new RegExp(`^(\\d{1,15})(?:\\.(\\d{1,${digits}}))?$`).exec(clean);
   if (!match) return null;
   const scale = 10n ** BigInt(digits);

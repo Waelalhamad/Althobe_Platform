@@ -24,7 +24,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await page.getByLabel('كلمة المرور').fill(PASSWORD);
   await page.screenshot({ path: `${shots}/1-login.png` });
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
-  await expect(page.getByRole('heading', { name: 'الرئيسية', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'اليوم', exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       async () => (await document.fonts.ready, document.fonts.check('16px Somar')),
@@ -84,7 +84,7 @@ test('opening count by scanner, end to end', async ({ page }) => {
   await page.screenshot({ path: `${shots}/4-labels.png` });
 
   // ── Opening count at WH1 ────────────────────────────────────────────────────────────────
-  await page.getByRole('link', { name: 'الرئيسية' }).click();
+  await page.getByRole('link', { name: 'عمل المخزون' }).click();
   const wh1 = page
     .locator('div.rounded-xl')
     .filter({ has: page.getByRole('heading', { name: 'المخزن الرئيسي' }) });

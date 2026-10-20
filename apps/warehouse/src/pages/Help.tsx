@@ -5,7 +5,11 @@ import { PAGES, TERMS, type TermKey } from '../help';
 // Everything the "؟" hints say, plus what each page is for, in one place.
 
 const PAGE_LIST = [
-  { to: '/', name: 'الرئيسية', text: PAGES.home },
+  { to: '/', name: 'اليوم', text: PAGES.today },
+  { to: '/stock', name: 'عمل المخزون', text: PAGES.home },
+  { to: '/pos', name: 'نقطة البيع', text: PAGES.posOpen },
+  { to: '/finance', name: 'المالية', text: PAGES.finance },
+  { to: '/settings', name: 'الإعدادات', text: PAGES.settings },
   { to: '/options', name: 'الخيارات', text: PAGES.options },
   { to: '/products', name: 'التصنيفات والمنتجات', text: PAGES.categories },
   { to: '/labels', name: 'طباعة الملصقات', text: PAGES.labels },

@@ -546,6 +546,10 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await pos.closeShift(request.params.id, request.body, actorOf(request)),
     }));
 
+    priv.get('/retail/today', async (request) => ({
+      data: await pos.today(actorOf(request)),
+    }));
+
     priv.get('/retail/lookup', async (request: Query) => ({
       data: await pos.lookup(
         request.query.barcode ?? '',

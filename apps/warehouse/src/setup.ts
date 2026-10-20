@@ -62,7 +62,7 @@ export function setupSteps(d: SetupData): SetupStep[] {
     {
       key: 'prices',
       title: 'ضع الأسعار والصور',
-      why: 'سعر المفرد والجملة بالدولار لكل منتج. الصور اختيارية لكنها تساعد على التعرف على المنتج.',
+      why: 'سعر المفرق بالليرة السورية (والدينار لليبيا)، والجملة بالدولار. الصور اختيارية لكنها تساعد على التعرف على المنتج.',
       done: d.products.length > 0 && priced.length === d.products.length,
       progress: `${priced.length} من ${d.products.length} مسعّر · ${
         d.products.filter((p) => p.mainPhotoId).length

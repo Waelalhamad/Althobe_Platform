@@ -6,12 +6,13 @@ import { PAGES } from '../help';
 import { booksCheckQuery, boxesQuery, can, entriesQuery, incomeQuery, meQuery } from '../queries';
 import { monthStart } from './finance-parts';
 
+// Named by what happened to the money, not by the accountant's document (research: everyday
+// words; the familiar سند names stay visible on the form itself).
 const ACTIONS = [
-  { kind: 'RECEIPT', label: 'سند قبض', hint: 'مصاري داخلة' },
-  { kind: 'PAYMENT', label: 'سند صرف', hint: 'مصروف أو دفعة' },
+  { kind: 'PAYMENT', label: 'مصروف', hint: 'مصاري طلعت' },
+  { kind: 'RECEIPT', label: 'مصاري دخلت', hint: 'إلى صندوق' },
   { kind: 'TRANSFER', label: 'تحويل', hint: 'من صندوق لصندوق' },
   { kind: 'EXCHANGE', label: 'صرافة', hint: 'تبديل عملة' },
-  { kind: 'JOURNAL', label: 'قيد يومية', hint: 'للمحاسب' },
 ] as const;
 
 /** المالية: what is in each box, what to record, and this month at a glance. */
@@ -47,7 +48,7 @@ export function FinancePage() {
         <div className="mb-6 flex flex-wrap gap-2">
           {ACTIONS.map((a) => (
             <Link key={a.kind} to="/finance/new" search={{ kind: a.kind }}>
-              <Button variant={a.kind === 'JOURNAL' ? 'secondary' : 'primary'}>
+              <Button size="lg">
                 {a.label}
                 <span className="text-xs font-normal opacity-80">({a.hint})</span>
               </Button>

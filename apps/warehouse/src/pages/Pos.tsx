@@ -293,6 +293,7 @@ function Register({
                       <div className="flex items-center gap-1">
                         <Button
                           variant="secondary"
+                          size="lg"
                           aria-label="أنقص"
                           onClick={() => setQuantity(l.lookup.variant.id, l.quantity - 1)}
                         >
@@ -303,6 +304,7 @@ function Register({
                         </span>
                         <Button
                           variant="secondary"
+                          size="lg"
                           aria-label="زد"
                           onClick={() => setQuantity(l.lookup.variant.id, l.quantity + 1)}
                         >

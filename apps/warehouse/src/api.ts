@@ -731,6 +731,16 @@ export const api = {
     post<{ ok: true }>('/auth/change-password', { currentPassword, newPassword }),
 
   // Point of sale (ADR-014). A sale or refund carries an Idempotency-Key: one receipt per click.
+  posToday: async () =>
+    get<{
+      day: string;
+      receipts: number;
+      refunds: number;
+      total: string;
+      totalBase: string;
+      profitBase: string;
+      pieces: number;
+    }>('/retail/today'),
   currentShift: async (locationId: string) =>
     get<Shift | null>(`/retail/shifts/current?${query({ locationId })}`),
   shifts: async (locationId: string) => get<Shift[]>(`/retail/shifts?${query({ locationId })}`),

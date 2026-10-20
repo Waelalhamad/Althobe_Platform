@@ -2,13 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { api, type User } from './api';
-import { can, meQuery, modeQuery } from './queries';
+import { can, doesStockWork, meQuery, modeQuery } from './queries';
 
 type To =
-  | '/'
-  | '/options'
-  | '/locations'
-  | '/rates'
+  | '/stock'
   | '/products'
   | '/labels'
   | '/balances'
@@ -32,20 +29,17 @@ interface NavItem {
 
 type Section = 'stock' | 'store' | 'finance';
 
-// Three sides of the app, switched at the top: the warehouse, the store's till (ADR-014) and the
-// books (ADR-013). Within each,
-// grouped by job in the order the work happens. Each person sees only what they may use.
+// Three sides of the app: the warehouse, the store's till (ADR-014) and the books (ADR-013).
+// Each person sees only the sides of their job; the switch between them shows only to those
+// with more than one (the owner, a manager). Setup lives on one «الإعدادات» page, not here.
 const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
-  { section: 'stock', group: null, items: [{ to: '/', label: 'الرئيسية' }] },
+  { section: 'stock', group: null, items: [{ to: '/stock', label: 'عمل المخزون' }] },
   {
     section: 'stock',
-    group: 'الإعداد',
+    group: 'المنتجات',
     items: [
-      { to: '/options', label: 'الخيارات', anyOf: ['products.write'] },
       { to: '/products', label: 'التصنيفات والمنتجات', anyOf: ['products.write'] },
-      { to: '/labels', label: 'طباعة الملصقات', anyOf: ['products.write', 'inventory.receive'] },
-      { to: '/locations', label: 'المواقع', anyOf: ['admin.locations.write'] },
-      { to: '/rates', label: 'أسعار الصرف', anyOf: ['admin.rates.write'] },
+      { to: '/labels', label: 'الملصقات', anyOf: ['products.write', 'inventory.receive'] },
     ],
   },
   {
@@ -59,12 +53,8 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
         anyOf: ['inventory.stocktake.count', 'inventory.stocktake.apply'],
       },
       { to: '/movements', label: 'السجل', anyOf: ['inventory.view'] },
+      { to: '/reports', label: 'تقرير المخزون', anyOf: ['inventory.view'] },
     ],
-  },
-  {
-    section: 'stock',
-    group: 'التقارير',
-    items: [{ to: '/reports', label: 'التقارير', anyOf: ['inventory.view'] }],
   },
   {
     section: 'store',
@@ -77,50 +67,56 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
   {
     section: 'finance',
     group: null,
-    items: [{ to: '/finance', label: 'الصناديق', anyOf: ['accounting.view'] }],
-  },
-  {
-    section: 'finance',
-    group: 'الدفاتر',
     items: [
-      { to: '/finance/entries', label: 'القيود', anyOf: ['accounting.view'] },
-      { to: '/finance/accounts', label: 'دليل الحسابات', anyOf: ['accounting.view'] },
+      { to: '/finance', label: 'الصناديق', anyOf: ['accounting.view'] },
+      { to: '/finance/reports', label: 'الأرباح والتقارير', anyOf: ['accounting.view'] },
     ],
   },
   {
+    // What an accountant needs and an owner can skip: entries, the chart, closing a month.
     section: 'finance',
-    group: 'التقارير والإقفال',
+    group: 'للمحاسب',
     items: [
-      { to: '/finance/reports', label: 'التقارير المالية', anyOf: ['accounting.view'] },
+      { to: '/finance/entries', label: 'القيود', anyOf: ['accounting.post'] },
+      { to: '/finance/accounts', label: 'دليل الحسابات', anyOf: ['accounting.post'] },
       { to: '/finance/close', label: 'إقفال الشهر', anyOf: ['accounting.close'] },
-      { to: '/rates', label: 'أسعار الصرف', anyOf: ['admin.rates.write'] },
     ],
   },
 ];
 
-const SECTIONS: { key: Section; label: string; home: '/' | '/pos' | '/finance' }[] = [
-  { key: 'stock', label: 'المخزون', home: '/' },
+const SECTIONS: { key: Section; label: string; home: '/stock' | '/pos' | '/finance' }[] = [
+  { key: 'stock', label: 'المخزون', home: '/stock' },
   { key: 'store', label: 'المتجر', home: '/pos' },
   { key: 'finance', label: 'المالية', home: '/finance' },
 ];
 
-function visibleNav(user: User | undefined) {
-  return NAV.map((g) => ({
-    ...g,
-    items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => can(user, p))),
-  })).filter((g) => g.items.length > 0);
+/** A side is a person's when their job is there, not merely when they may look at it. */
+function hasSection(user: User | undefined, section: Section): boolean {
+  if (section === 'stock') return doesStockWork(user);
+  if (section === 'store') return can(user, 'retail.sell');
+  return can(user, 'accounting.view');
 }
 
-/** Pages both sides use keep the side the person came from. */
-const SHARED = ['/rates', '/help', '/account', '/users'];
+function visibleNav(user: User | undefined) {
+  return NAV.filter((g) => hasSection(user, g.section))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => can(user, p))),
+    }))
+    .filter((g) => g.items.length > 0);
+}
+
+/** Pages every side uses keep the side the person came from. */
+const SHARED = ['/rates', '/help', '/account', '/users', '/settings', '/options', '/locations'];
 
 function sectionOf(pathname: string, previous: Section): Section {
   if (pathname.startsWith('/finance')) return 'finance';
   if (pathname.startsWith('/pos')) return 'store';
-  return SHARED.some((p) => pathname.startsWith(p)) ? previous : 'stock';
+  if (pathname === '/' || SHARED.some((p) => pathname.startsWith(p))) return previous;
+  return 'stock';
 }
 
-/** المخزون | المالية: shown only to people who use both sides. */
+/** المخزون | المتجر | المالية: shown only to people who work on more than one side. */
 function SectionSwitch({ current, sections }: { current: Section; sections: typeof SECTIONS }) {
   if (sections.length < 2) return null;
   return (
@@ -141,16 +137,47 @@ function SectionSwitch({ current, sections }: { current: Section; sections: type
   );
 }
 
+/** Weak internet is everyday in Syria: say it plainly, before a save fails. */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  return online;
+}
+
+const SETTINGS_PERMISSIONS = [
+  'products.write',
+  'admin.users.write',
+  'admin.locations.write',
+  'admin.rates.write',
+  'accounting.close',
+];
+
 export function AppLayout() {
   const { data: user } = useQuery(meQuery);
   const { data: mode } = useQuery(modeQuery);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const online = useOnline();
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   useEffect(() => setMenuOpen(false), [pathname]);
-  const [section, setSection] = useState<Section>(() => sectionOf(pathname, 'stock'));
+
+  const allNav = visibleNav(user);
+  const sections = SECTIONS.filter((s) => allNav.some((g) => g.section === s.key));
+  const first = sections[0]?.key ?? 'stock';
+  const [section, setSection] = useState<Section>(() => sectionOf(pathname, first));
   useEffect(() => setSection((previous) => sectionOf(pathname, previous)), [pathname]);
+  const current = sections.some((s) => s.key === section) ? section : first;
+  const nav = allNav.filter((g) => g.section === current);
 
   const logout = async () => {
     await api.logout().catch(() => undefined);
@@ -158,22 +185,20 @@ export function AppLayout() {
     await navigate({ to: '/login' });
   };
 
-  const allNav = visibleNav(user);
-  const sections = SECTIONS.filter((s) => allNav.some((g) => g.section === s.key));
-  const nav = allNav.filter((g) => g.section === section);
-  const home = SECTIONS.find((s) => s.key === section)!.home;
+  const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p));
   const linkClass = 'rounded-lg px-3 py-1.5 font-medium text-white/85 hover:bg-white/10';
   const active = { className: 'bg-white/15 text-white' };
+  const exact = (to: string) => to === '/stock' || to === '/finance' || to === '/pos';
 
   return (
     <div className="min-h-screen print:min-h-0">
       <header className="bg-brand text-white print:hidden">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link to={home} className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <img src="/logo-mark.svg" alt="" className="size-10 rounded-full bg-white p-0.5" />
             <span className="text-lg font-bold">الثوب العربي</span>
           </Link>
-          <SectionSwitch current={section} sections={sections} />
+          <SectionSwitch current={current} sections={sections} />
 
           {/* Wide screens: groups side by side, each with a small heading. */}
           <nav className="hidden items-end gap-4 lg:flex">
@@ -187,9 +212,7 @@ export function AppLayout() {
                       to={item.to}
                       className={linkClass}
                       activeProps={active}
-                      activeOptions={{
-                        exact: item.to === '/' || item.to === '/finance' || item.to === '/pos',
-                      }}
+                      activeOptions={{ exact: exact(item.to) }}
                     >
                       {item.label}
                     </Link>
@@ -200,14 +223,14 @@ export function AppLayout() {
           </nav>
 
           <div className="ms-auto flex items-center gap-1 text-sm">
-            <Link to="/help" className={linkClass} activeProps={active}>
-              ؟ المساعدة
-            </Link>
-            {can(user, 'admin.users.write') && (
-              <Link to="/users" className={`${linkClass} hidden sm:inline`} activeProps={active}>
-                المستخدمون
+            {settings && (
+              <Link to="/settings" className={linkClass} activeProps={active}>
+                ⚙ الإعدادات
               </Link>
             )}
+            <Link to="/help" className={`${linkClass} hidden sm:inline`} activeProps={active}>
+              ؟ المساعدة
+            </Link>
             <Link to="/account" className={`${linkClass} hidden sm:inline`} activeProps={active}>
               {user?.nameAr}
             </Link>
@@ -238,9 +261,7 @@ export function AppLayout() {
                       to={item.to}
                       className={`${linkClass} py-2 text-base`}
                       activeProps={active}
-                      activeOptions={{
-                        exact: item.to === '/' || item.to === '/finance' || item.to === '/pos',
-                      }}
+                      activeOptions={{ exact: exact(item.to) }}
                     >
                       {item.label}
                     </Link>
@@ -249,11 +270,9 @@ export function AppLayout() {
               </div>
             ))}
             <div className="mt-3 flex flex-col gap-1 border-t border-white/20 pt-3">
-              {can(user, 'admin.users.write') && (
-                <Link to="/users" className={`${linkClass} py-2 text-base`}>
-                  المستخدمون
-                </Link>
-              )}
+              <Link to="/help" className={`${linkClass} py-2 text-base`}>
+                ؟ المساعدة
+              </Link>
               <Link to="/account" className={`${linkClass} py-2 text-base`}>
                 حسابي ({user?.nameAr})
               </Link>
@@ -261,6 +280,11 @@ export function AppLayout() {
           </nav>
         )}
       </header>
+      {!online && (
+        <div className="bg-bad px-4 py-2 text-center font-bold text-white print:hidden">
+          لا يوجد اتصال بالإنترنت — لن يُحفظ شيء حتى يعود الاتصال
+        </div>
+      )}
       {mode?.practice && (
         <div className="bg-warn-soft px-4 py-2 text-center font-bold text-warn print:hidden">
           وضع التدريب — قاعدة بيانات للتجربة، لا تؤثر على المخزون الحقيقي

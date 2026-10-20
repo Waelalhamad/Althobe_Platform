@@ -10,7 +10,9 @@ import {
 import { AppLayout } from './layout';
 import { AccountPage } from './pages/Account';
 import { BalancesPage } from './pages/Balances';
-import { HomePage } from './pages/Home';
+import { StockHomePage } from './pages/Home';
+import { SettingsPage } from './pages/Settings';
+import { HomePage } from './pages/Today';
 import { LoginPage } from './pages/Login';
 import { MovementsPage } from './pages/Movements';
 import { OptionsPage } from './pages/Options';
@@ -67,7 +69,10 @@ const appRoute = createRoute({
 });
 
 const routes = [
+  // «اليوم» for the owner; the till for a cashier; stock work for the warehouse.
   createRoute({ getParentRoute: () => appRoute, path: '/', component: HomePage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/stock', component: StockHomePage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsPage }),
   createRoute({ getParentRoute: () => appRoute, path: '/products', component: CategoriesPage }),
   createRoute({
     getParentRoute: () => appRoute,

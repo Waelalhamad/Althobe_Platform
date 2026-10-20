@@ -407,10 +407,10 @@ export function LabelsPage() {
             <NextStep
               action={
                 <Link
-                  to="/"
+                  to="/stock"
                   className="rounded-lg bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-dark"
                 >
-                  الرئيسية ←
+                  عمل المخزون ←
                 </Link>
               }
             >

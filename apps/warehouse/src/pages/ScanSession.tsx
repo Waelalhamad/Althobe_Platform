@@ -123,7 +123,7 @@ export function ScanSessionPage() {
     mutationFn: async () => api.cancel(sessionId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['open-sessions'] });
-      await navigate({ to: '/' });
+      await navigate({ to: '/stock' });
     },
   });
 
@@ -168,8 +168,8 @@ export function ScanSessionPage() {
           <Alert tone="ok">
             تم الحفظ في المخزون: {formatQuantity(session.totalQuantity)} قطعة في{' '}
             {session.lines.length} صنف.{' '}
-            <Link to="/" className="underline">
-              العودة للرئيسية
+            <Link to="/stock" className="underline">
+              العودة لعمل المخزون
             </Link>
           </Alert>
         </div>

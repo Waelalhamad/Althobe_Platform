@@ -73,6 +73,29 @@ export function can(user: User | undefined, permission: string): boolean {
   return user?.permissions.includes(permission) ?? false;
 }
 
+/**
+ * Whose job is the warehouse: who receives, moves, counts or builds products. Store staff and an
+ * accountant may look at stock, but their home is the till or the books.
+ */
+export function doesStockWork(user: User | undefined): boolean {
+  return [
+    'products.write',
+    'inventory.receive',
+    'inventory.transfer',
+    'inventory.damage',
+    'inventory.adjust',
+    'inventory.stocktake.count',
+    'inventory.stocktake.apply',
+  ].some((p) => can(user, p));
+}
+
+/** What the store sold today (ADR-014), for the owner's «اليوم». */
+export const posTodayQuery = queryOptions({
+  queryKey: ['pos', 'today'],
+  queryFn: api.posToday,
+  refetchInterval: 60_000,
+});
+
 /** Exchange rates (ADR-012): read by whoever enters a cost; changed only by the owner. */
 export const ratesQuery = queryOptions({ queryKey: ['rates'], queryFn: api.rates });
 
