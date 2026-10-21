@@ -65,6 +65,8 @@ retail.sell            (implemented, ADR-014: sell, open and close one's own shi
 retail.manage          (implemented: discounts, refunds, closing another person's shift)
 employees.read         (implemented, ADR-015: names and jobs, no pay)
 payroll.manage         (implemented: salaries, advances, pay sheets, paying)
+parties.read           (implemented, ADR-016: balances and statements of suppliers and customers)
+parties.manage         (implemented: add, edit, pay, collect, wholesale invoices)
 admin.users.write
 admin.locations.write
 admin.rates.write
@@ -80,7 +82,7 @@ Starting roles:
 | `inventory_manager` | مدير مخزون | all `inventory.*`, including adjust, stocktake apply, and cost |
 | `warehouse_keeper` | أمين مستودع | view, receive, issue, return, transfer, damage, stocktake count; no adjust, no apply, no cost |
 | `store_staff` | موظف متجر | view stock, record sales (`inventory.issue`) and returns (`inventory.return`) until the POS exists; no cost |
-| `accountant` | محاسب | accounting, invoicing, payroll (`payroll.manage`), `inventory.view`, `inventory.cost.view` |
+| `accountant` | محاسب | accounting, invoicing, payroll (`payroll.manage`), suppliers and customers (`parties.*`), `inventory.view`, `inventory.cost.view` |
 | `wholesale_customer` | زبون جملة | own orders, own invoices, own prices, nothing else |
 
 The full inventory permission table, with what each allows, is in `docs/inventory.md`.

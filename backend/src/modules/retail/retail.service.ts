@@ -17,6 +17,7 @@ import type { CatalogueService, VariantView } from '../catalogue/catalogue.servi
 import type { RatesService } from '../currency/rates.service.js';
 import type { InventoryService } from '../inventory/inventory.service.js';
 import type { LocationsService } from '../locations/locations.service.js';
+import type { PartiesService } from '../parties/parties.service.js';
 import {
   DRAWER_CURRENCIES,
   netTotals,
@@ -52,6 +53,7 @@ export interface RetailDeps {
   locations: LocationsService;
   rates: RatesService;
   accounting: AccountingService;
+  parties: PartiesService;
 }
 
 export interface ShiftCashView {
@@ -112,6 +114,9 @@ export interface SaleView {
   totalBase: bigint;
   change: bigint;
   sypRate: string;
+  /** على الحساب: what the customer owes for it (on a refund: what went back on the account). */
+  onAccount: bigint;
+  party: { id: string; nameAr: string } | null;
   note: string | null;
   createdBy: { id: string; nameAr: string };
   createdAt: Date;
@@ -123,7 +128,10 @@ const saleInclude = {
   createdBy: { select: { id: true, nameAr: true } },
   lines: { orderBy: { lineNo: 'asc' } },
   payments: true,
-  refunds: { select: { lines: { select: { refundOfLine: true, quantity: true } } } },
+  party: { select: { id: true, nameAr: true } },
+  refunds: {
+    select: { onAccount: true, lines: { select: { refundOfLine: true, quantity: true } } },
+  },
 } satisfies Prisma.PosSaleInclude;
 
 type SaleRow = Prisma.PosSaleGetPayload<{ include: typeof saleInclude }>;
@@ -246,6 +254,8 @@ export function createRetailService(db: Db, deps: RetailDeps) {
         totalBase: r.totalBase,
         change: r.change,
         sypRate: r.sypRate.toString(),
+        onAccount: r.onAccount,
+        party: r.party,
         note: r.note,
         createdBy: r.createdBy,
         createdAt: r.createdAt,
@@ -442,6 +452,15 @@ export function createRetailService(db: Db, deps: RetailDeps) {
 
             const rates = await ownerRates();
             const sypRate = requireRate(rates, 'SYP');
+            const onAccount = data.account?.amount ?? 0n;
+            if (onAccount > total) {
+              throw new ValidationError([
+                { path: 'account', message: 'More on account than the total' },
+              ]);
+            }
+            const customer = data.account
+              ? await deps.parties.customerForSale(tx, data.account.partyId)
+              : null;
             const paid = new Map<DrawerCurrency, bigint>();
             for (const p of data.payments)
               paid.set(p.currency, (paid.get(p.currency) ?? 0n) + p.amount);
@@ -450,7 +469,9 @@ export function createRetailService(db: Db, deps: RetailDeps) {
               requireRate(rates, currency);
               paidSyp += toSyp(amount, currency, rates);
             }
-            if (paidSyp < total) throw new PaymentTooLowError(total, paidSyp);
+            // Change comes back from cash only; what goes on account is not paid now.
+            const cashDue = total - onAccount;
+            if (paidSyp < cashDue) throw new PaymentTooLowError(cashDue, paidSyp);
 
             const saleId = uuidv7();
             const movements = await deps.inventory.postRetailMovements(
@@ -466,20 +487,25 @@ export function createRetailService(db: Db, deps: RetailDeps) {
             );
             const costOf = new Map(movements.map((m) => [m.variantId, m.unitCostBaseAmount ?? 0n]));
             const nets = netTotals(lineTotals, discount);
+            const receiptNo = await nextReceipt(tx, 'SALE', year());
+            const onAccountBase = toBaseAmount(onAccount, 'SYP', sypRate);
             await tx.posSale.create({
               data: {
                 id: saleId,
                 kind: 'SALE',
                 receiptYear: year(),
-                receiptNo: await nextReceipt(tx, 'SALE', year()),
+                receiptNo,
                 shiftId: shift.id,
                 locationId: shift.location_id,
                 subtotal,
                 discount,
                 total,
                 totalBase: toBaseAmount(total, 'SYP', sypRate),
-                change: paidSyp - total,
+                change: paidSyp - cashDue,
                 sypRate,
+                partyId: customer?.id ?? null,
+                onAccount,
+                onAccountBase,
                 note: data.note ?? null,
                 createdById: ctx.userId,
                 lines: {
@@ -505,6 +531,16 @@ export function createRetailService(db: Db, deps: RetailDeps) {
                 },
               },
             });
+            if (customer) {
+              await deps.parties.recordPosSale(tx, {
+                saleId,
+                partyId: customer.id,
+                amount: onAccount,
+                base: onAccountBase,
+                receipt: `${year()}/${receiptNo}`,
+                createdById: ctx.userId,
+              });
+            }
             return saleView(tx, saleId);
           },
         ),
@@ -554,7 +590,15 @@ export function createRetailService(db: Db, deps: RetailDeps) {
 
             const sypRate = requireRate(await ownerRates(), 'SYP');
             const totalBase = toBaseAmount(total, 'SYP', sypRate);
+            // A sale on account is refunded onto the account first, as far as it went on it;
+            // only the rest leaves the drawer.
+            const accountLeft =
+              original.onAccount - original.refunds.reduce((s, r) => s + r.onAccount, 0n);
+            const toAccount = accountLeft > 0n ? (total < accountLeft ? total : accountLeft) : 0n;
+            const cashBack = total - toAccount;
+            const toAccountBase = toBaseAmount(toAccount, 'SYP', sypRate);
             const refundId = uuidv7();
+            const receiptNo = await nextReceipt(tx, 'REFUND', year());
             await deps.inventory.postRetailMovements(
               tx,
               {
@@ -575,7 +619,7 @@ export function createRetailService(db: Db, deps: RetailDeps) {
                 id: refundId,
                 kind: 'REFUND',
                 receiptYear: year(),
-                receiptNo: await nextReceipt(tx, 'REFUND', year()),
+                receiptNo,
                 shiftId: shift.id,
                 locationId: shift.location_id,
                 refundOfId: original.id,
@@ -584,6 +628,9 @@ export function createRetailService(db: Db, deps: RetailDeps) {
                 total,
                 totalBase,
                 sypRate,
+                partyId: toAccount > 0n ? original.partyId : null,
+                onAccount: toAccount,
+                onAccountBase: toAccountBase,
                 note: data.reason,
                 createdById: ctx.userId,
                 lines: {
@@ -598,10 +645,30 @@ export function createRetailService(db: Db, deps: RetailDeps) {
                   })),
                 },
                 payments: {
-                  create: [{ currency: 'SYP', amount: -total, rate: sypRate, base: -totalBase }],
+                  create:
+                    cashBack > 0n
+                      ? [
+                          {
+                            currency: 'SYP',
+                            amount: -cashBack,
+                            rate: sypRate,
+                            base: -toBaseAmount(cashBack, 'SYP', sypRate),
+                          },
+                        ]
+                      : [],
                 },
               },
             });
+            if (toAccount > 0n) {
+              await deps.parties.recordPosRefund(tx, {
+                refundId,
+                partyId: original.partyId!,
+                amount: toAccount,
+                returnsBase: toAccountBase,
+                receipt: `${year()}/${receiptNo}`,
+                createdById: ctx.userId,
+              });
+            }
             return saleView(tx, refundId);
           },
         ),
@@ -622,8 +689,13 @@ export function createRetailService(db: Db, deps: RetailDeps) {
         const before = await shiftView(tx, id);
         const sales = await tx.posSale.findMany({
           where: { shiftId: id },
-          select: { kind: true, totalBase: true },
+          select: { kind: true, totalBase: true, onAccountBase: true },
         });
+        // What went on account is already in the books (ADR-016); the shift posts the cash part.
+        const cashPart = (kind: string) =>
+          sales
+            .filter((s) => s.kind === kind)
+            .reduce((s, x) => s + x.totalBase - x.onAccountBase, 0n);
         const rates = await ownerRates();
         const cash = before.cash.map((c) => {
           const counted = data.counted[c.currency] ?? 0n;
@@ -642,10 +714,8 @@ export function createRetailService(db: Db, deps: RetailDeps) {
           createdById: ctx.userId,
           memo: `وردية المتجر — ${before.salesCount} فاتورة، ${before.refundsCount} مرتجع`,
           cash,
-          salesBase: sales.filter((s) => s.kind === 'SALE').reduce((s, x) => s + x.totalBase, 0n),
-          refundsBase: sales
-            .filter((s) => s.kind === 'REFUND')
-            .reduce((s, x) => s + x.totalBase, 0n),
+          salesBase: cashPart('SALE'),
+          refundsBase: cashPart('REFUND'),
         });
         for (const c of cash) {
           await tx.posShiftCash.update({

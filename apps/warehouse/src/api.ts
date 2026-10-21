@@ -156,7 +156,8 @@ export type VoucherType =
   | 'REVALUATION'
   | 'REVERSAL'
   | 'RETAIL'
-  | 'PAYROLL';
+  | 'PAYROLL'
+  | 'INVOICE';
 export type Branch = 'SY' | 'LY';
 
 // ─── Point of sale (ADR-014). SYP minor units unless a currency says otherwise. ───────────────
@@ -221,6 +222,9 @@ export interface PosSale {
   totalBase: string;
   change: string;
   sypRate: string;
+  /** على الحساب (ADR-016): what the customer owes for it; on a refund, what went back on it. */
+  onAccount: string;
+  party: { id: string; nameAr: string } | null;
   note: string | null;
   createdBy: { id: string; nameAr: string };
   createdAt: string;
@@ -673,6 +677,44 @@ export type LinePatch = Partial<{
   advanceDeduct: string;
 }>;
 
+// ─── Suppliers and customers (ADR-016). Amounts are minor units of the party's currency. ──────
+
+export type PartyKind = 'SUPPLIER' | 'CUSTOMER';
+
+export interface Party {
+  id: string;
+  kind: PartyKind;
+  nameAr: string;
+  phone: string | null;
+  currency: Currency;
+  branch: Branch;
+  notes: string | null;
+  isActive: boolean;
+  /** What is outstanding (they owe us / we owe them). Null without parties.read. */
+  balance: string | null;
+}
+
+export interface PartyDetail extends Party {
+  entries: {
+    id: string;
+    kind: 'BILL' | 'PAYMENT' | 'INVOICE' | 'RECEIPT' | 'POS_SALE' | 'POS_REFUND';
+    amount: string;
+    balance: string;
+    sourceType: string;
+    sourceId: string;
+    journalEntryId: string | null;
+    note: string | null;
+    createdBy: string;
+    createdAt: string;
+  }[];
+}
+
+export interface PartiesSummary {
+  customers: { currency: Currency; amount: string }[];
+  suppliers: { currency: Currency; amount: string }[];
+  books: Record<'receivable' | 'payable', { books: string; named: string; unassigned: string }>;
+}
+
 export const api = {
   mode: async () => get<{ practice: boolean; photos: boolean }>('/mode'),
   login: async (email: string, password: string) => post<User>('/auth/login', { email, password }),
@@ -795,6 +837,55 @@ export const api = {
   commit: async (id: string) =>
     post<{ sessionId: string; movements: Movement[] }>(`/scan-sessions/${id}/commit`),
   cancel: async (id: string) => post<{ ok: true }>(`/scan-sessions/${id}/cancel`),
+  /** A receipt confirmed with its supplier and what was paid on the spot (ADR-016). */
+  commitReceipt: async (
+    id: string,
+    terms: { partyId?: string; paid?: { boxId: string; amount: string } },
+  ) => post<{ sessionId: string; movements: Movement[] }>(`/parties/receipts/${id}`, terms),
+  /** Goods out confirmed as a wholesale sale on the customer's account. */
+  commitGoodsOut: async (id: string, terms: { partyId: string; amount: string; note?: string }) =>
+    post<{ sessionId: string; movements: Movement[] }>(`/parties/goods-out/${id}`, terms),
+
+  parties: async (params: { kind?: PartyKind; includeInactive?: boolean } = {}) =>
+    get<Party[]>(
+      `/parties?${query({ kind: params.kind, includeInactive: params.includeInactive ? 'true' : undefined })}`,
+    ),
+  party: async (id: string) => get<PartyDetail>(`/parties/${id}`),
+  createParty: async (input: {
+    kind: PartyKind;
+    nameAr: string;
+    phone?: string;
+    currency: Currency;
+    branch: Branch;
+    notes?: string;
+  }) => post<Party>('/parties', input),
+  updateParty: async (
+    id: string,
+    patch: Partial<{
+      nameAr: string;
+      phone: string;
+      currency: Currency;
+      branch: Branch;
+      notes: string;
+      isActive: boolean;
+    }>,
+  ) => request<Party>('PATCH', `/parties/${id}`, patch),
+  settleParty: async (
+    id: string,
+    input: { boxId: string; amount: string; note?: string },
+    idempotencyKey: string,
+  ) =>
+    request<{ balance: string }>('POST', `/parties/${id}/settle`, input, {
+      'idempotency-key': idempotencyKey,
+    }),
+  partiesSummary: async () => get<PartiesSummary>('/parties/summary'),
+  settleUnassigned: async (
+    input: { side: 'PAYABLE' | 'RECEIVABLE'; boxId?: string; amount: string; note?: string },
+    idempotencyKey: string,
+  ) =>
+    request<{ left: string }>('POST', '/parties/unassigned', input, {
+      'idempotency-key': idempotencyKey,
+    }),
 
   stocktakes: async () => get<StocktakeSummary[]>('/stocktakes'),
   stocktake: async (id: string) => get<Stocktake>(`/stocktakes/${id}`),
@@ -870,6 +961,7 @@ export const api = {
       lines: { variantId: string; quantity: number }[];
       discount?: string;
       payments: { currency: DrawerCurrency; amount: string }[];
+      account?: { partyId: string; amount: string };
     },
     idempotencyKey: string,
   ) => request<PosSale>('POST', '/retail/sales', input, { 'idempotency-key': idempotencyKey }),

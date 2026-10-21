@@ -12,6 +12,7 @@ import {
   doesStockWork,
   meQuery,
   openSessionsQuery,
+  partiesSummaryQuery,
   payrollSummaryQuery,
   posTodayQuery,
   ratesQuery,
@@ -98,6 +99,13 @@ function TodayPage() {
         {can(user, 'inventory.view') && (
           <Tile to="/balances" title="الأرصدة" hint="كم قطعة في كل مكان" />
         )}
+        {can(user, 'parties.read') && (
+          <Tile
+            to="/finance/parties"
+            title="الموردون والزبائن"
+            hint="مين إلك عنده، ومين إله عليك"
+          />
+        )}
         {can(user, 'payroll.manage') && (
           <Tile to="/finance/payroll" title="الرواتب" hint="الموظفون والسلف والكشوف" />
         )}
@@ -113,7 +121,14 @@ function Tile({
   title,
   hint,
 }: {
-  to: '/pos' | '/stock' | '/finance/new' | '/balances' | '/finance/reports' | '/finance/payroll';
+  to:
+    | '/pos'
+    | '/stock'
+    | '/finance/new'
+    | '/balances'
+    | '/finance/reports'
+    | '/finance/payroll'
+    | '/finance/parties';
   kind?: 'PAYMENT' | 'RECEIPT';
   title: string;
   hint: string;
@@ -156,6 +171,10 @@ function Attention() {
   const { data: rates = [] } = useQuery(ratesQuery);
   const { data: sessions = [] } = useQuery(openSessionsQuery);
   const { data: check } = useQuery(booksCheckQuery);
+  const { data: parties } = useQuery({
+    ...partiesSummaryQuery,
+    enabled: can(user, 'parties.read'),
+  });
   const { data: payroll } = useQuery({
     ...payrollSummaryQuery,
     enabled: can(user, 'payroll.manage'),
@@ -197,6 +216,14 @@ function Attention() {
     items.push(
       <Link key="sessions" to="/stock" className="text-brand">
         {sessions.length} عملية مسح لم تُؤكَّد بعد
+      </Link>,
+    );
+  }
+  if (parties && parties.books.payable.unassigned !== '0') {
+    items.push(
+      <Link key="unnamed" to="/finance/parties" className="text-brand">
+        بضاعة مستلمة بدون مورد ({formatMoney(parties.books.payable.unassigned)}) — سكّرها أو اختر
+        المورد في الاستلامات القادمة
       </Link>,
     );
   }

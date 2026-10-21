@@ -46,6 +46,11 @@ export const PERMISSIONS = {
   payroll: {
     manage: 'payroll.manage',
   },
+  // Suppliers and customers (ADR-016): read balances and statements; add them, pay and collect.
+  parties: {
+    read: 'parties.read',
+    manage: 'parties.manage',
+  },
   admin: {
     users: 'admin.users.write',
     // Renaming warehouses and the store.

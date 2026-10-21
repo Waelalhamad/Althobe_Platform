@@ -34,6 +34,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   PAYROLL_NOT_APPROVED: 409,
   PAYROLL_HAS_PAYMENTS: 409,
   EMPLOYEE_CURRENCY_LOCKED: 409,
+  PARTY_CURRENCY_LOCKED: 409,
 };
 
 export function statusFor(error: DomainError): number {

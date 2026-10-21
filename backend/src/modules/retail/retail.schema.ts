@@ -16,25 +16,37 @@ const cashCount = z
 export const openShiftSchema = z.object({ locationId: id, opening: cashCount });
 export const closeShiftSchema = z.object({ counted: cashCount });
 
-export const saleSchema = z.object({
-  shiftId: id,
-  lines: z
-    .array(z.object({ variantId: id, quantity: z.number().int().min(1).max(999) }))
-    .min(1)
-    .max(200),
-  /** SYP minor units off the whole invoice; a manager only (retail.manage). */
-  discount: minorAmountSchema.optional(),
-  payments: z
-    .array(
-      z.object({
-        currency: drawer,
+export const saleSchema = z
+  .object({
+    shiftId: id,
+    lines: z
+      .array(z.object({ variantId: id, quantity: z.number().int().min(1).max(999) }))
+      .min(1)
+      .max(200),
+    /** SYP minor units off the whole invoice; a manager only (retail.manage). */
+    discount: minorAmountSchema.optional(),
+    payments: z
+      .array(
+        z.object({
+          currency: drawer,
+          amount: minorAmountSchema.refine((v) => v > 0n, 'Amount must be greater than zero'),
+        }),
+      )
+      .max(3)
+      .default([]),
+    /** على الحساب (ADR-016): SYP minor units the customer owes instead of paying now. */
+    account: z
+      .object({
+        partyId: id,
         amount: minorAmountSchema.refine((v) => v > 0n, 'Amount must be greater than zero'),
-      }),
-    )
-    .min(1)
-    .max(3),
-  note: z.string().trim().max(300).optional(),
-});
+      })
+      .optional(),
+    note: z.string().trim().max(300).optional(),
+  })
+  .refine((s) => s.payments.length > 0 || s.account, {
+    message: 'Pay in cash, on account, or both',
+    path: ['payments'],
+  });
 export type SaleInput = z.input<typeof saleSchema>;
 
 export const refundSchema = z.object({

@@ -27,6 +27,22 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Suppliers and customers (2026-10-21, ADR-016):**
+- **One page, «الموردون والزبائن»:** إلنا عندهم (customers) and إلهم علينا (suppliers), each in
+  their own currency. Every party has a statement (كشف حساب).
+- **Receipts:** pick the supplier, and «بالدين» or «دفعت كاش» from a box. The cost must be in the
+  supplier's currency.
+- **Paying and collecting:** from or into any box; another currency counts at today's rates.
+  Exchange differences go to their account.
+- **The till:** «على الحساب» for a known customer, in part or in full. A refund goes back onto
+  the account, and the receipt shows it.
+- **Wholesale:** goods out of a warehouse can go on a merchant at an agreed total (4103), until
+  the full wholesale phase.
+- **Unnamed balance:** what the books hold with no supplier named (live: 13,902.45 $ from 62
+  older receipts) shows on the page and on «اليوم». The owner closes it: paid from a box, or
+  already paid.
+- **The books' accounts 1103 and 2101** move only this way now.
+
 **Payroll and advances (2026-10-20, ADR-015):**
 - **Employees** with their salary, its currency (SYP, USD, LYD, TRY) and whether they are paid
   monthly or weekly, under «المالية» → «الرواتب والسلف».
@@ -118,7 +134,7 @@ yellow «وضع التدريب» banner — for learning the scanner and printer
 | 4 | Store / POS | ✅ Syrian store (2026-10-20, ADR-014) |
 | 5 | Purchasing | |
 | 6 | Sales + customers | |
-| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7c ✅ POS posting (2026-10-20) · 7d ✅ payroll (2026-10-20, ADR-015) · 7b parties |
+| 7 | Accounting | 7a ✅ ledger core (2026-10-19) · 7c ✅ POS posting (2026-10-20) · 7d ✅ payroll (2026-10-20, ADR-015) · 7b ✅ suppliers and customers (2026-10-21, ADR-016) |
 
 MVP path: Products/Variants → Barcode → Locations → Receive → Transfer → Count → Balance → Audit →
 Scanner UI, then connect the store.

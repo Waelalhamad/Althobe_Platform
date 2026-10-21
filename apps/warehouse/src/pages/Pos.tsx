@@ -13,7 +13,7 @@ import {
   toSypMinor,
 } from '../format';
 import { PAGES } from '../help';
-import { can, locationsQuery, meQuery, ratesQuery } from '../queries';
+import { can, locationsQuery, meQuery, partiesQuery, ratesQuery } from '../queries';
 
 export const DRAWER: DrawerCurrency[] = ['SYP', 'USD', 'TRY'];
 
@@ -141,6 +141,11 @@ function Register({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [paid, setPaid] = useState(EMPTY_COUNTS);
   const [discountText, setDiscount] = useState('');
+  // على الحساب (ADR-016): a known customer owes part or all of it instead of paying now.
+  const [customerId, setCustomerId] = useState('');
+  const [accountText, setAccountText] = useState('');
+  const { data: customers = [] } = useQuery(partiesQuery('CUSTOMER'));
+  const tillCustomers = customers.filter((c) => c.currency === 'SYP');
   const [key, setKey] = useState(() => crypto.randomUUID());
   const manager = can(user, 'retail.manage');
 
@@ -188,14 +193,22 @@ function Register({
       s === null ? null : ((v) => (v === null ? null : s + v))(valueOf(p.currency, p.amount)),
     0n,
   );
-  const change = total !== null && paidSyp !== null ? paidSyp - total : null;
+  const account = customerId && accountText.trim() ? toMinorUnits(accountText, 'SYP') : '0';
+  const onAccount = account === null ? null : BigInt(account);
+  const change =
+    total !== null && paidSyp !== null && onAccount !== null ? paidSyp + onAccount - total : null;
   const ready =
     cart.length > 0 &&
     total !== null &&
     total > 0n &&
     paymentsValid &&
+    onAccount !== null &&
+    onAccount <= total &&
+    (payments.length > 0 || onAccount > 0n) &&
     change !== null &&
-    change >= 0n;
+    change >= 0n &&
+    // Change comes from cash; nothing is given back out of what goes on account.
+    (onAccount === 0n || change <= (paidSyp ?? 0n));
 
   const sell = useMutation({
     mutationFn: async () =>
@@ -205,6 +218,9 @@ function Register({
           lines: cart.map((l) => ({ variantId: l.lookup.variant.id, quantity: l.quantity })),
           ...(discount && discount !== '0' ? { discount } : {}),
           payments,
+          ...(onAccount && onAccount > 0n
+            ? { account: { partyId: customerId, amount: account! } }
+            : {}),
         },
         key,
       ),
@@ -213,6 +229,8 @@ function Register({
       setCart([]);
       setPaid(EMPTY_COUNTS);
       setDiscount('');
+      setCustomerId('');
+      setAccountText('');
       setKey(crypto.randomUUID());
       void queryClient.invalidateQueries({ queryKey: ['pos'] });
       await navigate({
@@ -380,7 +398,49 @@ function Register({
               </Field>
             );
           })}
-          {change !== null && payments.length > 0 && (
+          {tillCustomers.length > 0 && (
+            <Field label="على الحساب — لزبون معروف">
+              <div className="flex flex-col gap-2">
+                <select
+                  className="min-h-10 w-full rounded-lg border border-stone bg-white px-3"
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                >
+                  <option value="">— بدون —</option>
+                  {tillCustomers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nameAr}
+                    </option>
+                  ))}
+                </select>
+                {customerId && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      dir="ltr"
+                      inputMode="decimal"
+                      value={accountText}
+                      placeholder="0"
+                      aria-label="المبلغ على الحساب"
+                      onChange={(e) => setAccountText(e.target.value)}
+                      className={account === null ? 'border-bad' : ''}
+                    />
+                    {total !== null && paidSyp !== null && total > paidSyp && (
+                      <Button
+                        variant="ghost"
+                        className="whitespace-nowrap text-sm"
+                        onClick={() =>
+                          setAccountText(fromMinorUnits((total - paidSyp).toString(), 'SYP'))
+                        }
+                      >
+                        الباقي عليه
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Field>
+          )}
+          {change !== null && (payments.length > 0 || (onAccount ?? 0n) > 0n) && (
             <div
               className={`rounded-lg px-3 py-2 text-lg font-bold ${change >= 0n ? 'bg-ok-soft text-ok' : 'bg-bad-soft text-bad'}`}
             >

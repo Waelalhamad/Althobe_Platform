@@ -642,6 +642,46 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     priv.post('/payroll/runs/:id/cancel', async (request: Id) => ({
       data: await pay.cancelRun(request.params.id, writeContextOf(request)),
     }));
+
+    // ── Suppliers and customers (ADR-016). Money moves require Idempotency-Key. ─────────────
+    const par = s.parties;
+
+    priv.get('/parties', async (request: Query) => ({
+      data: await par.listParties(request.query, actorOf(request)),
+    }));
+
+    priv.post('/parties', async (request) => ({
+      data: await par.createParty(request.body, actorOf(request)),
+    }));
+
+    priv.get('/parties/summary', async (request) => ({
+      data: await par.summary(actorOf(request)),
+    }));
+
+    priv.post('/parties/unassigned', async (request) => ({
+      data: await par.settleUnassigned(request.body, writeContextOf(request)),
+    }));
+
+    // Confirming a receipt or goods out with its terms, instead of the plain commit.
+    priv.post('/parties/receipts/:id', async (request: Id) => ({
+      data: await par.commitReceipt(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.post('/parties/goods-out/:id', async (request: Id) => ({
+      data: await par.commitGoodsOut(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.get('/parties/:id', async (request: Id) => ({
+      data: await par.getParty(request.params.id, actorOf(request)),
+    }));
+
+    priv.patch('/parties/:id', async (request: Id) => ({
+      data: await par.updateParty(request.params.id, request.body, actorOf(request)),
+    }));
+
+    priv.post('/parties/:id/settle', async (request: Id) => ({
+      data: await par.settle(request.params.id, request.body, writeContextOf(request)),
+    }));
     done();
   });
 }

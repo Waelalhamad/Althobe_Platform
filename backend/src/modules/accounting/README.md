@@ -16,7 +16,9 @@ financial reports, and closing a month. Base currency USD; each line also keeps 
 - the warehouse app, under «المالية»
 - payroll (ADR-015): `postAdvanceCash`, `postPayrollAccrual`, `postPayrollPayment`,
   `reverseSystemEntry` — 1104 and 2102 move only this way
-- later: purchasing (supplier bills)
+- parties (ADR-016): `postPartyEntry`, `todayValue`, `todayAmount` — 1103 and 2101 move only
+  this way (and purchases from the stock ledger)
+- later: purchasing orders
 
 ## Important Rules
 

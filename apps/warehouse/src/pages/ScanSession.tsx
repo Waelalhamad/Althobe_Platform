@@ -2,8 +2,10 @@ import {
   Alert,
   Button,
   Card,
+  Chip,
   Code,
   ConfirmButton,
+  Field,
   Input,
   PageTitle,
   Select,
@@ -28,11 +30,34 @@ import {
   toMinorUnits,
 } from '../format';
 import { PhotoThumb } from '../photo';
-import { balancesQuery, locationsQuery, ratesQuery, sessionQuery } from '../queries';
+import {
+  balancesQuery,
+  boxesQuery,
+  can,
+  locationsQuery,
+  meQuery,
+  partiesQuery,
+  ratesQuery,
+  sessionQuery,
+} from '../queries';
 
 const route = getRouteApi('/app/sessions/$sessionId');
 // Keyed so the page can hold "confirm" while a typed quantity or cost is still saving.
 const lineSaveKey = (id: string) => ['line-save', id];
+
+/**
+ * The terms a receipt or goods out is confirmed with (ADR-016): from which supplier, and what
+ * was paid on the spot; or to which wholesale customer, at what agreed total. None: as before.
+ */
+interface Terms {
+  partyId: string;
+  /** Paid in cash at the receipt. */
+  cash: boolean;
+  boxId: string;
+  /** Box currency (a receipt's cash) or the customer's (goods out). */
+  amount: string;
+}
+const NO_TERMS: Terms = { partyId: '', cash: false, boxId: '', amount: '' };
 
 type LastScan =
   { status: 'ok' | 'dup'; line: ScanLine } | { status: 'bad'; code: string; message: string };
@@ -107,8 +132,32 @@ export function ScanSessionPage() {
   const scanner = useScanInput(handleScan, { enabled: open });
 
   const toast = useToast();
+  const [terms, setTerms] = useState<Terms>(NO_TERMS);
+  const { data: boxes = [] } = useQuery({
+    ...boxesQuery,
+    enabled: Boolean(open && session?.kind === 'RECEIVE' && terms.cash),
+  });
+  const termsCurrency: Currency | null =
+    session?.kind === 'RECEIVE'
+      ? (boxes.find((b) => b.account.id === terms.boxId)?.account.currency ?? null)
+      : null;
   const commit = useMutation({
-    mutationFn: async () => api.commit(sessionId),
+    mutationFn: async () => {
+      if (session?.kind === 'RECEIVE' && (terms.partyId || terms.cash)) {
+        const paid =
+          terms.cash && termsCurrency
+            ? { boxId: terms.boxId, amount: toMinorUnits(terms.amount, termsCurrency)! }
+            : undefined;
+        return api.commitReceipt(sessionId, {
+          ...(terms.partyId ? { partyId: terms.partyId } : {}),
+          ...(paid ? { paid } : {}),
+        });
+      }
+      if (session?.kind === 'SALE' && terms.partyId) {
+        return api.commitGoodsOut(sessionId, { partyId: terms.partyId, amount: terms.amount });
+      }
+      return api.commit(sessionId);
+    },
     onSuccess: async () => {
       toast('تم الحفظ في المخزون — الأرصدة محدّثة');
       await Promise.all([
@@ -240,6 +289,10 @@ export function ScanSessionPage() {
         </table>
       </Card>
 
+      {open && (session.kind === 'RECEIVE' || session.kind === 'SALE') && (
+        <TermsCard session={session} terms={terms} onChange={setTerms} />
+      )}
+
       {open && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <span className="tabular text-lg font-bold">
@@ -261,7 +314,8 @@ export function ScanSessionPage() {
                 pending > 0 ||
                 savingLines > 0 ||
                 session.totalQuantity === 0 ||
-                overScanned.length > 0
+                overScanned.length > 0 ||
+                !termsReady(session.kind, terms, termsCurrency)
               }
             >
               تأكيد وحفظ في المخزون
@@ -283,6 +337,147 @@ export function ScanSessionPage() {
         </div>
       )}
     </>
+  );
+}
+
+/** Terms can be sent: a cash payment needs its box and amount; goods out on account its total. */
+function termsReady(kind: string, t: Terms, cashCurrency: Currency | null): boolean {
+  if (kind === 'RECEIVE' && t.cash) {
+    return Boolean(t.boxId && cashCurrency && toMinorUnits(t.amount, cashCurrency));
+  }
+  if (kind === 'SALE' && t.partyId) return /^\d+$/.test(t.amount) && t.amount !== '0';
+  return true;
+}
+
+/**
+ * From whom the goods came and whether they were paid in cash (a receipt), or to which
+ * wholesale customer they went and at what total (goods out). Optional: with nothing chosen the
+ * session is confirmed as before.
+ */
+function TermsCard({
+  session,
+  terms,
+  onChange,
+}: {
+  session: ScanSession;
+  terms: Terms;
+  onChange: (t: Terms) => void;
+}) {
+  const { data: user } = useQuery(meQuery);
+  const receipt = session.kind === 'RECEIVE';
+  const manage = can(user, 'parties.manage');
+  const { data: parties = [] } = useQuery(partiesQuery(receipt ? 'SUPPLIER' : 'CUSTOMER'));
+  const { data: boxes = [] } = useQuery({ ...boxesQuery, enabled: receipt && terms.cash });
+  const set = (patch: Partial<Terms>) => onChange({ ...terms, ...patch });
+  const party = parties.find((p) => p.id === terms.partyId);
+  // What the goods cost, when every line is costed in one currency.
+  const costs = session.lines.map((l) => l.unitCost);
+  const one =
+    costs.length > 0 && costs.every((c) => c && c.currency === costs[0]?.currency)
+      ? costs[0]!.currency
+      : null;
+  const goods = one
+    ? session.lines.reduce((s, l) => s + BigInt(l.unitCost!.amount) * BigInt(l.quantity), 0n)
+    : null;
+  // Goods out on account is a sale with money in it: only whoever keeps the accounts.
+  if (!receipt && !manage) return null;
+  if (parties.length === 0 && !(receipt && manage)) return null;
+
+  const customerAmount = party ? (toMinorUnits(terms.amount, party.currency) ?? '') : '';
+  return (
+    <Card className="mt-4 flex flex-col gap-3">
+      <h2 className="font-bold">{receipt ? 'من أي مورد؟' : 'لتاجر جملة على الحساب؟'}</h2>
+      <div className="flex flex-wrap items-end gap-3">
+        {parties.length > 0 && (
+          <div className="w-64">
+            <Field label={receipt ? 'المورد' : 'الزبون'}>
+              <Select
+                value={terms.partyId}
+                onChange={(e) => onChange({ ...terms, partyId: e.target.value, amount: '' })}
+              >
+                <option value="">{receipt ? '— بدون مورد —' : '— بدون فاتورة —'}</option>
+                {parties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nameAr} ({CURRENCY_SYMBOL[p.currency]})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
+        {receipt && manage && (
+          <div className="flex gap-2">
+            <Chip selected={!terms.cash} onClick={() => set({ cash: false })}>
+              بالدين
+            </Chip>
+            <Chip selected={terms.cash} onClick={() => set({ cash: true })}>
+              دفعت كاش
+            </Chip>
+          </div>
+        )}
+        {receipt && terms.cash && (
+          <>
+            <div className="w-64">
+              <Field label="من صندوق">
+                <Select value={terms.boxId} onChange={(e) => set({ boxId: e.target.value })}>
+                  <option value="">— اختر —</option>
+                  {boxes
+                    .filter((b) => b.account.isActive)
+                    .map((b) => (
+                      <option key={b.account.id} value={b.account.id}>
+                        {b.account.nameAr}
+                      </option>
+                    ))}
+                </Select>
+              </Field>
+            </div>
+            <div className="w-44">
+              <Field label="المبلغ المدفوع">
+                <Input
+                  dir="ltr"
+                  inputMode="decimal"
+                  value={terms.amount}
+                  onChange={(e) => set({ amount: e.target.value })}
+                />
+              </Field>
+            </div>
+          </>
+        )}
+        {!receipt && party && (
+          <div className="w-44">
+            <Field label={`قيمة الفاتورة (${CURRENCY_SYMBOL[party.currency]})`}>
+              <Input
+                dir="ltr"
+                inputMode="decimal"
+                value={terms.amount ? fromMinorUnits(terms.amount, party.currency) : ''}
+                onChange={(e) =>
+                  set({ amount: toMinorUnits(e.target.value, party.currency) ?? '' })
+                }
+              />
+            </Field>
+          </div>
+        )}
+      </div>
+      {receipt && goods !== null && one && (
+        <p className="text-sm text-ink-muted">
+          قيمة البضاعة: <span className="tabular">{formatMoney(goods.toString(), one)}</span>
+          {party && party.currency !== one && ' — المورد بعملة أخرى: اكتب التكلفة بعملته'}
+        </p>
+      )}
+      <p className="text-sm text-ink-muted">
+        {receipt
+          ? terms.cash
+            ? terms.partyId
+              ? 'ما دفعته ينقص من حساب المورد؛ الباقي يبقى عليك له.'
+              : 'بدون مورد: الكاش لازم يغطي كامل البضاعة.'
+            : terms.partyId
+              ? 'قيمة البضاعة تُكتب عليك للمورد حتى تدفعها.'
+              : 'بدون مورد: تُسجَّل كبضاعة مستلمة بدون مورد.'
+          : terms.partyId
+            ? `القيمة تُكتب على الزبون${customerAmount ? '' : ' — اكتبها أولاً'}.`
+            : 'بدون زبون: إخراج بضاعة فقط، بدون فاتورة.'}
+      </p>
+    </Card>
   );
 }
 

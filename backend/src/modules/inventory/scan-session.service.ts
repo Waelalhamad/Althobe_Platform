@@ -175,6 +175,56 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     };
   }
 
+  async function commitInTx(tx: Tx, sessionId: string, ctx: ActorContext) {
+    const session = await lockSession(tx, sessionId, 'update');
+    assertPermission(ctx, PERMISSION_BY_KIND[session.kind]);
+    const done = async (alreadyCommitted: boolean) => ({
+      alreadyCommitted,
+      kind: session.kind,
+      locationId: session.location_id,
+      movements: (
+        await repo.movementsByReference(tx, referenceTypeOf(session.kind), session.id)
+      ).map(toMovementView),
+      result: await commitResult(tx, session, ctx),
+    });
+    if (session.status === 'COMMITTED') return done(true);
+    if (session.status !== 'OPEN') throw new ScanSessionNotOpenError(session.id, session.status);
+
+    const lines = (
+      await tx.scanSessionLine.findMany({
+        where: { sessionId: session.id },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).filter((line) => line.quantity > 0);
+    if (lines.length === 0) throw new EmptyScanSessionError(session.id);
+
+    // Opening stock needs its cost too (ADR-013): stock that enters at zero would make the
+    // books show it as free and every sale of it as pure profit.
+    if (COSTED_KINDS.has(session.kind)) {
+      const uncosted = lines.filter((line) => costOf(line) === null).map((line) => line.variantId);
+      if (uncosted.length) throw new MissingCostError(session.id, uncosted);
+    }
+
+    if (session.kind === 'OPENING') {
+      await assertNoPriorMovements(
+        tx,
+        session.location_id,
+        lines.map((l) => l.variantId),
+      );
+    }
+
+    await applyMovements(tx, deps, entriesFor(session, lines), ctx, {
+      action: 'inventory.scan_session.commit',
+      entityType: 'scan_session',
+      entityId: session.id,
+    });
+    await tx.scanSession.update({
+      where: { id: session.id },
+      data: { status: 'COMMITTED', committedById: ctx.userId, committedAt: new Date() },
+    });
+    return done(false);
+  }
+
   return {
     async openSession(input: OpenScanSessionInput, ctx: ActorContext): Promise<ScanSessionView> {
       const data = parse(openScanSessionSchema, input);
@@ -375,49 +425,17 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     async commitSession(input: SessionRef, ctx: ActorContext): Promise<CommitResult> {
       const data = parse(sessionRefSchema, input);
       return inTransaction(db, async (tx) => {
-        const session = await lockSession(tx, data.sessionId, 'update');
-        assertPermission(ctx, PERMISSION_BY_KIND[session.kind]);
-        if (session.status === 'COMMITTED') return commitResult(tx, session, ctx);
-        if (session.status !== 'OPEN')
-          throw new ScanSessionNotOpenError(session.id, session.status);
-
-        const lines = (
-          await tx.scanSessionLine.findMany({
-            where: { sessionId: session.id },
-            orderBy: { createdAt: 'asc' },
-          })
-        ).filter((line) => line.quantity > 0);
-        if (lines.length === 0) throw new EmptyScanSessionError(session.id);
-
-        // Opening stock needs its cost too (ADR-013): stock that enters at zero would make the
-        // books show it as free and every sale of it as pure profit.
-        if (COSTED_KINDS.has(session.kind)) {
-          const uncosted = lines
-            .filter((line) => costOf(line) === null)
-            .map((line) => line.variantId);
-          if (uncosted.length) throw new MissingCostError(session.id, uncosted);
-        }
-
-        if (session.kind === 'OPENING') {
-          await assertNoPriorMovements(
-            tx,
-            session.location_id,
-            lines.map((l) => l.variantId),
-          );
-        }
-
-        await applyMovements(tx, deps, entriesFor(session, lines), ctx, {
-          action: 'inventory.scan_session.commit',
-          entityType: 'scan_session',
-          entityId: session.id,
-        });
-        await tx.scanSession.update({
-          where: { id: session.id },
-          data: { status: 'COMMITTED', committedById: ctx.userId, committedAt: new Date() },
-        });
-        return commitResult(tx, session, ctx);
+        const { result } = await commitInTx(tx, data.sessionId, ctx);
+        return result;
       });
     },
+
+    /**
+     * Trusted call for parties (ADR-016): commits in the caller's transaction, so a supplier's
+     * bill or a customer's invoice is recorded with the goods or not at all. `movements` keep
+     * their cost; `alreadyCommitted` tells a retry from the first commit.
+     */
+    commitInTx,
 
     async cancelSession(input: SessionRef, ctx: ActorContext): Promise<void> {
       const data = parse(sessionRefSchema, input);

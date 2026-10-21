@@ -102,10 +102,23 @@ function Paper({ sale, storeName }: { sale: PosSale; storeName: string }) {
               value={formatMoney(p.amount, p.currency)}
             />
           ))}
+          {sale.onAccount !== '0' && (
+            <Row
+              label={`على الحساب — ${sale.party?.nameAr ?? ''}`}
+              value={formatMoney(sale.onAccount, 'SYP')}
+              strong
+            />
+          )}
           {sale.change !== '0' && (
             <Row label="الباقي" value={formatMoney(sale.change, 'SYP')} strong />
           )}
         </>
+      )}
+      {refund && sale.onAccount !== '0' && (
+        <Row
+          label={`رجع على حساب ${sale.party?.nameAr ?? ''}`}
+          value={formatMoney(sale.onAccount, 'SYP')}
+        />
       )}
       {sale.note && <div className="mt-2 text-xs">{sale.note}</div>}
       <div className="mt-3 text-center text-xs">شكراً لزيارتكم</div>
@@ -196,7 +209,9 @@ function Refund({ sale, storeId }: { sale: PosSale; storeId: string }) {
             disabled={!shift || lines.length === 0 || !reason.trim() || refund.isPending}
             onClick={() => refund.mutate()}
           >
-            تسجيل المرتجع وإرجاع المبلغ بالليرة
+            {sale.onAccount !== '0'
+              ? `تسجيل المرتجع — ينقص من حساب ${sale.party?.nameAr ?? 'الزبون'}`
+              : 'تسجيل المرتجع وإرجاع المبلغ بالليرة'}
           </Button>
         </div>
       </div>

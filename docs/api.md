@@ -162,6 +162,28 @@ Errors: `PAYROLL_PERIOD_TAKEN`, `PAYROLL_NOT_DRAFT`, `PAYROLL_NOT_APPROVED`,
 `PAYROLL_HAS_PAYMENTS`, `EMPLOYEE_CURRENCY_LOCKED` (409), `NO_EMPLOYEES`, `NOTHING_TO_PAY`,
 `ADVANCE_EXCEEDS_BALANCE`, `PAY_BELOW_ZERO`, `CURRENCY_MISMATCH`, `RATE_NOT_SET` (422).
 
+## Endpoints — Suppliers and customers (ADR-016) — implemented
+
+Amounts in minor units of the party's currency. Settling and closing the unnamed balance
+**require `Idempotency-Key`**.
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `GET` | `/parties?kind=&includeInactive=` (balance only with `parties.read`) | `parties.read`, or picking: `inventory.receive` · `inventory.issue` · `retail.sell` |
+| `POST` / `PATCH` | `/parties` · `/parties/:id` — `{ kind, nameAr, phone?, currency, branch, notes?, isActive? }` | `parties.manage` |
+| `GET` | `/parties/:id` (statement with running balance) · `/parties/summary` (totals, unnamed balance) | `parties.read` |
+| `POST` | `/parties/:id/settle` — `{ boxId, amount, note? }` (box currency) | `parties.manage` |
+| `POST` | `/parties/receipts/:sessionId` — `{ partyId?, paid?: { boxId, amount } }` | `inventory.receive` (paid: `parties.manage`) |
+| `POST` | `/parties/goods-out/:sessionId` — `{ partyId, amount, note? }` | `inventory.issue` + `parties.manage` |
+| `POST` | `/parties/unassigned` — `{ side, boxId?, amount, note? }` (no box: USD cents, the owner paid) | `parties.manage` |
+
+`POST /retail/sales` also takes `account: { partyId, amount }` (SYP), with or without cash
+payments. Sales and refunds return `onAccount` and `party`.
+
+Errors: `PARTY_CURRENCY_LOCKED` (409), `PARTY_NOT_USABLE`, `PARTY_CURRENCY_MISMATCH`,
+`WRONG_SESSION_KIND`, `CASH_MUST_COVER_GOODS`, `UNASSIGNED_EXCEEDED` (422). Vouchers on 1103 or
+2101 are refused with `ACCOUNT_NOT_USABLE` (`PARTY`).
+
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).
 

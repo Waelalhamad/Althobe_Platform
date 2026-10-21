@@ -4,7 +4,13 @@ import { writeAudit } from '../../shared/audit.js';
 import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { withIdempotency } from '../../shared/idempotency.js';
-import type { Currency } from '../../shared/money.js';
+import {
+  divRoundHalfUp,
+  EXPONENT,
+  rateToMicros,
+  toBaseAmount,
+  type Currency,
+} from '../../shared/money.js';
 import {
   assertPermission,
   PERMISSIONS,
@@ -48,6 +54,7 @@ import type {
 } from './accounting.types.js';
 import { ensureLocationAccounts, installChart } from './chart.js';
 import { entryForMovement, INVENTORY_SOURCE, type InventoryAccounts } from './inventory-posting.js';
+import type { PartyPosting } from './party-posting.js';
 import type {
   AdvanceCashPosting,
   PayrollAccrualPosting,
@@ -311,9 +318,13 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     if (!account.isActive) throw new AccountNotUsableError(id, 'INACTIVE');
     // Stock accounts move only with the goods (the books check depends on it).
     if (account.kind === 'INVENTORY') throw new AccountNotUsableError(id, 'INVENTORY');
-    // Advances and salaries owed move only with the payroll, whose detail they total.
+    // Advances and salaries owed move only with the payroll, whose detail they total; what
+    // customers and suppliers owe moves only with them (ADR-016).
     if (account.systemRole === 'EMPLOYEE_ADVANCES' || account.systemRole === 'SALARIES_PAYABLE') {
       throw new AccountNotUsableError(id, 'PAYROLL');
+    }
+    if (account.systemRole === 'RECEIVABLE' || account.systemRole === 'PAYABLE') {
+      throw new AccountNotUsableError(id, 'PARTY');
     }
     if (use === 'cash' && account.kind !== 'CASH') throw new AccountNotUsableError(id, 'NOT_CASH');
     // Box to box is a transfer or an exchange, not a receipt.
@@ -525,6 +536,71 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     async balanceOfRole(q: Queryable, role: SystemRole): Promise<bigint> {
       const id = await accountByRole(q, role);
       return (await reports.sumsByAccount(q)).get(id)?.base ?? 0n;
+    },
+
+    // ─── Suppliers and customers (ADR-016): trusted calls, in the caller's transaction ───────
+
+    /** USD cents `amount` of `currency` is worth at the owner's rate today. */
+    async todayValue(currency: Currency, amount: bigint): Promise<bigint> {
+      if (currency === 'USD') return amount;
+      const rate = await rateFor(currency, undefined);
+      return amount < 0n
+        ? -toBaseAmount(-amount, currency, rate)
+        : toBaseAmount(amount, currency, rate);
+    },
+
+    /** Minor units of `currency` worth `base` USD cents at the owner's rate today. */
+    async todayAmount(currency: Currency, base: bigint): Promise<bigint> {
+      if (currency === 'USD') return base;
+      const rate = await rateFor(currency, undefined);
+      const scale = 10n ** BigInt(EXPONENT[currency]);
+      return divRoundHalfUp(base * rateToMicros(rate) * scale, 100n * 1_000_000n);
+    },
+
+    /**
+     * One movement of what a party owes or is owed: the control account (1103 or 2101) at the
+     * value the caller fixed, against a box at today's rate or an account by role at a USD value.
+     * What the two valuations leave is an exchange difference.
+     */
+    async postPartyEntry(tx: Tx, p: PartyPosting): Promise<string> {
+      const control = await accountByRole(tx, p.side);
+      const lines: DraftLine[] = [
+        lineAtBase(control, p.control.currency, p.control.amount, p.control.base, {
+          branch: p.branch,
+          memo: p.lineMemo ?? null,
+        }),
+      ];
+      if ('boxId' in p.other) {
+        const box = await usableAccount(tx, p.other.boxId, 'cash');
+        const currency = box.currency as Currency;
+        const boxLine = line(box.id, currency, p.other.amount, await rateFor(currency, undefined), {
+          branch: box.branch as Branch | null,
+        });
+        if (boxLine.amountBase === 0n) throw new AmountTooSmallError();
+        lines.push(boxLine);
+      } else {
+        lines.push(
+          line(await accountByRole(tx, p.other.role), 'USD', p.other.base, '1', {
+            branch: p.branch,
+          }),
+        );
+      }
+      const [id] = await postEntries(tx, [
+        {
+          voucherType: p.voucherType,
+          entryDate: businessDate(new Date()),
+          memo: p.memo,
+          sourceType: p.sourceType,
+          sourceId: p.sourceId,
+          createdById: p.createdById,
+          lines: await withExchangeDifference(
+            tx,
+            lines.filter((l) => l.amountBase !== 0n || l.amountCurrency !== 0n),
+            p.branch,
+          ),
+        },
+      ]);
+      return id!;
     },
 
     /** A cash box's currency, for a caller choosing whom a box can pay. */

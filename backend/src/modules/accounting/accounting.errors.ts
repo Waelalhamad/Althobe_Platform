@@ -27,7 +27,14 @@ export class AccountNotUsableError extends DomainError {
   constructor(
     accountId: string,
     reason:
-      'HEADING' | 'INACTIVE' | 'NOT_CASH' | 'INVENTORY' | 'SAME_ACCOUNT' | 'IS_CASH' | 'PAYROLL',
+      | 'HEADING'
+      | 'INACTIVE'
+      | 'NOT_CASH'
+      | 'INVENTORY'
+      | 'SAME_ACCOUNT'
+      | 'IS_CASH'
+      | 'PAYROLL'
+      | 'PARTY',
   ) {
     super('ACCOUNT_NOT_USABLE', 'This account cannot be used here', { accountId, reason });
   }

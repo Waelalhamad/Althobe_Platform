@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api, type Branch, type Range, type User, type VoucherType } from './api';
+import { api, type Branch, type PartyKind, type Range, type User, type VoucherType } from './api';
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
@@ -160,3 +160,16 @@ export const payrollRunsQuery = queryOptions({
 });
 export const payrollRunQuery = (id: string) =>
   queryOptions({ queryKey: ['payroll', 'run', id], queryFn: async () => api.payrollRun(id) });
+
+// ─── Suppliers and customers (ADR-016). Keys start with 'parties'; moves also change 'books'. ──
+export const partiesQuery = (kind?: PartyKind, includeInactive = false) =>
+  queryOptions({
+    queryKey: ['parties', 'list', kind ?? 'all', includeInactive],
+    queryFn: async () => api.parties({ kind, includeInactive }),
+  });
+export const partyQuery = (id: string) =>
+  queryOptions({ queryKey: ['parties', 'one', id], queryFn: async () => api.party(id) });
+export const partiesSummaryQuery = queryOptions({
+  queryKey: ['parties', 'summary'],
+  queryFn: api.partiesSummary,
+});

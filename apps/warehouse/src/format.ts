@@ -122,6 +122,7 @@ export const VOUCHER_TYPE: Record<string, string> = {
   REVERSAL: 'قيد عكسي',
   RETAIL: 'وردية المتجر',
   PAYROLL: 'كشف رواتب',
+  INVOICE: 'فاتورة على الحساب',
 };
 
 export const FREQUENCY: Record<string, string> = { MONTHLY: 'شهري', WEEKLY: 'أسبوعي' };
@@ -213,6 +214,17 @@ export function toUsdCents(minor: string, currency: Currency, rate: string): str
   if (micros === 0n) return '0';
   const n = BigInt(minor) * 100n * 1_000_000n;
   const d = 10n ** BigInt(EXPONENT[currency]) * micros;
+  const magnitude = ((n < 0n ? -n : n) * 2n + d) / (2n * d);
+  return (n < 0n ? -magnitude : magnitude).toString();
+}
+
+/** USD cents → minor units of `currency` at `rate` (units per 1 USD), exactly: no floats. */
+export function fromUsdCents(cents: string, currency: Currency, rate: string): string {
+  if (currency === 'USD') return cents;
+  const [whole = '0', fraction = ''] = rate.split('.');
+  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0').slice(0, 6));
+  const n = BigInt(cents) * micros * 10n ** BigInt(EXPONENT[currency]);
+  const d = 100n * 1_000_000n;
   const magnitude = ((n < 0n ? -n : n) * 2n + d) / (2n * d);
   return (n < 0n ? -magnitude : magnitude).toString();
 }

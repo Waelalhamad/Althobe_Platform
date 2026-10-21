@@ -14,6 +14,8 @@ export const VOUCHER_TYPES = [
   'RETAIL',
   // An approved pay sheet: the period's salary expense (ADR-015).
   'PAYROLL',
+  // A sale or credit note on account: wholesale, the store's على الحساب (ADR-016).
+  'INVOICE',
 ] as const;
 export type VoucherType = (typeof VOUCHER_TYPES)[number];
 
@@ -49,7 +51,9 @@ export type SystemRole =
   // Payroll (ADR-015). Advances and salaries owed are posted by the payroll module only.
   | 'EMPLOYEE_ADVANCES'
   | 'SALARIES_PAYABLE'
-  | 'SALARIES_EXPENSE';
+  | 'SALARIES_EXPENSE'
+  // Wholesale sales on account (ADR-016).
+  | 'WHOLESALE_SALES';
 
 /** A line about to be posted. amountBase is USD cents, debit positive. */
 export interface DraftLine {

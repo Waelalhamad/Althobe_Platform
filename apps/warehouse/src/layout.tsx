@@ -18,6 +18,7 @@ type To =
   | '/finance/reports'
   | '/finance/close'
   | '/finance/payroll'
+  | '/finance/parties'
   | '/pos'
   | '/pos/shifts';
 
@@ -70,6 +71,7 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
     group: null,
     items: [
       { to: '/finance', label: 'الصناديق', anyOf: ['accounting.view'] },
+      { to: '/finance/parties', label: 'الموردون والزبائن', anyOf: ['parties.read'] },
       { to: '/finance/payroll', label: 'الرواتب والسلف', anyOf: ['payroll.manage'] },
       { to: '/finance/reports', label: 'الأرباح والتقارير', anyOf: ['accounting.view'] },
     ],

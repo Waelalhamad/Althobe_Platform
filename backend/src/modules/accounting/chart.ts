@@ -86,7 +86,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '41', nameAr: 'المبيعات', heading: true },
   { code: '4101', nameAr: 'مبيعات المفرق — سوريا', branch: 'SY', role: 'RETAIL_SALES_SY' },
   { code: '4102', nameAr: 'مبيعات المفرق — ليبيا', branch: 'LY' },
-  { code: '4103', nameAr: 'مبيعات الجملة' },
+  { code: '4103', nameAr: 'مبيعات الجملة', role: 'WHOLESALE_SALES' },
   { code: '4109', nameAr: 'مردودات المبيعات', role: 'SALES_RETURNS' },
   { code: '42', nameAr: 'إيرادات أخرى', heading: true },
   { code: '4201', nameAr: 'إيرادات متنوعة' },

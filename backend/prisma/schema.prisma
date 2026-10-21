@@ -160,6 +160,7 @@ model User {
   payrollRunsApproved PayrollRun[]         @relation("PayrollRunApprovedBy")
   payrollPayments     PayrollPayment[]
   employeeAdvances    EmployeeAdvance[]
+  partyEntries        PartyEntry[]
 
   @@map("users")
 }
@@ -773,6 +774,7 @@ model JournalEntry {
   payrollReversals PayrollRun[]       @relation("PayrollRunReversal")
   payrollPayments  PayrollPayment[]
   employeeAdvances EmployeeAdvance[]
+  partyEntries     PartyEntry[]
 
   @@unique([voucherType, voucherYear, voucherNo], map: "uq_journal_entries_voucher")
   @@unique([sourceType, sourceId], map: "uq_journal_entries_source")
@@ -874,25 +876,29 @@ model PosShiftCash {
 }
 
 model PosSale {
-  id          String   @id @default(uuid(7)) @db.Uuid
+  id            String   @id @default(uuid(7)) @db.Uuid
   // SALE · REFUND
-  kind        String
-  receiptYear Int      @map("receipt_year") @db.SmallInt
-  receiptNo   Int      @map("receipt_no")
-  shiftId     String   @map("shift_id") @db.Uuid
-  locationId  String   @map("location_id") @db.Uuid
-  refundOfId  String?  @map("refund_of_id") @db.Uuid
-  subtotal    BigInt
-  discount    BigInt   @default(0)
-  total       BigInt
+  kind          String
+  receiptYear   Int      @map("receipt_year") @db.SmallInt
+  receiptNo     Int      @map("receipt_no")
+  shiftId       String   @map("shift_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  refundOfId    String?  @map("refund_of_id") @db.Uuid
+  subtotal      BigInt
+  discount      BigInt   @default(0)
+  total         BigInt
   // The total in USD cents at the SYP rate of the moment.
-  totalBase   BigInt   @map("total_base")
+  totalBase     BigInt   @map("total_base")
   // Change given back, in SYP.
-  change      BigInt   @default(0)
-  sypRate     Decimal  @map("syp_rate") @db.Decimal(18, 6)
-  note        String?
-  createdById String   @map("created_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  change        BigInt   @default(0)
+  sypRate       Decimal  @map("syp_rate") @db.Decimal(18, 6)
+  // A sale on account (ADR-016): the customer, and what they owe instead of paying.
+  partyId       String?  @map("party_id") @db.Uuid
+  onAccount     BigInt   @default(0) @map("on_account")
+  onAccountBase BigInt   @default(0) @map("on_account_base")
+  note          String?
+  createdById   String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   shift     PosShift      @relation(fields: [shiftId], references: [id])
   location  Location      @relation(fields: [locationId], references: [id])
@@ -901,6 +907,8 @@ model PosSale {
   createdBy User          @relation(fields: [createdById], references: [id])
   lines     PosSaleLine[]
   payments  PosPayment[]
+
+  party Party? @relation(fields: [partyId], references: [id])
 
   @@unique([kind, receiptYear, receiptNo], map: "uq_pos_sales_receipt")
   @@index([shiftId], map: "idx_pos_sales_shift_id")
@@ -1067,4 +1075,50 @@ model EmployeeAdvance {
 
   @@index([employeeId, createdAt], map: "idx_employee_advances_employee")
   @@map("employee_advances")
+}
+
+// ─── Suppliers and customers (ADR-016) ──────────────────────────────────────────────────────
+
+model Party {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  // SUPPLIER · CUSTOMER
+  kind      String
+  nameAr    String   @map("name_ar")
+  phone     String?
+  currency  String   @db.Char(3)
+  branch    String   @default("SY") @db.Char(2)
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  entries  PartyEntry[]
+  posSales PosSale[]
+
+  @@index([kind, nameAr], map: "idx_parties_kind_name")
+  @@map("parties")
+}
+
+model PartyEntry {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  partyId        String   @map("party_id") @db.Uuid
+  // BILL · PAYMENT · INVOICE · RECEIPT · POS_SALE · POS_REFUND
+  kind           String
+  // > 0: more outstanding; < 0: settled. Minor units of the party's currency.
+  amount         BigInt
+  amountBase     BigInt   @map("amount_base")
+  sourceType     String   @map("source_type")
+  sourceId       String   @map("source_id") @db.Uuid
+  journalEntryId String?  @map("journal_entry_id") @db.Uuid
+  note           String?
+  createdById    String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  party        Party         @relation(fields: [partyId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+  createdBy    User          @relation(fields: [createdById], references: [id])
+
+  @@unique([kind, sourceId], map: "uq_party_entries_source")
+  @@index([partyId, createdAt], map: "idx_party_entries_party")
+  @@map("party_entries")
 }

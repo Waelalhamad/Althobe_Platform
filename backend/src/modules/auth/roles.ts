@@ -38,6 +38,8 @@ export const ROLES = {
     P.accounting.post,
     P.employees.read,
     P.payroll.manage,
+    P.parties.read,
+    P.parties.manage,
   ],
 } satisfies Record<string, readonly Permission[]>;
 
