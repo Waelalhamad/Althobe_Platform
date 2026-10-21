@@ -8,7 +8,7 @@ import { can, meQuery } from '../queries';
 import { currentShiftQuery, useStore } from './Pos';
 
 // The 80 mm thermal roll (ADR-014): the page is the paper, no margins, the app's frame hidden.
-const PRINT_CSS = `@media print { @page { size: 80mm auto; margin: 3mm; } body { background: #fff; } }`;
+export const PRINT_CSS = `@media print { @page { size: 80mm auto; margin: 3mm; } body { background: #fff; } }`;
 
 /** إيصال: what the customer takes home. Prints on the 80 mm roll; a manager refunds from here. */
 export function ReceiptPage() {
@@ -53,7 +53,7 @@ export function ReceiptPage() {
   );
 }
 
-function Paper({ sale, storeName }: { sale: PosSale; storeName: string }) {
+export function Paper({ sale, storeName }: { sale: PosSale; storeName: string }) {
   const refund = sale.kind === 'REFUND';
   return (
     <div className="mx-auto w-[72mm] bg-white p-3 text-sm text-black shadow print:w-full print:shadow-none">

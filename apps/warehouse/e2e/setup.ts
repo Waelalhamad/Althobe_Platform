@@ -5,7 +5,7 @@ import { expect, type APIRequestContext } from '@playwright/test';
 
 export async function api<T>(
   request: APIRequestContext,
-  method: 'GET' | 'POST' | 'PATCH',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT',
   url: string,
   data?: object,
 ) {

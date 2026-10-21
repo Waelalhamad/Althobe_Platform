@@ -130,6 +130,7 @@ Amounts in SYP minor units, except payments (their own currency). Sales and refu
 | Method | Path | Permission |
 | --- | --- | --- |
 | `GET` | `/retail/shifts/current?locationId=` (the open shift, or null) | `retail.sell` |
+| `GET` | `/retail/shifts/last-count?locationId=` (what the drawer held when the last shift closed, or null) | `retail.sell` |
 | `GET` / `POST` | `/retail/shifts?locationId=` / `{ locationId, opening: { SYP?, USD?, TRY? } }` | `retail.sell` |
 | `GET` | `/retail/shifts/:id` (drawer per currency: opening, takings, change, refunds, expected, counted) | `retail.sell` |
 | `POST` | `/retail/shifts/:id/close` — `{ counted: { SYP?, USD?, TRY? } }` (another person's: `retail.manage`) | `retail.sell` |

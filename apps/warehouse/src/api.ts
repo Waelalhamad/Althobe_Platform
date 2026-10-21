@@ -945,6 +945,11 @@ export const api = {
   currentShift: async (locationId: string) =>
     get<Shift | null>(`/retail/shifts/current?${query({ locationId })}`),
   shifts: async (locationId: string) => get<Shift[]>(`/retail/shifts?${query({ locationId })}`),
+  /** What the drawer held when the store's last shift closed, to start the next one from. */
+  lastCount: async (locationId: string) =>
+    get<{ closedAt: string; counted: CashCount } | null>(
+      `/retail/shifts/last-count?${query({ locationId })}`,
+    ),
   shift: async (id: string) => get<Shift>(`/retail/shifts/${id}`),
   openShift: async (locationId: string, opening: CashCount) =>
     post<Shift>('/retail/shifts', { locationId, opening }),

@@ -27,6 +27,18 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**An easier till (2026-10-21):**
+- **Three steps:** scan → pay → done. The scanner box keeps the focus; the last piece shows
+  framed, with a sound.
+- **Search by name** (F2), for pieces without a readable label.
+- **The cart:** finger-sized − / + per line.
+- **Paying:** one tap «كاش ليرة — المبلغ كامل» (F4), round amounts in pounds, banknotes in
+  dollars and lira, a big keypad for any other amount, and «الباقي على حساب زبون». What is
+  missing, or the change, shows in large figures.
+- **After the sale:** the receipt prints by itself, a full-screen «✓ الباقي للزبون», and the till
+  is empty for the next customer; «آخر فاتورة» reopens it.
+- **Opening a shift** starts from the last count: one tap when the drawer is unchanged.
+
 **Suppliers and customers (2026-10-21, ADR-016):**
 - **One page, «الموردون والزبائن»:** إلنا عندهم (customers) and إلهم علينا (suppliers), each in
   their own currency. Every party has a statement (كشف حساب).

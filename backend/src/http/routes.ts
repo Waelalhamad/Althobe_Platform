@@ -530,6 +530,10 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await pos.currentShift(request.query.locationId ?? '', actorOf(request)),
     }));
 
+    priv.get('/retail/shifts/last-count', async (request: Query) => ({
+      data: await pos.lastCount(request.query.locationId ?? '', actorOf(request)),
+    }));
+
     priv.get('/retail/shifts', async (request: Query) => ({
       data: await pos.listShifts(request.query, actorOf(request)),
     }));

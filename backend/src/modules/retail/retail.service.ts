@@ -342,6 +342,24 @@ export function createRetailService(db: Db, deps: RetailDeps) {
       return open ? shiftView(db, open.id) : null;
     },
 
+    /**
+     * What the drawer held when the store's last shift closed, per currency: the next shift
+     * starts from it, so opening is one tap when nothing was taken out overnight.
+     */
+    async lastCount(locationId: string, ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.retail.sell);
+      const last = await db.posShift.findFirst({
+        where: { locationId, status: 'CLOSED' },
+        orderBy: { closedAt: 'desc' },
+        include: { cash: true },
+      });
+      if (!last) return null;
+      return {
+        closedAt: last.closedAt,
+        counted: Object.fromEntries(last.cash.map((c) => [c.currency, c.counted ?? 0n])),
+      };
+    },
+
     async getShift(id: string, ctx: ActorContext): Promise<ShiftView> {
       assertPermission(ctx, PERMISSIONS.retail.sell);
       return shiftView(db, id);

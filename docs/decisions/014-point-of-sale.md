@@ -92,3 +92,22 @@ Cost of goods sold posts from the stock movements as before.
   «المالية».
 - The opening count is not compared with the books' balance of the store boxes. Record the
   drawer's starting money once with a receipt voucher (opening balances), as for any box.
+
+## Addendum — an easier till (2026-10-21)
+
+The owner asked for a till that is easy to use on a tablet and on a PC with a scanner, with
+search by name, and a sale that prints and returns to selling at once. The rules above are
+unchanged; only the screen is.
+
+- **One screen, three steps:** scan, pay, done. The scanner box holds the focus. Keys:
+  - Enter on an empty box pays.
+  - F2 searches.
+  - F4 takes the exact pounds.
+  - Esc goes back.
+- **Paying:** quick buttons (round pound amounts, banknotes), a keypad, and على الحساب (ADR-016).
+  The money rules are the server's; the screen only shows what it will charge.
+- **The receipt** prints from the till itself (a hidden copy of the receipt and the 80 mm print
+  rules). The receipt page stays for printing again and for refunds.
+- **A new shift** is filled in with the last closed shift's count
+  (`GET /retail/shifts/last-count`).
+
