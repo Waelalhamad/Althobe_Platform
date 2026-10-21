@@ -59,6 +59,10 @@ export const DEFAULT_CHART: AccountDef[] = [
   },
   { code: '1103', nameAr: 'الزبائن (ذمم مدينة)', role: 'RECEIVABLE' },
   { code: '1104', nameAr: 'سلف الموظفين', role: 'EMPLOYEE_ADVANCES' },
+  // Shipping companies collect cash on delivery and hand it over later: one account each, under
+  // this heading, added from the chart (developer report F-11).
+  { code: '1106', nameAr: 'ذمم شركات الشحن', heading: true },
+  { code: '1107', nameAr: 'عهدة مندوب التحصيل' },
   { code: '1105', nameAr: 'المخزون', heading: true, role: 'INVENTORY_PARENT' },
   {
     code: '110599',
@@ -68,6 +72,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   },
   { code: '12', nameAr: 'الأصول الثابتة', heading: true },
   { code: '1201', nameAr: 'الأثاث والمعدات' },
+  { code: '1202', nameAr: 'مجمع إهلاك الأثاث والمعدات' },
 
   { code: '2', nameAr: 'الخصوم', heading: true },
   { code: '21', nameAr: 'الخصوم المتداولة', heading: true },
@@ -108,6 +113,10 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '5209', nameAr: 'الضيافة والنظافة' },
   { code: '5210', nameAr: 'الدعاية والتسويق' },
   { code: '5211', nameAr: 'الضرائب والرسوم' },
+  { code: '5212', nameAr: 'هدايا وإكراميات' },
+  { code: '5213', nameAr: 'أجور شحن الطلبات' },
+  { code: '5214', nameAr: 'إعلانات ممولة' },
+  { code: '5215', nameAr: 'مصروف الإهلاك' },
   { code: '5298', nameAr: 'عجز وزيادة الصناديق', role: 'CASH_OVER_SHORT' },
   { code: '5299', nameAr: 'مصاريف متنوعة' },
   { code: '55', nameAr: 'فروقات الصرف', heading: true },

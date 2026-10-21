@@ -66,7 +66,7 @@ describe('suppliers (ADR-016)', () => {
       currency: 'TRY',
       rateToBase: '41',
     });
-    await parties.commitReceipt(id, { partyId: supplier.id }, w.owner);
+    await parties.commitReceipt(id, { source: 'SUPPLIER', partyId: supplier.id }, w.owner);
     expect((await parties.summary(w.owner)).suppliers).toEqual([
       { currency: 'TRY', amount: 205_000n },
     ]);
@@ -104,7 +104,7 @@ describe('suppliers (ADR-016)', () => {
     });
     await parties.commitReceipt(
       a,
-      { partyId: supplier.id, paid: { boxId: usdBox, amount: '1500' } },
+      { source: 'SUPPLIER', partyId: supplier.id, paid: { boxId: usdBox, amount: '1500' } },
       w.owner,
     );
     // 20.00 $ of goods, 15.00 $ paid: 5.00 $ still owed.
@@ -116,24 +116,45 @@ describe('suppliers (ADR-016)', () => {
       rateToBase: '1',
     });
     await expect(
-      parties.commitReceipt(b, { paid: { boxId: usdBox, amount: '500' } }, w.owner),
+      parties.commitReceipt(b, { source: 'CASH', paid: { boxId: usdBox, amount: '500' } }, w.owner),
     ).rejects.toMatchObject({ code: 'CASH_MUST_COVER_GOODS' });
     // Refused, so nothing moved: the session is still open and can be paid in full.
-    await parties.commitReceipt(b, { paid: { boxId: usdBox, amount: '1000' } }, w.owner);
+    await parties.commitReceipt(
+      b,
+      { source: 'CASH', paid: { boxId: usdBox, amount: '1000' } },
+      w.owner,
+    );
     expect(await payable()).toEqual({ books: 500n, named: 500n, unassigned: 0n });
 
-    // A plain receipt, as before suppliers: owed with no name, until it is closed.
+    // A receipt must say where the goods came from (F-01); the old plain confirm is refused.
     const c = await session('RECEIVE', w.z, 1, {
       amount: 3_000n,
       currency: 'USD',
       rateToBase: '1',
     });
-    await sessions.commitSession({ sessionId: c }, w.owner);
+    await expect(sessions.commitSession({ sessionId: c }, w.owner)).rejects.toMatchObject({
+      code: 'RECEIPT_NEEDS_SOURCE',
+    });
+    await expect(parties.commitReceipt(c, { source: 'SUPPLIER' }, w.owner)).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+    // Goods owned before the system: stock against opening balances, nothing owed to anyone.
+    await parties.commitReceipt(c, { source: 'OPENING' }, w.owner);
+    expect(await payable()).toEqual({ books: 500n, named: 500n, unassigned: 0n });
+    const tb = await books.trialBalance({}, w.owner);
+    expect(tb.rows.find((r) => r.account.code === '3901')?.closing).toBe(-3_000n);
+
+    // What older receipts left owed with no name (here a direct ledger receipt) closes against
+    // opening balances too, never more than is there.
+    await stock(t.services, w, w.x, w.wh2, 1, USD(30));
     expect((await payable()).unassigned).toBe(3_000n);
     await expect(
       parties.settleUnassigned({ side: 'PAYABLE', amount: '4000' }, write(w.owner)),
     ).rejects.toMatchObject({ code: 'UNASSIGNED_EXCEEDED' });
-    await parties.settleUnassigned({ side: 'PAYABLE', amount: '3000' }, write(w.owner));
+    await parties.settleUnassigned(
+      { side: 'PAYABLE', as: 'OPENING', amount: '3000' },
+      write(w.owner),
+    );
     expect((await payable()).unassigned).toBe(0n);
   });
 
@@ -145,11 +166,15 @@ describe('suppliers (ADR-016)', () => {
       rateToBase: '1',
     });
     await expect(
-      parties.commitReceipt(id, { partyId: supplier.id }, w.owner),
+      parties.commitReceipt(id, { source: 'SUPPLIER', partyId: supplier.id }, w.owner),
     ).rejects.toMatchObject({ code: 'PARTY_CURRENCY_MISMATCH' });
     expect((await sessions.getSession({ sessionId: id }, w.owner)).status).toBe('OPEN');
     await expect(
-      parties.commitGoodsOut(id, { partyId: supplier.id, amount: '100' }, w.owner),
+      parties.commitGoodsOut(
+        id,
+        { source: 'SUPPLIER', partyId: supplier.id, amount: '100' },
+        w.owner,
+      ),
     ).rejects.toMatchObject({ code: 'WRONG_SESSION_KIND' });
 
     const accounts = await books.listAccounts(w.owner);

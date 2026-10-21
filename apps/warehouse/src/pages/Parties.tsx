@@ -215,7 +215,10 @@ function SettleUnassigned({
   const refresh = useRefreshParties();
   const toast = useToast();
   const { data: boxes = [] } = useQuery(boxesQuery);
-  const [how, setHow] = useState<'owner' | 'box'>('owner');
+  // Goods received with no supplier were, most often, stock owned before the system (F-01).
+  const [how, setHow] = useState<'opening' | 'owner' | 'box'>(
+    side === 'PAYABLE' ? 'opening' : 'owner',
+  );
   const [boxId, setBoxId] = useState('');
   const [amount, setAmount] = useState('');
   const [key] = useState(() => crypto.randomUUID());
@@ -224,7 +227,14 @@ function SettleUnassigned({
   const minor = toMinorUnits(amount, currency);
   const settle = useMutation({
     mutationFn: async () =>
-      api.settleUnassigned({ side, amount: minor!, ...(how === 'box' ? { boxId } : {}) }, key),
+      api.settleUnassigned(
+        {
+          side,
+          amount: minor!,
+          ...(how === 'box' ? { boxId } : { as: how === 'opening' ? 'OPENING' : 'OWNER' }),
+        },
+        key,
+      ),
     onSuccess: async () => {
       await refresh();
       toast('تم التسكير');
@@ -240,7 +250,12 @@ function SettleUnassigned({
         settle.mutate();
       }}
     >
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {side === 'PAYABLE' && (
+          <Chip selected={how === 'opening'} onClick={() => setHow('opening')}>
+            كانت بضاعة موجودة قبل النظام (رصيد افتتاحي)
+          </Chip>
+        )}
         <Chip selected={how === 'owner'} onClick={() => setHow('owner')}>
           {side === 'PAYABLE' ? 'كانت مدفوعة من قبل (المالك)' : 'قبضها المالك'}
         </Chip>

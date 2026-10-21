@@ -10,6 +10,7 @@ import type { VariantView } from '../catalogue/catalogue.service.js';
 import {
   LocationInactiveError,
   SecondApproverRequiredError,
+  StocktakeStaleError,
   StocktakeStateError,
   UncountedLinesError,
   VariantInactiveError,
@@ -17,6 +18,9 @@ import {
 } from './inventory.errors.js';
 import { applyMovements, redactMovement, type LedgerDeps } from './inventory.ledger.js';
 import type { MovementView } from './inventory.types.js';
+
+/** A count is applied within three days of its snapshot, or counted again. */
+const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 
 // docs/inventory.md → "Stocktake". A count is evidence, not an adjustment:
 //   DRAFT → COUNTING (expected snapshotted) → REVIEW (every line counted or confirmed zero)
@@ -398,6 +402,10 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
      * Posts the differences as a delta against the *current* balance — never overwrites it with
      * the counted figure — so movements that happened while counting are preserved.
      */
+    /**
+     * Applies what was counted. A count older than three days is refused (developer report
+     * F-09): stock has moved since; cancel it and count again.
+     */
     async applyStocktake(
       input: z.input<typeof refSchema>,
       ctx: ActorContext,
@@ -407,6 +415,13 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       return inTransaction(db, async (tx) => {
         const st = await lock(tx, stocktakeId, 'update', ['REVIEW']);
         if (st.created_by === ctx.userId) throw new SecondApproverRequiredError(st.id);
+        const taken = await tx.stocktake.findUnique({
+          where: { id: st.id },
+          select: { snapshotAt: true },
+        });
+        if (taken?.snapshotAt && Date.now() - taken.snapshotAt.getTime() > STALE_MS) {
+          throw new StocktakeStaleError(st.id, taken.snapshotAt);
+        }
 
         const lines = await tx.stocktakeLine.findMany({
           where: { stocktakeId },

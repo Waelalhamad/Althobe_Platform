@@ -76,6 +76,10 @@ const ERRORS: Record<string, string> = {
   PAYMENT_TOO_LOW: 'المبلغ المدفوع أقل من المطلوب',
   REFUND_EXCEEDS_SALE: 'الكمية أكبر مما بقي في الفاتورة',
   NOT_REFUNDABLE: 'لا يمكن إرجاع هذه الفاتورة هنا',
+  RECEIPT_NEEDS_SOURCE: 'اختر من وين إجت البضاعة قبل التأكيد',
+  STOCKTAKE_STALE: 'هذا الجرد أقدم من 3 أيام والمخزون تغيّر بعده — ألغه واعمل جرد جديد',
+  BACKDATED_NEEDS_REASON: 'القيد بتاريخ أقدم من يومين بده سبب مكتوب بالبيان',
+  NOT_FOUND: 'غير موجود',
 };
 
 export function errorText(error: unknown): string {

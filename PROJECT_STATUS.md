@@ -27,6 +27,40 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Developer report fixes (2026-10-22, report «أخطاء النظام المالية» of 2026-10-21):**
+- **F-01:** every receipt says where the goods came from:
+  - **a supplier:** named, required, with the invoice number;
+  - **a cash purchase:** from a box;
+  - **stock owned before the system:** 3901;
+  - **the owner's goods or production:** 3201.
+  The plain confirm of a receipt is refused (`RECEIPT_NEEDS_SOURCE`). The unnamed balance can be
+  closed as opening stock.
+- **F-05:** a warning on «المالية» and «اليوم» whenever a box's currency has no rate. Every rate
+  set is kept with its date and who set it; closing a month revalues at the rate of its last day.
+- **F-07 (warning part):** a receipt line costing more than 15% away from the other sizes of the
+  same product asks for a tick before confirming.
+- **F-08:** «تكلفة البضاعة المباعة» is 5101 only. Damage and stock differences show apart, as
+  «خسائر وفروقات مخزون», on «المالية» and in the income statement.
+- **F-09:** a stocktake counted more than three days ago cannot be applied
+  (`STOCKTAKE_STALE`); count again.
+- **F-10:** an entry dated more than two days back needs `accounting.close` and a reason. Closed
+  months refuse it, as before.
+- **F-11:** new accounts:
+  - 1106 ذمم شركات الشحن (heading);
+  - 1107 عهدة مندوب التحصيل;
+  - 1202 مجمع الإهلاك;
+  - 5212 هدايا وإكراميات;
+  - 5213 أجور شحن الطلبات;
+  - 5214 إعلانات ممولة;
+  - 5215 مصروف الإهلاك.
+- **F-13:**
+  - a malformed id answers 404, not 500;
+  - `/inventory/movements` honours `limit` (1–200);
+  - entry memos count pieces the Arabic way.
+- **Still to agree** (bigger designs): F-02 receipt cancel and correction, F-03 adjustment
+  reasons with approval, F-04 Libya as a branch, F-06 gifts, F-07 cost correction, F-12 online
+  orders.
+
 **An easier till (2026-10-21):**
 - **Three steps:** scan → pay → done. The scanner box keeps the focus; the last piece shows
   framed, with a sound.

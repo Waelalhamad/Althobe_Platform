@@ -20,6 +20,8 @@ let w: World;
 
 beforeEach(async () => {
   w = await t.reset();
+  // A receipt posts to the books as it is confirmed (ADR-016).
+  await t.services.accounting.installChart();
 });
 afterAll(async () => t.close());
 
@@ -28,6 +30,10 @@ const quantityAt = async (variantId: string, locationId: string) =>
 
 const scan = async (sessionId: string, barcode: string, scanId: string = randomUUID()) =>
   sessions.scan({ sessionId, barcode, scanId }, w.owner);
+
+/** Goods owned before the system: the simplest source, owing nothing to anyone. */
+const receipt = async (sessionId: string) =>
+  t.services.parties.commitReceipt(sessionId, { source: 'OPENING' }, w.owner);
 
 describe('RECEIVE session', () => {
   it('scan X 37 times → one line of 37; ledger untouched until commit; commit posts; commit again is a no-op', async () => {
@@ -64,7 +70,11 @@ describe('RECEIVE session', () => {
       w.owner,
     );
 
-    const committed = await sessions.commitSession({ sessionId: session.id }, w.owner);
+    // A receipt is confirmed with its source (F-01); the plain confirm refuses it.
+    await expect(sessions.commitSession({ sessionId: session.id }, w.owner)).rejects.toMatchObject({
+      code: 'RECEIPT_NEEDS_SOURCE',
+    });
+    const committed = await receipt(session.id);
     expect(committed.movements.map((m) => [m.type, m.quantity, m.referenceType])).toEqual([
       ['PURCHASE', 37, 'SCAN_SESSION'],
       ['PURCHASE', 20, 'SCAN_SESSION'],
@@ -72,7 +82,7 @@ describe('RECEIVE session', () => {
     expect(await quantityAt(w.x.id, w.wh1.id)).toBe(37);
     expect(await quantityAt(w.y.id, w.wh1.id)).toBe(20);
 
-    const again = await sessions.commitSession({ sessionId: session.id }, w.owner);
+    const again = await receipt(session.id);
     expect(again.movements.map((m) => m.id)).toEqual(committed.movements.map((m) => m.id));
     expect(await t.db.inventoryMovement.count()).toBe(2);
   });
@@ -80,7 +90,7 @@ describe('RECEIVE session', () => {
   it('refuses to commit a received line with no unit cost', async () => {
     const session = await sessions.openSession({ kind: 'RECEIVE', locationId: w.wh1.id }, w.owner);
     await scan(session.id, w.x.barcode);
-    await expect(sessions.commitSession({ sessionId: session.id }, w.owner)).rejects.toMatchObject({
+    await expect(receipt(session.id)).rejects.toMatchObject({
       code: 'SCAN_SESSION_MISSING_COST',
     });
     expect(await t.db.inventoryMovement.count()).toBe(0);

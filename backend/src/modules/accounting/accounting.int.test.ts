@@ -392,6 +392,47 @@ describe('who may do what', () => {
       { parentId: (await account('52')).id, nameAr: 'مصاريف السيارة' },
       w.owner,
     );
-    expect(created).toMatchObject({ code: '5212', class: 5, isPostable: true });
+    expect(created).toMatchObject({ code: '5216', class: 5, isPostable: true });
+  });
+});
+
+describe('developer report rules (2026-10-21)', () => {
+  it('F-08: damage and stock differences are not the cost of sales', async () => {
+    await stock(t.services, w, w.x, w.wh1, 10, USD(10));
+    await inv.damageStock(
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 1, reason: 'تمزق' },
+      write(w.owner),
+    );
+    const income = await acc.incomeStatement({ from: today, to: today }, w.owner);
+    const total = (key: string) => income.sections.find((x) => x.key === key)!.total;
+    expect(total('costOfSales')).toBe(0n);
+    expect(total('stockLosses')).toBe(1_000n);
+    expect(income.netProfit).toBe(-1_000n);
+  });
+
+  it('F-10: an entry dated more than two days back needs whoever closes months, and a reason', async () => {
+    await t.services.rates.setRate({ currency: 'SYP', rate: '122' }, w.owner);
+    const usdBox = await account('110102');
+    const safe = await account('110105');
+    const transfer = {
+      kind: 'TRANSFER' as const,
+      fromBoxId: usdBox.id,
+      toBoxId: safe.id,
+      amount: 100n,
+    };
+    const poster = actorWith(w.owner, [PERMISSIONS.accounting.view, PERMISSIONS.accounting.post]);
+    await expect(
+      acc.postVoucher({ ...transfer, date: lastMonth }, write(poster)),
+    ).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    await expect(
+      acc.postVoucher({ ...transfer, date: lastMonth }, write(w.owner)),
+    ).rejects.toMatchObject({
+      code: 'BACKDATED_NEEDS_REASON',
+    });
+    await acc.postVoucher({ ...transfer, date: lastMonth, memo: 'نسيت أسجّله' }, write(w.owner));
+    // Today needs neither.
+    await acc.postVoucher(transfer, write(poster));
   });
 });

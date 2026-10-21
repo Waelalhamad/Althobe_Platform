@@ -90,7 +90,7 @@ export async function trialBalance(q: Queryable, accounts: AccountView[], range:
 
 // ─── Income statement (الأرباح والخسائر) ───────────────────────────────────────────────────────
 
-export type IncomeSectionKey = 'revenue' | 'costOfSales' | 'expenses' | 'exchange';
+export type IncomeSectionKey = 'revenue' | 'costOfSales' | 'stockLosses' | 'expenses' | 'exchange';
 
 export interface IncomeSection {
   key: IncomeSectionKey;
@@ -101,7 +101,10 @@ export interface IncomeSection {
 
 function sectionOf(code: string): IncomeSectionKey | null {
   if (code.startsWith('4')) return 'revenue';
-  if (code.startsWith('51')) return 'costOfSales';
+  // Developer report F-08: what sold pieces cost (5101) apart from damage and stock
+  // differences (5102, 5103), so a month with no sales shows no cost of sales.
+  if (code === '5101') return 'costOfSales';
+  if (code.startsWith('51')) return 'stockLosses';
   if (code.startsWith('55')) return 'exchange';
   if (code.startsWith('5')) return 'expenses';
   return null;
@@ -110,7 +113,7 @@ function sectionOf(code: string): IncomeSectionKey | null {
 export async function incomeStatement(q: Queryable, accounts: AccountView[], range: Range) {
   const sums = await sumsByAccount(q, range);
   const sections = new Map<IncomeSectionKey, IncomeSection>(
-    (['revenue', 'costOfSales', 'expenses', 'exchange'] as const).map((key) => [
+    (['revenue', 'costOfSales', 'stockLosses', 'expenses', 'exchange'] as const).map((key) => [
       key,
       { key, rows: [], total: 0n },
     ]),
@@ -130,7 +133,7 @@ export async function incomeStatement(q: Queryable, accounts: AccountView[], ran
   return {
     sections: [...sections.values()],
     grossProfit,
-    netProfit: grossProfit - s('expenses') - s('exchange'),
+    netProfit: grossProfit - s('stockLosses') - s('expenses') - s('exchange'),
   };
 }
 

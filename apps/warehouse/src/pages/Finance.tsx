@@ -1,9 +1,24 @@
 import { Alert, Button, Card, EmptyState, PageTitle } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { formatMoney, today, toUsdCents, VOUCHER_TYPE, voucherNumber } from '../format';
+import {
+  CURRENCY_NAME,
+  formatMoney,
+  today,
+  toUsdCents,
+  VOUCHER_TYPE,
+  voucherNumber,
+} from '../format';
 import { PAGES } from '../help';
-import { booksCheckQuery, boxesQuery, can, entriesQuery, incomeQuery, meQuery } from '../queries';
+import {
+  booksCheckQuery,
+  boxesQuery,
+  can,
+  entriesQuery,
+  incomeQuery,
+  meQuery,
+  ratesQuery,
+} from '../queries';
 import { monthStart } from './finance-parts';
 
 // Named by what happened to the money, not by the accountant's document (research: everyday
@@ -25,11 +40,34 @@ export function FinancePage() {
   const { data: recent = [] } = useQuery(entriesQuery({}));
 
   const section = (key: string) => income?.sections.find((s) => s.key === key)?.total ?? '0';
+  const { data: rates = [] } = useQuery(ratesQuery);
+  // A box in a currency with no rate cannot be valued or posted to (developer report F-05).
+  const unpriced = [
+    ...new Set(
+      boxes
+        .filter((b) => b.account.isActive && b.account.currency && b.account.currency !== 'USD')
+        .map((b) => b.account.currency!)
+        .filter((c) => !rates.find((r) => r.currency === c)?.rate),
+    ),
+  ];
 
   return (
     <>
       <PageTitle intro={PAGES.finance}>المالية</PageTitle>
 
+      {unpriced.length > 0 && (
+        <div className="mb-4">
+          <Alert tone="warn">
+            سعر الصرف ناقص: {unpriced.map((c) => CURRENCY_NAME[c]).join('، ')} — أي بيع أو قبض أو
+            صرف بهالعملة رح ينرفض لحتى ينحط سعرها.{' '}
+            {can(user, 'admin.rates.write') && (
+              <Link to="/rates" className="font-bold underline">
+                ضع السعر الآن
+              </Link>
+            )}
+          </Alert>
+        </div>
+      )}
       {check && !check.ok && (
         <div className="mb-4">
           <Alert tone="warn">
@@ -88,9 +126,11 @@ export function FinancePage() {
       {income && (
         <>
           <h2 className="mb-2 text-lg font-bold">هذا الشهر (بالدولار)</h2>
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Stat label="المبيعات" value={section('revenue')} />
             <Stat label="تكلفة البضاعة المباعة" value={section('costOfSales')} />
+            {/* Damage and stock differences are not what sold pieces cost (F-08). */}
+            <Stat label="خسائر وفروقات مخزون" value={section('stockLosses')} />
             <Stat label="المصاريف" value={section('expenses')} />
             <Stat label="صافي الربح" value={income.netProfit} strong />
           </div>

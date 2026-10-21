@@ -680,6 +680,8 @@ export type LinePatch = Partial<{
 // ─── Suppliers and customers (ADR-016). Amounts are minor units of the party's currency. ──────
 
 export type PartyKind = 'SUPPLIER' | 'CUSTOMER';
+/** Where received goods came from (developer report F-01). */
+export type ReceiptSource = 'SUPPLIER' | 'CASH' | 'OPENING' | 'OWNER';
 
 export interface Party {
   id: string;
@@ -779,6 +781,16 @@ export const api = {
     post<Variant[]>('/variants/prices', input),
 
   // Exchange rates (ADR-012): units of the currency per 1 USD; null until the owner sets one.
+  rateHistory: async () =>
+    get<
+      {
+        currency: Currency;
+        rate: string;
+        officialRate: string | null;
+        setBy: string;
+        setAt: string;
+      }[]
+    >('/rates/history'),
   rates: async () => get<Rate[]>('/rates'),
   setRate: async (currency: Rate['currency'], rate: string, officialRate?: string | null) =>
     request<Rate>('PUT', '/rates', { currency, rate, officialRate }),
@@ -840,7 +852,12 @@ export const api = {
   /** A receipt confirmed with its supplier and what was paid on the spot (ADR-016). */
   commitReceipt: async (
     id: string,
-    terms: { partyId?: string; paid?: { boxId: string; amount: string } },
+    terms: {
+      source: ReceiptSource;
+      partyId?: string;
+      invoiceNo?: string;
+      paid?: { boxId: string; amount: string };
+    },
   ) => post<{ sessionId: string; movements: Movement[] }>(`/parties/receipts/${id}`, terms),
   /** Goods out confirmed as a wholesale sale on the customer's account. */
   commitGoodsOut: async (id: string, terms: { partyId: string; amount: string; note?: string }) =>
@@ -880,7 +897,13 @@ export const api = {
     }),
   partiesSummary: async () => get<PartiesSummary>('/parties/summary'),
   settleUnassigned: async (
-    input: { side: 'PAYABLE' | 'RECEIVABLE'; boxId?: string; amount: string; note?: string },
+    input: {
+      side: 'PAYABLE' | 'RECEIVABLE';
+      boxId?: string;
+      as?: 'OWNER' | 'OPENING';
+      amount: string;
+      note?: string;
+    },
     idempotencyKey: string,
   ) =>
     request<{ left: string }>('POST', '/parties/unassigned', input, {

@@ -161,6 +161,15 @@ export function StocktakePage() {
         </Card>
       )}
 
+      {st.status === 'REVIEW' &&
+        st.snapshotAt &&
+        Date.now() - new Date(st.snapshotAt).getTime() > 3 * 24 * 60 * 60 * 1000 && (
+          <div className="mb-4">
+            <Alert>
+              هذا الجرد أقدم من 3 أيام، والمخزون تغيّر بعده: ما بينعتمد. ألغه واعمل جرد جديد.
+            </Alert>
+          </div>
+        )}
       {st.status === 'REVIEW' && st.movementsSinceSnapshot > 0 && (
         <div className="mb-4">
           <Alert tone="warn">

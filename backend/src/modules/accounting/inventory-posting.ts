@@ -63,12 +63,20 @@ export function entryForMovement(m: MovementView, accounts: InventoryAccounts): 
   return {
     voucherType: 'INVENTORY',
     entryDate: businessDate(m.createdAt),
-    memo: `${MEMO[m.type]} · ${Math.abs(m.quantity)} قطعة${details ? ` · ${details}` : ''}`,
+    memo: `${MEMO[m.type]} · ${pieces(Math.abs(m.quantity))}${details ? ` · ${details}` : ''}`,
     sourceType: INVENTORY_SOURCE,
     sourceId: m.id,
     createdById: m.createdById,
     lines: [line(inventory.id, 'USD', value, '1', extra), counter],
   };
+}
+
+/** قطعة واحدة · قطعتان · 3–10 قطع · 11 قطعة وما فوق (developer report F-13). */
+export function pieces(n: number): string {
+  if (n === 1) return 'قطعة واحدة';
+  if (n === 2) return 'قطعتان';
+  const lastTwo = n % 100;
+  return lastTwo >= 3 && lastTwo <= 10 ? `${n} قطع` : `${n} قطعة`;
 }
 
 function counterFor(type: MovementView['type'], a: InventoryAccounts): string {

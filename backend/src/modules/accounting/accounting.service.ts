@@ -24,6 +24,7 @@ import type { LocationsService } from '../locations/locations.service.js';
 import {
   AccountNotUsableError,
   AmountTooSmallError,
+  BackdatedNeedsReasonError,
   CurrencyMismatchError,
   DateInFutureError,
   EntryNotReversibleError,
@@ -221,6 +222,7 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     const today = businessDate(new Date());
     const entryDate = v.date ?? today;
     if (entryDate > today) throw new DateInFutureError(entryDate);
+    assertBackdating(entryDate, v.memo, ctx);
     const base = { entryDate, createdById: ctx.userId, memo: v.memo ?? null };
 
     // قيد يومية: the accountant's free entry, in USD.
@@ -736,6 +738,7 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
             const today = businessDate(new Date());
             const entryDate = data.date ?? today;
             if (entryDate > today) throw new DateInFutureError(entryDate);
+            assertBackdating(entryDate, data.memo, ctx);
             return postOne(
               tx,
               reversalOf(entry, entryDate, { createdById: ctx.userId, memo: data.memo }),
@@ -828,7 +831,7 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
       await forReading(ctx);
       const closedThrough = await closedThroughDate(db);
       const next = await nextClosable(db, closedThrough);
-      const rates = await ownerRates();
+      const rates = next ? await closingRates(monthEnd(next)) : await ownerRates();
       const preview = next ? await revaluationFor(db, monthEnd(next), rates) : null;
       const closed = await db.accountingPeriod.findMany({
         orderBy: { endsOn: 'desc' },
@@ -864,7 +867,11 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
         const next = await nextClosable(tx, await closedThroughDate(tx));
         if (next !== period) throw new PeriodNotClosableError(period, next);
         const endsOn = monthEnd(period);
-        const { lines, missingRates } = await revaluationFor(tx, endsOn, await ownerRates());
+        const { lines, missingRates } = await revaluationFor(
+          tx,
+          endsOn,
+          await closingRates(endsOn),
+        );
         if (missingRates.length) throw new RateNotSetError(missingRates.join(','));
 
         let revaluationEntryId: string | null = null;
@@ -922,6 +929,20 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     return [...lines, line(fx, 'USD', -residual, '1', { branch })];
   }
 
+  /**
+   * The rates for revaluing a month (developer report F-05): those that applied at the end of
+   * its last day in Damascus; for a currency first priced after it, the current rate.
+   */
+  async function closingRates(endsOn: string): Promise<Map<Currency, string>> {
+    const midnight = new Date(`${endsOn}T00:00:00+03:00`);
+    const dayAfter = new Date(midnight.getTime() + 24 * 60 * 60 * 1000);
+    const atEnd = await deps.rates.ratesAt(dayAfter);
+    const now = await ownerRates();
+    const out = new Map<Currency, string>(now);
+    for (const [currency, rate] of atEnd) out.set(currency, rate);
+    return out;
+  }
+
   async function revaluationFor(q: Queryable, endsOn: string, rates: Map<Currency, string>) {
     const foreign = (await accounts(q)).filter(
       (a) => a.isPostable && a.currency !== null && a.currency !== 'USD',
@@ -947,6 +968,19 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
     return { lines: revaluationLines(balances, rates, fx), missingRates };
   }
 }
+
+/**
+ * Developer report F-10: an entry dated more than two days back needs whoever closes months
+ * (accounting.close) and says why. Closed months refuse it whatever (posting.ts).
+ */
+function assertBackdating(entryDate: string, memo: string | undefined, ctx: ActorContext): void {
+  const limit = businessDate(new Date(Date.now() - BACKDATE_DAYS * 24 * 60 * 60 * 1000));
+  if (entryDate >= limit) return;
+  assertPermission(ctx, PERMISSIONS.accounting.close);
+  if (!memo?.trim()) throw new BackdatedNeedsReasonError(entryDate);
+}
+
+const BACKDATE_DAYS = 2;
 
 /** قيد عكسي: the same lines with opposite signs. */
 function reversalOf(

@@ -19,6 +19,7 @@ import {
   MissingCostError,
   MovementNotAllowedAtLocationError,
   OpeningAlreadyRecordedError,
+  ReceiptNeedsSourceError,
   ScanSessionNotOpenError,
   VariantInactiveError,
 } from './inventory.errors.js';
@@ -425,6 +426,14 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     async commitSession(input: SessionRef, ctx: ActorContext): Promise<CommitResult> {
       const data = parse(sessionRefSchema, input);
       return inTransaction(db, async (tx) => {
+        const kind = await tx.scanSession.findUnique({
+          where: { id: data.sessionId },
+          select: { kind: true, status: true },
+        });
+        // A receipt is owed to someone, or not: that is decided where it is confirmed.
+        if (kind?.kind === 'RECEIVE' && kind.status === 'OPEN') {
+          throw new ReceiptNeedsSourceError(data.sessionId);
+        }
         const { result } = await commitInTx(tx, data.sessionId, ctx);
         return result;
       });

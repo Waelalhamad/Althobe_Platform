@@ -95,6 +95,10 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     // ── Exchange rates (ADR-012) ─────────────────────────────────────────────────────────────
     priv.get('/rates', async () => ({ data: await s.rates.listRates() }));
 
+    priv.get('/rates/history', async (request) => ({
+      data: await s.rates.rateHistory(actorOf(request)),
+    }));
+
     priv.put('/rates', async (request) => ({
       data: await s.rates.setRate(request.body as never, actorOf(request)),
     }));
@@ -298,15 +302,22 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       '/inventory/movements',
       async (
         request: FastifyRequest<{
-          Querystring: { variantId?: string; locationId?: string; beforeSeq?: string };
+          Querystring: {
+            variantId?: string;
+            locationId?: string;
+            beforeSeq?: string;
+            limit?: string;
+          };
         }>,
       ) => {
-        const { variantId, locationId, beforeSeq } = request.query;
+        const { variantId, locationId, beforeSeq, limit } = request.query;
         const rows = await s.inventory.getMovementHistory(
           {
             variantId,
             locationId,
             beforeSeq: beforeSeq && /^\d+$/.test(beforeSeq) ? BigInt(beforeSeq) : undefined,
+            // 1–200 (default 50); older pages through beforeSeq.
+            ...(limit && /^\d+$/.test(limit) ? { limit: Number(limit) } : {}),
           },
           actorOf(request),
         );

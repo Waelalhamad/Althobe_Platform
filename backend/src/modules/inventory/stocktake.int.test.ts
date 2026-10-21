@@ -161,3 +161,26 @@ describe('stocktake', () => {
     expect(await quantityAt(w.x.id, w.wh1.id)).toBe(10);
   });
 });
+
+describe('stale counts (developer report F-09)', () => {
+  it('a count snapshotted more than three days ago is not applied', async () => {
+    await stock(t.services, w, w.x, w.wh1, 10);
+    const st = await countingAt(w.wh1.id);
+    await stocktakes.setCount(
+      { stocktakeId: st.id, variantId: w.x.id, countedQuantity: 9 },
+      w.owner,
+    );
+    await stocktakes.submitForReview({ stocktakeId: st.id }, w.owner);
+    // As if it had waited four days in review.
+    await t.db.stocktake.update({
+      where: { id: st.id },
+      data: { snapshotAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) },
+    });
+    await expect(
+      stocktakes.applyStocktake({ stocktakeId: st.id }, w.approver),
+    ).rejects.toMatchObject({
+      code: 'STOCKTAKE_STALE',
+    });
+    expect(await quantityAt(w.x.id, w.wh1.id)).toBe(10);
+  });
+});

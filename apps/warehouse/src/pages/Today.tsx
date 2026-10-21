@@ -204,8 +204,8 @@ function Attention() {
       </Link>,
     );
   }
-  const missing = rates.filter((r) => r.currency !== 'LYD' && !r.rate);
-  if (missing.length && can(user, 'admin.rates.write')) {
+  const missing = rates.filter((r) => !r.rate);
+  if (missing.length && (can(user, 'admin.rates.write') || can(user, 'accounting.view'))) {
     items.push(
       <Link key="rates" to="/rates" className="text-brand">
         سعر الصرف غير محدد ({missing.map((r) => r.currency).join('، ')})

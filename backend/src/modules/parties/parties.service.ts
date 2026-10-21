@@ -382,6 +382,7 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
      */
     async commitReceipt(sessionId: string, input: unknown, ctx: ActorContext) {
       const terms = parse(receiptTermsSchema, input ?? {});
+      // Money out of a box is the accounts' business; where goods came from is the receiver's.
       if (terms.paid) assertPermission(ctx, PERMISSIONS.parties.manage);
       return inTransaction(db, async (tx) => {
         const done = await deps.scanSessions.commitInTx(tx, sessionId, ctx);
@@ -412,8 +413,35 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
               amountBase: value,
               sourceType: 'SCAN_SESSION',
               sourceId: sessionId,
+              note: terms.invoiceNo ? `فاتورة ${terms.invoiceNo}` : null,
               createdById: ctx.userId,
             },
+          });
+        }
+
+        // Not bought at all: the purchase the stock ledger posts to 2101 is moved, in the same
+        // currency and value, to opening balances or the owner — nothing is owed to anyone.
+        if ((terms.source === 'OPENING' || terms.source === 'OWNER') && value !== 0n) {
+          const single = currencies.length === 1 ? (currencies[0] as Currency) : 'USD';
+          await deps.accounting.postPartyEntry(tx, {
+            side: 'PAYABLE',
+            control:
+              single === 'USD'
+                ? { currency: 'USD', amount: value, base: value }
+                : { currency: single, amount, base: value },
+            other: {
+              role: terms.source === 'OPENING' ? 'OPENING_EQUITY' : 'OWNER_CURRENT',
+              base: -value,
+            },
+            voucherType: 'JOURNAL',
+            sourceType: 'SCAN_SESSION_SOURCE',
+            sourceId: sessionId,
+            branch: 'SY',
+            memo:
+              terms.source === 'OPENING'
+                ? 'بضاعة موجودة قبل النظام — رصيد افتتاحي'
+                : 'بضاعة من المالك أو إنتاج داخلي',
+            createdById: ctx.userId,
           });
         }
 
@@ -456,7 +484,12 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
           action: 'parties.receipt',
           entityType: 'scan_session',
           entityId: sessionId,
-          after: { partyId: party?.id ?? null, paid: terms.paid ?? null, value },
+          after: {
+            source: terms.source,
+            partyId: party?.id ?? null,
+            paid: terms.paid ?? null,
+            value,
+          },
         });
         return done.result;
       });
@@ -671,7 +704,10 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
               control: { currency: 'USD', amount: -sign * base, base: -sign * base },
               other: data.boxId
                 ? { boxId: data.boxId, amount: sign * data.amount }
-                : { role: 'OWNER_CURRENT', base: sign * base },
+                : {
+                    role: data.as === 'OPENING' ? 'OPENING_EQUITY' : 'OWNER_CURRENT',
+                    base: sign * base,
+                  },
               voucherType: data.boxId
                 ? data.side === 'PAYABLE'
                   ? 'PAYMENT'
@@ -682,7 +718,11 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
               branch: 'SY',
               memo:
                 (data.side === 'PAYABLE' ? 'بضاعة مستلمة بدون مورد' : 'ديون زبائن بدون اسم') +
-                (data.boxId ? ' — دُفعت من الصندوق' : ' — دفعها المالك') +
+                (data.boxId
+                  ? ' — دُفعت من الصندوق'
+                  : data.as === 'OPENING'
+                    ? ' — كانت بضاعة موجودة قبل النظام (رصيد افتتاحي)'
+                    : ' — دفعها المالك') +
                 (data.note ? ` — ${data.note}` : ''),
               createdById: ctx.userId,
             });

@@ -34,11 +34,33 @@ export const partyCashSchema = z.object({
   note: text(300).optional(),
 });
 
-/** Confirming a receipt: from whom, and what was paid for it on the spot. */
-export const receiptTermsSchema = z.object({
-  partyId: z.uuid().optional(),
-  paid: z.object({ boxId: z.uuid(), amount: positive }).optional(),
-});
+/**
+ * Where received goods came from (developer report F-01), and so what the books owe for them:
+ * a supplier (2101, named), cash (a box), goods already owned before the system (3901), or
+ * the owner's own goods or production (3201).
+ */
+export const RECEIPT_SOURCES = ['SUPPLIER', 'CASH', 'OPENING', 'OWNER'] as const;
+export type ReceiptSource = (typeof RECEIPT_SOURCES)[number];
+
+/** Confirming a receipt: its source, from whom, and what was paid for it on the spot. */
+export const receiptTermsSchema = z
+  .object({
+    source: z.enum(RECEIPT_SOURCES),
+    partyId: z.uuid().optional(),
+    /** The supplier's invoice number, kept on their statement. */
+    invoiceNo: text(60).optional(),
+    paid: z.object({ boxId: z.uuid(), amount: positive }).optional(),
+  })
+  .superRefine((t, ctx) => {
+    const issue = (path: string, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
+    if (t.source === 'SUPPLIER' && !t.partyId)
+      issue('partyId', 'A purchase on credit names its supplier');
+    if (t.source === 'CASH' && !t.paid) issue('paid', 'A cash purchase says which box paid');
+    if ((t.source === 'OPENING' || t.source === 'OWNER') && (t.partyId || t.paid)) {
+      issue('source', 'Opening stock and the owner’s goods have no supplier and no payment');
+    }
+  });
 
 /** Confirming goods out to a wholesale customer: the agreed total, in their currency. */
 export const goodsOutTermsSchema = z.object({
@@ -47,10 +69,14 @@ export const goodsOutTermsSchema = z.object({
   note: text(300).optional(),
 });
 
-/** Closing what is owed with no name on it: from a box, or the owner already paid it. */
+/**
+ * Closing what is owed with no name on it: paid from a box; or, with no box, the owner already
+ * paid it (3201), or — for goods — it was stock owned before the system (3901).
+ */
 export const settleSchema = z.object({
   side: z.enum(['PAYABLE', 'RECEIVABLE']),
   boxId: z.uuid().optional(),
+  as: z.enum(['OWNER', 'OPENING']).default('OWNER'),
   /** Box currency with a box; USD cents without. */
   amount: positive,
   note: text(300).optional(),

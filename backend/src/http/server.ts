@@ -73,6 +73,10 @@ export async function buildServer(options: ServerOptions) {
 
   app.setErrorHandler((error, request, reply) => {
     if (isDomainError(error)) return reply.code(statusFor(error)).send(errorBody(error));
+    // A path id that is not a UUID (e.g. GET /products/prices): nothing has that id.
+    if (isMalformedId(error)) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Nothing has that id' } });
+    }
     const status = (error as { statusCode?: number }).statusCode;
     if (status === 429) {
       return reply
@@ -162,4 +166,21 @@ export function writeContextOf(request: FastifyRequest): WriteContext {
     throw new IdempotencyKeyRequiredError();
   }
   return { ...actorOf(request), idempotencyKey: key };
+}
+
+/**
+ * Postgres refused to read a value as a UUID: Prisma's P2023, or 22P02 inside a raw query, or —
+ * through the Neon driver adapter — an unknown request error carrying the same Postgres code.
+ */
+function isMalformedId(error: unknown): boolean {
+  const e = error as {
+    code?: string;
+    message?: string;
+    meta?: { code?: string; message?: string };
+  };
+  if (e.code === 'P2023') return true;
+  if (e.code === 'P2010' && (e.meta?.code === '22P02' || /uuid/i.test(e.meta?.message ?? ''))) {
+    return true;
+  }
+  return /22P02/.test(e.message ?? '') && /type uuid/i.test(e.message ?? '');
 }

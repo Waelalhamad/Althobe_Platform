@@ -1,6 +1,17 @@
 import type { LocationKind, MovementType } from '@prisma/client';
 import { DomainError } from '../../shared/errors.js';
 
+/** Developer report F-01: received goods always say where they came from. */
+export class ReceiptNeedsSourceError extends DomainError {
+  constructor(sessionId: string) {
+    super(
+      'RECEIPT_NEEDS_SOURCE',
+      'Confirm a receipt with where the goods came from (POST /parties/receipts/:id)',
+      { sessionId },
+    );
+  }
+}
+
 export class InsufficientStockError extends DomainError {
   constructor(details: {
     variantId: string;
@@ -98,6 +109,15 @@ export class OpeningAlreadyRecordedError extends DomainError {
       'Opening stock can be counted once per variant per location; use a stocktake to correct it',
       { locationId, variantIds },
     );
+  }
+}
+
+export class StocktakeStaleError extends DomainError {
+  constructor(stocktakeId: string, snapshotAt: Date) {
+    super('STOCKTAKE_STALE', 'This count is more than three days old; cancel it and count again', {
+      stocktakeId,
+      snapshotAt,
+    });
   }
 }
 

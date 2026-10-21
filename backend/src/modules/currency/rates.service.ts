@@ -42,6 +42,39 @@ export function createRatesService(db: Db) {
       });
     },
 
+    /**
+     * The rates that applied at `moment` (the last one set before it, per currency): what
+     * closing a month revalues at. Null for a currency with no rate set by then.
+     */
+    async ratesAt(moment: Date): Promise<Map<RateCurrency, string>> {
+      const out = new Map<RateCurrency, string>();
+      for (const currency of RATE_CURRENCIES) {
+        const row = await db.exchangeRateHistory.findFirst({
+          where: { currency, setAt: { lt: moment } },
+          orderBy: { setAt: 'desc' },
+        });
+        if (row) out.set(currency, row.rate.toString());
+      }
+      return out;
+    },
+
+    /** Who set each rate, from when: newest first. */
+    async rateHistory(ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.accounting.view);
+      const rows = await db.exchangeRateHistory.findMany({
+        orderBy: { setAt: 'desc' },
+        take: 200,
+        include: { setBy: { select: { nameAr: true } } },
+      });
+      return rows.map((r) => ({
+        currency: r.currency as RateCurrency,
+        rate: r.rate.toString(),
+        officialRate: r.officialRate?.toString() ?? null,
+        setBy: r.setBy.nameAr,
+        setAt: r.setAt,
+      }));
+    },
+
     async setRate(input: z.input<typeof setRateSchema>, ctx: ActorContext): Promise<RateView> {
       assertPermission(ctx, PERMISSIONS.admin.rates);
       const data = parse(setRateSchema, input);
@@ -52,6 +85,14 @@ export function createRatesService(db: Db) {
           where: { currency: data.currency },
           create: { currency: data.currency, rate: data.rate, updatedBy: ctx.userId, ...official },
           update: { rate: data.rate, updatedBy: ctx.userId, updatedAt: new Date(), ...official },
+        });
+        await tx.exchangeRateHistory.create({
+          data: {
+            currency: data.currency,
+            rate: data.rate,
+            officialRate: row.officialRate,
+            setById: ctx.userId,
+          },
         });
         await writeAudit(tx, {
           actorId: ctx.userId,

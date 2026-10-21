@@ -2,7 +2,6 @@ import {
   Alert,
   Button,
   Card,
-  Chip,
   Code,
   ConfirmButton,
   Field,
@@ -17,7 +16,14 @@ import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { isTransient, sendScan } from '../scan-retry';
-import { api, ApiError, type Currency, type ScanLine, type ScanSession } from '../api';
+import {
+  api,
+  ApiError,
+  type Currency,
+  type ReceiptSource,
+  type ScanLine,
+  type ScanSession,
+} from '../api';
 import {
   errorText,
   formatMoney,
@@ -28,6 +34,7 @@ import {
   fromMinorUnits,
   SESSION_KIND,
   toMinorUnits,
+  toUsdCents,
 } from '../format';
 import { PhotoThumb } from '../photo';
 import {
@@ -46,18 +53,70 @@ const route = getRouteApi('/app/sessions/$sessionId');
 const lineSaveKey = (id: string) => ['line-save', id];
 
 /**
- * The terms a receipt or goods out is confirmed with (ADR-016): from which supplier, and what
- * was paid on the spot; or to which wholesale customer, at what agreed total. None: as before.
+ * The terms a receipt or goods out is confirmed with (ADR-016). A receipt always says where the
+ * goods came from (developer report F-01): a supplier on credit, a cash purchase, stock owned
+ * before the system, or the owner's own goods. Goods out may go on a wholesale customer.
  */
 interface Terms {
+  source: ReceiptSource | '';
   partyId: string;
-  /** Paid in cash at the receipt. */
-  cash: boolean;
+  invoiceNo: string;
+  /** Part or all of it paid from a box now. */
+  paidNow: boolean;
   boxId: string;
-  /** Box currency (a receipt's cash) or the customer's (goods out). */
+  /** Box currency (a receipt's cash) or the customer's minor units (goods out). */
   amount: string;
+  /** The receiver looked at the costs that stand out (F-07). */
+  costChecked: boolean;
 }
-const NO_TERMS: Terms = { partyId: '', cash: false, boxId: '', amount: '' };
+const NO_TERMS: Terms = {
+  source: '',
+  partyId: '',
+  invoiceNo: '',
+  paidNow: false,
+  boxId: '',
+  amount: '',
+  costChecked: false,
+};
+
+const SOURCES: { key: ReceiptSource; label: string; hint: string; money?: boolean }[] = [
+  { key: 'SUPPLIER', label: 'من مورد', hint: 'بالدين، أو جزء كاش' },
+  { key: 'CASH', label: 'شراء نقدي', hint: 'دفعت من صندوق', money: true },
+  { key: 'OPENING', label: 'بضاعة موجودة من قبل', hint: 'رصيد افتتاحي — ما حدا إله شي' },
+  { key: 'OWNER', label: 'من المالك / إنتاج داخلي', hint: 'على جاري المالك' },
+];
+
+/**
+ * Lines whose cost is more than 15% away from the other sizes of the same product in this
+ * receipt (F-07): a typo in a cost goes straight into the stock's value.
+ */
+function costOutliers(session: ScanSession): string[] {
+  const usd = session.lines.map((l) =>
+    l.unitCost
+      ? BigInt(toUsdCents(l.unitCost.amount, l.unitCost.currency, l.unitCost.rateToBase))
+      : null,
+  );
+  const out: string[] = [];
+  session.lines.forEach((l, i) => {
+    const mine = usd[i];
+    if (mine === null || mine === undefined) return;
+    const others = usd.filter(
+      (c, j): c is bigint =>
+        j !== i && c !== null && session.lines[j]!.variant.product.id === l.variant.product.id,
+    );
+    if (others.length === 0) return;
+    const n = BigInt(others.length);
+    const sum = others.reduce((a, b) => a + b, 0n);
+    const gap = mine * n - sum;
+    // |mine − average| > 15% of the average, without dividing.
+    if (sum > 0n && (gap < 0n ? -gap : gap) * 100n > 15n * sum) {
+      out.push(
+        `${l.variant.title}: ${formatMoney(mine.toString())} والباقي حوالي ${formatMoney((sum / n).toString())}`,
+      );
+    }
+  });
+  return out;
+}
 
 type LastScan =
   { status: 'ok' | 'dup'; line: ScanLine } | { status: 'bad'; code: string; message: string };
@@ -135,7 +194,7 @@ export function ScanSessionPage() {
   const [terms, setTerms] = useState<Terms>(NO_TERMS);
   const { data: boxes = [] } = useQuery({
     ...boxesQuery,
-    enabled: Boolean(open && session?.kind === 'RECEIVE' && terms.cash),
+    enabled: Boolean(open && session?.kind === 'RECEIVE' && terms.paidNow),
   });
   const termsCurrency: Currency | null =
     session?.kind === 'RECEIVE'
@@ -143,13 +202,17 @@ export function ScanSessionPage() {
       : null;
   const commit = useMutation({
     mutationFn: async () => {
-      if (session?.kind === 'RECEIVE' && (terms.partyId || terms.cash)) {
+      if (session?.kind === 'RECEIVE') {
         const paid =
-          terms.cash && termsCurrency
+          terms.paidNow && termsCurrency
             ? { boxId: terms.boxId, amount: toMinorUnits(terms.amount, termsCurrency)! }
             : undefined;
         return api.commitReceipt(sessionId, {
-          ...(terms.partyId ? { partyId: terms.partyId } : {}),
+          source: terms.source as ReceiptSource,
+          ...(terms.partyId && terms.source !== 'OPENING' && terms.source !== 'OWNER'
+            ? { partyId: terms.partyId }
+            : {}),
+          ...(terms.invoiceNo.trim() ? { invoiceNo: terms.invoiceNo.trim() } : {}),
           ...(paid ? { paid } : {}),
         });
       }
@@ -315,7 +378,7 @@ export function ScanSessionPage() {
                 savingLines > 0 ||
                 session.totalQuantity === 0 ||
                 overScanned.length > 0 ||
-                !termsReady(session.kind, terms, termsCurrency)
+                !termsReady(session, terms, termsCurrency)
               }
             >
               تأكيد وحفظ في المخزون
@@ -340,19 +403,23 @@ export function ScanSessionPage() {
   );
 }
 
-/** Terms can be sent: a cash payment needs its box and amount; goods out on account its total. */
-function termsReady(kind: string, t: Terms, cashCurrency: Currency | null): boolean {
-  if (kind === 'RECEIVE' && t.cash) {
-    return Boolean(t.boxId && cashCurrency && toMinorUnits(t.amount, cashCurrency));
+/** Terms can be sent: a receipt has its source and what that source needs. */
+function termsReady(session: ScanSession, t: Terms, cashCurrency: Currency | null): boolean {
+  if (session.kind === 'RECEIVE') {
+    if (!t.source) return false;
+    if (t.source === 'SUPPLIER' && !t.partyId) return false;
+    if (t.paidNow && !(t.boxId && cashCurrency && toMinorUnits(t.amount, cashCurrency)))
+      return false;
+    if (costOutliers(session).length > 0 && !t.costChecked) return false;
+    return true;
   }
-  if (kind === 'SALE' && t.partyId) return /^\d+$/.test(t.amount) && t.amount !== '0';
+  if (session.kind === 'SALE' && t.partyId) return /^\d+$/.test(t.amount) && t.amount !== '0';
   return true;
 }
 
 /**
- * From whom the goods came and whether they were paid in cash (a receipt), or to which
- * wholesale customer they went and at what total (goods out). Optional: with nothing chosen the
- * session is confirmed as before.
+ * Where the goods came from and whether they were paid in cash (a receipt), or to which
+ * wholesale customer they went and at what total (goods out).
  */
 function TermsCard({
   session,
@@ -367,10 +434,9 @@ function TermsCard({
   const receipt = session.kind === 'RECEIVE';
   const manage = can(user, 'parties.manage');
   const { data: parties = [] } = useQuery(partiesQuery(receipt ? 'SUPPLIER' : 'CUSTOMER'));
-  const { data: boxes = [] } = useQuery({ ...boxesQuery, enabled: receipt && terms.cash });
+  const { data: boxes = [] } = useQuery({ ...boxesQuery, enabled: receipt && terms.paidNow });
   const set = (patch: Partial<Terms>) => onChange({ ...terms, ...patch });
   const party = parties.find((p) => p.id === terms.partyId);
-  // What the goods cost, when every line is costed in one currency.
   const costs = session.lines.map((l) => l.unitCost);
   const one =
     costs.length > 0 && costs.every((c) => c && c.currency === costs[0]?.currency)
@@ -379,23 +445,63 @@ function TermsCard({
   const goods = one
     ? session.lines.reduce((s, l) => s + BigInt(l.unitCost!.amount) * BigInt(l.quantity), 0n)
     : null;
+  const outliers = receipt ? costOutliers(session) : [];
   // Goods out on account is a sale with money in it: only whoever keeps the accounts.
-  if (!receipt && !manage) return null;
-  if (parties.length === 0 && !(receipt && manage)) return null;
+  if (!receipt && (!manage || parties.length === 0)) return null;
 
-  const customerAmount = party ? (toMinorUnits(terms.amount, party.currency) ?? '') : '';
   return (
     <Card className="mt-4 flex flex-col gap-3">
-      <h2 className="font-bold">{receipt ? 'من أي مورد؟' : 'لتاجر جملة على الحساب؟'}</h2>
+      <h2 className="font-bold">
+        {receipt ? 'من وين إجت هالبضاعة؟ (لازم تختار)' : 'لتاجر جملة على الحساب؟'}
+      </h2>
+      {receipt && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {SOURCES.filter((o) => !o.money || manage).map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={terms.source === o.key}
+              onClick={() =>
+                onChange({
+                  ...terms,
+                  source: o.key,
+                  paidNow: o.key === 'CASH',
+                  ...(o.key === 'OPENING' || o.key === 'OWNER'
+                    ? { partyId: '', paidNow: false }
+                    : {}),
+                })
+              }
+              className={`min-h-16 rounded-xl border-2 px-3 py-2 text-start ${terms.source === o.key ? 'border-brand bg-blush' : 'border-stone bg-white'}`}
+            >
+              <div className="font-bold">{o.label}</div>
+              <div className="text-xs text-ink-muted">{o.hint}</div>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-end gap-3">
-        {parties.length > 0 && (
+        {(!receipt || terms.source === 'SUPPLIER' || terms.source === 'CASH') && (
           <div className="w-64">
-            <Field label={receipt ? 'المورد' : 'الزبون'}>
+            <Field
+              label={
+                receipt
+                  ? terms.source === 'SUPPLIER'
+                    ? 'المورد (إجباري)'
+                    : 'المورد (اختياري)'
+                  : 'الزبون'
+              }
+            >
               <Select
                 value={terms.partyId}
-                onChange={(e) => onChange({ ...terms, partyId: e.target.value, amount: '' })}
+                onChange={(e) =>
+                  onChange({
+                    ...terms,
+                    partyId: e.target.value,
+                    ...(receipt ? {} : { amount: '' }),
+                  })
+                }
               >
-                <option value="">{receipt ? '— بدون مورد —' : '— بدون فاتورة —'}</option>
+                <option value="">{receipt ? '— اختر —' : '— بدون فاتورة —'}</option>
                 {parties.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nameAr} ({CURRENCY_SYMBOL[p.currency]})
@@ -403,19 +509,35 @@ function TermsCard({
                 ))}
               </Select>
             </Field>
+            {receipt && parties.length === 0 && (
+              <p className="mt-1 text-xs text-ink-muted">
+                ما في موردين بعد — أضفهم من «المالية ← الموردون والزبائن».
+              </p>
+            )}
           </div>
         )}
-        {receipt && manage && (
-          <div className="flex gap-2">
-            <Chip selected={!terms.cash} onClick={() => set({ cash: false })}>
-              بالدين
-            </Chip>
-            <Chip selected={terms.cash} onClick={() => set({ cash: true })}>
-              دفعت كاش
-            </Chip>
+        {receipt && terms.source === 'SUPPLIER' && (
+          <div className="w-40">
+            <Field label="رقم فاتورة المورد">
+              <Input
+                dir="ltr"
+                value={terms.invoiceNo}
+                onChange={(e) => set({ invoiceNo: e.target.value })}
+              />
+            </Field>
           </div>
         )}
-        {receipt && terms.cash && (
+        {receipt && terms.source === 'SUPPLIER' && manage && (
+          <label className="flex min-h-10 items-center gap-2">
+            <input
+              type="checkbox"
+              checked={terms.paidNow}
+              onChange={(e) => set({ paidNow: e.target.checked })}
+            />
+            دفعت جزء كاش هلق
+          </label>
+        )}
+        {receipt && terms.paidNow && (
           <>
             <div className="w-64">
               <Field label="من صندوق">
@@ -464,17 +586,43 @@ function TermsCard({
           {party && party.currency !== one && ' — المورد بعملة أخرى: اكتب التكلفة بعملته'}
         </p>
       )}
+      {outliers.length > 0 && (
+        <Alert tone="warn">
+          <div className="font-bold">
+            تكلفة بعض المقاسات بتختلف أكتر من 15% عن باقي مقاسات نفس المنتج:
+          </div>
+          <ul className="list-disc ps-5">
+            {outliers.map((o) => (
+              <li key={o}>{o}</li>
+            ))}
+          </ul>
+          <label className="mt-2 flex items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              checked={terms.costChecked}
+              onChange={(e) => set({ costChecked: e.target.checked })}
+            />
+            تأكدت، التكلفة صحيحة
+          </label>
+        </Alert>
+      )}
       <p className="text-sm text-ink-muted">
         {receipt
-          ? terms.cash
-            ? terms.partyId
+          ? terms.source === 'SUPPLIER'
+            ? terms.paidNow
               ? 'ما دفعته ينقص من حساب المورد؛ الباقي يبقى عليك له.'
-              : 'بدون مورد: الكاش لازم يغطي كامل البضاعة.'
-            : terms.partyId
-              ? 'قيمة البضاعة تُكتب عليك للمورد حتى تدفعها.'
-              : 'بدون مورد: تُسجَّل كبضاعة مستلمة بدون مورد.'
+              : 'قيمة البضاعة تُكتب عليك للمورد حتى تدفعها.'
+            : terms.source === 'CASH'
+              ? terms.partyId
+                ? 'تُسجّل عند المورد ومدفوعة.'
+                : 'بدون مورد: الكاش لازم يغطي كامل البضاعة.'
+              : terms.source === 'OPENING'
+                ? 'بتدخل المخزون كرصيد افتتاحي، وما بتنكتب دين على حدا.'
+                : terms.source === 'OWNER'
+                  ? 'بتنكتب لصالح المالك (جاري المالك)، مو دين على مورد.'
+                  : 'اختر مصدر البضاعة قبل التأكيد.'
           : terms.partyId
-            ? `القيمة تُكتب على الزبون${customerAmount ? '' : ' — اكتبها أولاً'}.`
+            ? 'القيمة تُكتب على الزبون.'
             : 'بدون زبون: إخراج بضاعة فقط، بدون فاتورة.'}
       </p>
     </Card>

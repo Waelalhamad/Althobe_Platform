@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MovementView } from '../inventory/inventory.service.js';
 import { DEFAULT_CHART, parentCodeOf } from './chart.js';
-import { entryForMovement, type InventoryAccounts } from './inventory-posting.js';
+import { entryForMovement, pieces, type InventoryAccounts } from './inventory-posting.js';
 import { businessDate, impliedRate, line, monthEnd } from './posting.js';
 import { revaluationLines } from './revaluation.js';
 
@@ -239,5 +239,19 @@ describe('chart of accounts', () => {
     expect(monthEnd('2026-02')).toBe('2026-02-28');
     expect(monthEnd('2028-02')).toBe('2028-02-29');
     expect(monthEnd('2026-10')).toBe('2026-10-31');
+  });
+});
+
+describe('entry memos (developer report F-13)', () => {
+  it('counts pieces the Arabic way', () => {
+    expect([1, 2, 3, 10, 11, 103, 111].map(pieces)).toEqual([
+      'قطعة واحدة',
+      'قطعتان',
+      '3 قطع',
+      '10 قطع',
+      '11 قطعة',
+      '103 قطع',
+      '111 قطعة',
+    ]);
   });
 });

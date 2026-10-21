@@ -11,6 +11,12 @@ export class PeriodClosedError extends DomainError {
   }
 }
 
+export class BackdatedNeedsReasonError extends DomainError {
+  constructor(date: string) {
+    super('BACKDATED_NEEDS_REASON', 'An entry dated more than two days back says why', { date });
+  }
+}
+
 export class DateInFutureError extends DomainError {
   constructor(date: string) {
     super('DATE_IN_FUTURE', 'An entry cannot be dated after today', { date });

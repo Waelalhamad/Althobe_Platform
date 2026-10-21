@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { api, type Rate } from '../api';
 import { CURRENCY_SYMBOL, errorText } from '../format';
 import { PAGES } from '../help';
-import { ratesQuery } from '../queries';
+import { can, meQuery, ratesQuery } from '../queries';
 
 const NAMES: Record<Rate['currency'], string> = {
   SYP: 'الليرة السورية',
@@ -17,6 +17,7 @@ const RATE_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
 /** Owner only (the API enforces admin.rates.write): units of each currency per 1 USD. */
 export function RatesPage() {
   const { data: rates = [] } = useQuery(ratesQuery);
+  const { data: user } = useQuery(meQuery);
   return (
     <>
       <PageTitle intro={PAGES.rates}>أسعار الصرف</PageTitle>
@@ -25,6 +26,50 @@ export function RatesPage() {
           <RateCard key={r.currency} rate={r} />
         ))}
       </div>
+      {can(user, 'accounting.view') && <RateHistory />}
+    </>
+  );
+}
+
+/**
+ * Who set each rate, from when (developer report F-05). Every entry keeps the rate it used, so
+ * a change today never touches yesterday; closing a month uses the rate of its last day.
+ */
+function RateHistory() {
+  const { data: rows = [] } = useQuery({
+    queryKey: ['rates', 'history'],
+    queryFn: api.rateHistory,
+  });
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h2 className="mt-8 mb-2 text-lg font-bold">سجل الأسعار</h2>
+      <Card className="overflow-x-auto p-0">
+        <table className="w-full">
+          <thead className="bg-blush text-sm text-ink-muted">
+            <tr>
+              <th className="p-2 text-start">من تاريخ</th>
+              <th className="p-2 text-start">العملة</th>
+              <th className="p-2 text-start">السعر (مقابل 1 $)</th>
+              <th className="p-2 text-start">بواسطة</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.currency}-${r.setAt}`} className="border-t border-stone">
+                <td className="tabular p-2">
+                  {new Date(r.setAt).toLocaleString('ar-SY-u-nu-latn')}
+                </td>
+                <td className="p-2">{NAMES[r.currency as Rate['currency']]}</td>
+                <td className="tabular p-2 font-bold">
+                  {Number(r.rate)} {CURRENCY_SYMBOL[r.currency]}
+                </td>
+                <td className="p-2 text-sm text-ink-muted">{r.setBy}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </>
   );
 }

@@ -19,6 +19,7 @@ const TABS: { key: ReportTab; label: string }[] = [
 const SECTION: Record<string, string> = {
   revenue: 'الإيرادات',
   costOfSales: 'تكلفة المبيعات',
+  stockLosses: 'خسائر وفروقات مخزون (تالف، فروقات جرد وتعديل)',
   expenses: 'المصاريف التشغيلية',
   exchange: 'فروقات الصرف',
 };
@@ -136,6 +137,7 @@ function IncomeTable({ data }: { data: IncomeStatement }) {
         <tbody>
           {block('revenue')}
           {block('costOfSales')}
+          {block('stockLosses')}
           <Total label="مجمل الربح" value={data.grossProfit} />
           {block('expenses')}
           {block('exchange')}

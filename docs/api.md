@@ -174,9 +174,9 @@ Amounts in minor units of the party's currency. Settling and closing the unnamed
 | `POST` / `PATCH` | `/parties` · `/parties/:id` — `{ kind, nameAr, phone?, currency, branch, notes?, isActive? }` | `parties.manage` |
 | `GET` | `/parties/:id` (statement with running balance) · `/parties/summary` (totals, unnamed balance) | `parties.read` |
 | `POST` | `/parties/:id/settle` — `{ boxId, amount, note? }` (box currency) | `parties.manage` |
-| `POST` | `/parties/receipts/:sessionId` — `{ partyId?, paid?: { boxId, amount } }` | `inventory.receive` (paid: `parties.manage`) |
+| `POST` | `/parties/receipts/:sessionId` — `{ source: SUPPLIER\|CASH\|OPENING\|OWNER, partyId?, invoiceNo?, paid?: { boxId, amount } }`. The only way to confirm a receipt: `/scan-sessions/:id/commit` refuses one (`RECEIPT_NEEDS_SOURCE`). | `inventory.receive` (paid: `parties.manage`) |
 | `POST` | `/parties/goods-out/:sessionId` — `{ partyId, amount, note? }` | `inventory.issue` + `parties.manage` |
-| `POST` | `/parties/unassigned` — `{ side, boxId?, amount, note? }` (no box: USD cents, the owner paid) | `parties.manage` |
+| `POST` | `/parties/unassigned` — `{ side, boxId?, as?: OWNER\|OPENING, amount, note? }` (no box: USD cents; the owner paid it, or it was stock owned before the system) | `parties.manage` |
 
 `POST /retail/sales` also takes `account: { partyId, amount }` (SYP), with or without cash
 payments. Sales and refunds return `onAccount` and `party`.

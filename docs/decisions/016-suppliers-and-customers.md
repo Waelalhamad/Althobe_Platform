@@ -91,3 +91,22 @@ confirmed before suppliers existed. The owner closes it from the parties page, e
   entries and with receipts confirmed without a supplier.
 - Scan-session commit is now shared: `commitSession` and `commitInTx` run the same code, and
   `commitInTx` lets another module add its records in the same transaction.
+
+## Addendum — where received goods came from (2026-10-22)
+
+The developer report of 2026-10-21 (F-01) found the live opening stock entered as receipts:
+62 movements, 13,902.45 $ owed to «الموردون» with no supplier, and equity at 0.
+
+**A receipt now always states its source** (`receiptTermsSchema.source`):
+
+- **`SUPPLIER`:** owed to the named supplier (required), with their invoice number.
+- **`CASH`:** paid from a box, with or without a supplier.
+- **`OPENING`:** stock owned before the system. The purchase the stock ledger posts to 2101 is
+  moved to 3901 in the same transaction, in the same currency and value. 2101 nets to zero for
+  it, and the stock stands against opening balances.
+- **`OWNER`:** the owner's own goods or production. The same, to 3201 جاري المالك.
+
+Plain `commitSession` refuses a receipt (`RECEIPT_NEEDS_SOURCE`). The unnamed balance can be
+closed as opening stock (`/parties/unassigned`, `as: OPENING`). That is the report's correction
+(أ), for the owner to do once they confirm the goods were theirs.
+
