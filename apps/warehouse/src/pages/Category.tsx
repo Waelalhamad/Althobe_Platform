@@ -65,15 +65,24 @@ export function CategoryPage() {
   const categoryGroups = groups.filter((g) => category?.groupIds.includes(g.id));
   const canWrite = can(user, 'products.write');
   const canPrice = can(user, 'prices.write');
+  const { edit: editFromList } = route.useSearch();
+  const [editing, setEditing] = useState(Boolean(editFromList));
 
   return (
     <>
       <PageTitle
         intro={PAGES.category}
         actions={
-          <Link to="/labels" search={{ categoryId, productIds: undefined }}>
-            <Button variant="secondary">طباعة الملصقات</Button>
-          </Link>
+          <>
+            {canWrite && category && !editing && (
+              <Button variant="secondary" onClick={() => setEditing(true)}>
+                ✏️ تعديل التصنيف
+              </Button>
+            )}
+            <Link to="/labels" search={{ categoryId, productIds: undefined }}>
+              <Button variant="secondary">طباعة الملصقات</Button>
+            </Link>
+          </>
         }
       >
         {category ? categoryPath(categories, category.id) : '…'} <Code>{category?.code}</Code>
@@ -90,8 +99,13 @@ export function CategoryPage() {
         </div>
       )}
 
-      {canWrite && category && (
-        <CategorySettings category={category} categories={categories} groups={groups} />
+      {canWrite && category && editing && (
+        <CategorySettings
+          category={category}
+          categories={categories}
+          groups={groups}
+          onClose={() => setEditing(false)}
+        />
       )}
       {canWrite && category?.isActive && (
         <ProductBuilder categoryId={categoryId} groups={categoryGroups} canPrice={canPrice} />
@@ -609,14 +623,15 @@ function CategorySettings({
   category,
   categories,
   groups,
+  onClose,
 }: {
   category: Category;
   categories: Category[];
   groups: OptionGroup[];
+  onClose: () => void;
 }) {
   const refresh = useCatalogueRefresh();
   const toast = useToast();
-  const [open, setOpen] = useState(false);
   const [nameAr, setNameAr] = useState(category.nameAr);
   const [code, setCode] = useState(category.code);
   const [parentId, setParentId] = useState(category.parentId ?? '');
@@ -643,20 +658,10 @@ function CategorySettings({
       api.updateCategory(category.id, patch),
     onSuccess: async () => {
       toast('تم حفظ التصنيف');
-      setOpen(false);
+      onClose();
       await refresh();
     },
   });
-
-  if (!open) {
-    return (
-      <div className="mb-4 flex justify-end">
-        <Button variant="ghost" onClick={() => setOpen(true)}>
-          تعديل التصنيف
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <Card className="mb-4">
@@ -710,7 +715,7 @@ function CategorySettings({
         >
           حفظ
         </Button>
-        <Button variant="ghost" onClick={() => setOpen(false)}>
+        <Button variant="ghost" onClick={onClose}>
           إغلاق
         </Button>
       </div>

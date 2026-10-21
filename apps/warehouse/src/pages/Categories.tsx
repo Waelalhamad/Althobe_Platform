@@ -4,6 +4,7 @@ import {
   Card,
   Chip,
   Code,
+  ConfirmButton,
   EmptyState,
   Field,
   Input,
@@ -75,6 +76,7 @@ export function CategoriesPage() {
                 <th className="p-3 text-start">الرمز</th>
                 <th className="p-3 text-start">عدد المنتجات</th>
                 <th className="p-3 text-start">الحالة</th>
+                {can(user, 'products.write') && <th className="p-3" />}
               </tr>
             </thead>
             <tbody>
@@ -100,6 +102,11 @@ export function CategoriesPage() {
                   <td className="p-3 text-sm">
                     {c.isActive ? 'فعّال' : <span className="text-warn">موقوف</span>}
                   </td>
+                  {can(user, 'products.write') && (
+                    <td className="p-3">
+                      <RowActions category={c} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -214,5 +221,42 @@ function CreateCategory({ categories }: { categories: Category[] }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * Edit or delete a category from the list, without hunting for it on its page. Deleting is
+ * refused (and says why) once any of its sizes had stock: stop it instead.
+ */
+function RowActions({ category }: { category: Category }) {
+  const refresh = useCatalogueRefresh();
+  const toast = useToast();
+  const remove = useMutation({
+    mutationFn: async () => api.deleteCategory(category.id),
+    onSuccess: async () => {
+      toast(`حُذف التصنيف «${category.nameAr}»`);
+      await refresh();
+    },
+  });
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex gap-2">
+        <Link
+          to="/categories/$categoryId"
+          params={{ categoryId: category.id }}
+          search={{ edit: true }}
+        >
+          <Button variant="secondary">✏️ تعديل</Button>
+        </Link>
+        <ConfirmButton
+          variant="danger"
+          disabled={remove.isPending}
+          onConfirm={() => remove.mutate()}
+        >
+          🗑 حذف
+        </ConfirmButton>
+      </div>
+      {remove.isError && <span className="text-sm text-bad">{errorText(remove.error)}</span>}
+    </div>
   );
 }

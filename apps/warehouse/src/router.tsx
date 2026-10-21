@@ -79,6 +79,8 @@ const routes = [
   createRoute({
     getParentRoute: () => appRoute,
     path: '/categories/$categoryId',
+    validateSearch: (search: Record<string, unknown>): { edit?: boolean } =>
+      search.edit === true || search.edit === 'true' ? { edit: true } : {},
     component: CategoryPage,
   }),
   createRoute({ getParentRoute: () => appRoute, path: '/options', component: OptionsPage }),
