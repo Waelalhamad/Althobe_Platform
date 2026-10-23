@@ -52,22 +52,26 @@
 @theme {
   --font-sans: 'AlthobeDigits', 'Somar', system-ui, sans-serif;
 
+  /* Somar is thin at 12px; the smallest text stays readable. */
+  --text-xs: 0.8125rem;
+
   --color-brand: #8a1913;
   --color-brand-dark: #6d130f;
   --color-blush: #ebd8d2;
-  --color-stone: #dad3cb;
-  --color-mauve: #aa999a;
+  --color-stone: #cdc4ba;
+  --color-mauve: #7d6b6c;
 
   --color-surface: #fbf7f5;
-  --color-ink: #231a19;
-  --color-ink-muted: #574a49;
+  --color-ink: #1a1211;
+  /* Secondary text. Dark enough to read in Somar on a phone in daylight (owner, 2026-10-23). */
+  --color-ink-muted: #3f3433;
 
   /* Scan feedback is deliberately NOT the brand red (docs/brand.md). */
   --color-ok: #15803d;
   --color-ok-soft: #dcfce7;
-  --color-bad: #e11d48;
+  --color-bad: #be123c;
   --color-bad-soft: #ffe4e6;
-  --color-warn: #b45309;
+  --color-warn: #a14a07;
   --color-warn-soft: #fef3c7;
 }
 
@@ -77,8 +81,14 @@
        on phones and warehouse PCs. Tailwind sizes are in rem, so everything scales with it. */
     font-size: 112.5%;
     font-family: var(--font-sans);
+    /* Somar Regular is hairline-thin on screens; Medium is the body weight. */
+    font-weight: 500;
     color: var(--color-ink);
     background: var(--color-surface);
+  }
+  ::placeholder {
+    color: var(--color-mauve);
+    opacity: 1;
   }
   /* Barcodes, SKUs and quantities line up in columns. */
   .tabular {

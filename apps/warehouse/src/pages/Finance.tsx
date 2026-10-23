@@ -88,7 +88,7 @@ export function FinancePage() {
             <Link key={a.kind} to="/finance/new" search={{ kind: a.kind }}>
               <Button size="lg">
                 {a.label}
-                <span className="text-xs font-normal opacity-80">({a.hint})</span>
+                <span className="text-sm font-medium text-white/90">({a.hint})</span>
               </Button>
             </Link>
           ))}

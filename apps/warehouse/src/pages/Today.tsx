@@ -273,7 +273,7 @@ function Attention() {
 
   return (
     <Card>
-      <h2 className="mb-2 font-bold text-ink-muted">ماذا يحتاج انتباهي؟</h2>
+      <h2 className="mb-3 text-lg font-bold text-ink">ماذا يحتاج انتباهي؟</h2>
       {items.length === 0 ? (
         <p className="font-medium text-ok">✓ لا شيء — كل شيء على ما يرام</p>
       ) : (

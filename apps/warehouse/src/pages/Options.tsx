@@ -208,7 +208,7 @@ function GroupCard({
                 onClick={() => setSelected(v.id === selected ? null : v.id)}
               >
                 {v.valueAr}{' '}
-                <span dir="ltr" className="font-mono text-xs opacity-70">
+                <span dir="ltr" className="font-mono text-xs text-ink-muted">
                   {v.code}
                 </span>
               </Chip>

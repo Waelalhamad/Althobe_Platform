@@ -251,7 +251,7 @@ function SetupChecklist({
                 </span>
                 {step.progress && <span className="text-sm text-ink-muted">({step.progress})</span>}
                 {!isCurrent && !step.done && (
-                  <span className="ms-auto text-sm text-mauve">بعد الخطوة السابقة</span>
+                  <span className="ms-auto text-sm text-ink-muted">بعد الخطوة السابقة</span>
                 )}
               </div>
               {isCurrent && (

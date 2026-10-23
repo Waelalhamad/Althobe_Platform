@@ -137,7 +137,7 @@ function SectionSwitch({ current, sections }: { current: Section; sections: type
           to={s.home}
           aria-current={s.key === current ? 'page' : undefined}
           className={`rounded-full px-4 py-1 text-sm font-bold ${
-            s.key === current ? 'bg-white text-brand' : 'text-white/80 hover:bg-white/10'
+            s.key === current ? 'bg-white text-brand' : 'text-white hover:bg-white/10'
           }`}
         >
           {s.label}
@@ -214,7 +214,7 @@ export function AppLayout() {
           <nav className="hidden items-end gap-4 lg:flex">
             {nav.map((g) => (
               <div key={g.group ?? 'main'} className="flex flex-col">
-                {g.group && <span className="px-3 text-xs text-white/60">{g.group}</span>}
+                {g.group && <span className="px-3 text-xs text-white/85">{g.group}</span>}
                 <div className="flex gap-1">
                   {g.items.map((item) => (
                     <Link
@@ -263,7 +263,7 @@ export function AppLayout() {
           <nav className="border-t border-white/20 px-4 pb-4 lg:hidden">
             {nav.map((g) => (
               <div key={g.group ?? 'main'} className="mt-3">
-                {g.group && <div className="mb-1 text-sm text-white/60">{g.group}</div>}
+                {g.group && <div className="mb-1 text-sm text-white/85">{g.group}</div>}
                 <div className="flex flex-col gap-1">
                   {g.items.map((item) => (
                     <Link

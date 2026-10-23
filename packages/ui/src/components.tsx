@@ -84,9 +84,9 @@ export function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-sm font-medium text-ink-muted">{label}</span>
+      <span className="text-sm font-semibold text-ink">{label}</span>
       {children}
-      {hint && <span className="text-xs text-mauve">{hint}</span>}
+      {hint && <span className="text-sm text-ink-muted">{hint}</span>}
     </label>
   );
 }
@@ -249,7 +249,7 @@ export function Hint({ children, label = 'ما هذا؟' }: { children: ReactNod
       >
         ؟
       </summary>
-      <div className="absolute start-0 top-6 z-20 w-64 rounded-lg border border-stone bg-white p-3 text-sm font-normal text-ink shadow-lg">
+      <div className="absolute start-0 top-6 z-20 w-64 rounded-lg border border-stone bg-white p-3 text-sm font-medium text-ink shadow-lg">
         {children}
       </div>
     </details>
