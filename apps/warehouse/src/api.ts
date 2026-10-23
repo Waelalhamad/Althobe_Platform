@@ -443,6 +443,8 @@ export interface ScanSessionHeader {
 
 export interface ScanSession extends ScanSessionHeader {
   lines: ScanLine[];
+  /** A confirmed receipt: each variant as it stands after its corrections (F-02). */
+  received?: { variant: Variant; quantity: number }[];
 }
 
 export interface Balance {
@@ -717,6 +719,28 @@ export interface PartiesSummary {
   books: Record<'receivable' | 'payable', { books: string; named: string; unassigned: string }>;
 }
 
+// ─── Manual adjustments (developer report F-03) ──────────────────────────────────────────────
+
+export type AdjustmentReason = 'COUNT_DIFFERENCE' | 'DAMAGE' | 'SAMPLE' | 'INTERNAL_USE' | 'GIFT';
+
+export interface AdjustmentRequest {
+  id: string;
+  variant: Variant | null;
+  location: string;
+  delta: number;
+  reasonCode: AdjustmentReason;
+  note: string | null;
+  /** USD cents at the average cost when asked; null without inventory.cost.view. */
+  valueEstimate: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestedBy: string;
+  requestedById: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
 export const api = {
   mode: async () => get<{ practice: boolean; photos: boolean }>('/mode'),
   login: async (email: string, password: string) => post<User>('/auth/login', { email, password }),
@@ -935,11 +959,47 @@ export const api = {
       )}`,
     ),
   summary: async () => get<SummaryRow[]>('/inventory/summary'),
+  /** Applies a small take-away at once; anything else waits for approval (F-03). */
   adjust: async (
-    input: { variantId: string; locationId: string; delta: number; reason: string },
+    input: {
+      variantId: string;
+      locationId: string;
+      delta: number;
+      reasonCode: AdjustmentReason;
+      note?: string;
+    },
     idempotencyKey: string,
   ) =>
-    request<unknown>('POST', '/inventory/adjustments', input, {
+    request<{ status: 'APPLIED' | 'PENDING'; requestId: string | null }>(
+      'POST',
+      '/inventory/adjustments',
+      input,
+      { 'idempotency-key': idempotencyKey },
+    ),
+  adjustmentRequests: async (status?: 'PENDING' | 'APPROVED' | 'REJECTED') =>
+    get<AdjustmentRequest[]>(`/inventory/adjustment-requests?${query({ status })}`),
+  decideAdjustment: async (
+    id: string,
+    decision: 'approve' | 'reject',
+    note: string | undefined,
+    idempotencyKey: string,
+  ) =>
+    request<{ status: string }>(
+      'POST',
+      `/inventory/adjustment-requests/${id}/${decision}`,
+      note ? { note } : {},
+      { 'idempotency-key': idempotencyKey },
+    ),
+  /** تصحيح الاستلام (F-02): each line as it should have been, or part of it to another variant. */
+  correctReceipt: async (
+    sessionId: string,
+    input: {
+      changes: { variantId: string; quantity: number; toVariantId?: string }[];
+      reason: string;
+    },
+    idempotencyKey: string,
+  ) =>
+    request<{ value: string }>('POST', `/parties/receipts/${sessionId}/correct`, input, {
       'idempotency-key': idempotencyKey,
     }),
 

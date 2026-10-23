@@ -13,11 +13,16 @@ export interface InventoryAccounts {
   cogs: string;
   damage: string;
   adjustment: string;
+  /** A manual adjustment's other side by its reason (developer report F-03). */
+  marketing: string;
+  misc: string;
+  gifts: string;
 }
 
 const MEMO: Record<MovementView['type'], string> = {
   OPENING: 'جرد افتتاحي',
   PURCHASE: 'استلام بضاعة',
+  RECEIPT_CORRECTION: 'تصحيح استلام',
   SALE: 'بيع / إخراج',
   RETURN: 'مرتجع',
   TRANSFER_OUT: 'نقل — خروج',
@@ -46,10 +51,12 @@ export function entryForMovement(m: MovementView, accounts: InventoryAccounts): 
   if (!inventory) throw new Error(`no inventory account for location ${m.locationId}`);
 
   const extra = { branch: inventory.branch, locationId: m.locationId };
-  const counterAccount = counterFor(m.type, accounts);
+  const counterAccount = counterFor(m, accounts);
   // A purchase in SYP or LYD keeps what is owed in that currency, at the rate of the delivery.
   const counter =
-    m.type === 'PURCHASE' && m.unitCost && m.unitCost.currency !== 'USD'
+    (m.type === 'PURCHASE' || m.type === 'RECEIPT_CORRECTION') &&
+    m.unitCost &&
+    m.unitCost.currency !== 'USD'
       ? lineAtBase(
           counterAccount,
           m.unitCost.currency,
@@ -79,11 +86,13 @@ export function pieces(n: number): string {
   return lastTwo >= 3 && lastTwo <= 10 ? `${n} قطع` : `${n} قطعة`;
 }
 
-function counterFor(type: MovementView['type'], a: InventoryAccounts): string {
-  switch (type) {
+function counterFor(m: MovementView, a: InventoryAccounts): string {
+  switch (m.type) {
     case 'OPENING':
       return a.openingEquity;
+    // A receipt corrected undoes, or adds to, what it posted: on the same account (F-02).
     case 'PURCHASE':
+    case 'RECEIPT_CORRECTION':
       return a.payable;
     case 'SALE':
     case 'RETURN':
@@ -91,10 +100,31 @@ function counterFor(type: MovementView['type'], a: InventoryAccounts): string {
     case 'DAMAGE':
       return a.damage;
     case 'ADJUSTMENT':
+      return adjustmentAccount(m.reasonCode, a);
     case 'STOCKTAKE':
       return a.adjustment;
     case 'TRANSFER_OUT':
     case 'TRANSFER_IN':
       return a.transit;
+  }
+}
+
+/**
+ * A manual adjustment by its reason (developer report F-03). Older adjustments, from before the
+ * reasons, have none and stay stock differences.
+ */
+function adjustmentAccount(reason: MovementView['reasonCode'], a: InventoryAccounts): string {
+  switch (reason) {
+    case 'DAMAGE':
+      return a.damage;
+    case 'SAMPLE':
+      return a.marketing;
+    case 'INTERNAL_USE':
+      return a.misc;
+    case 'GIFT':
+      return a.gifts;
+    case 'COUNT_DIFFERENCE':
+    case null:
+      return a.adjustment;
   }
 }

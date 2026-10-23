@@ -1,6 +1,34 @@
 import type { LocationKind, MovementType } from '@prisma/client';
 import { DomainError } from '../../shared/errors.js';
 
+/**
+ * Developer report F-02: a received line can be taken back at its own cost only while that much
+ * of it is still there and the stock left keeps a value (it was not sold or moved at a mix).
+ */
+export class ReceiptCorrectionNotPossibleError extends DomainError {
+  constructor(details: Record<string, unknown>) {
+    super(
+      'RECEIPT_CORRECTION_NOT_POSSIBLE',
+      'That much of the received line is no longer there to take back at its cost',
+      details,
+    );
+  }
+}
+
+export class AdjustmentRequestStateError extends DomainError {
+  constructor(id: string, status: string) {
+    super('ADJUSTMENT_NOT_PENDING', 'This adjustment was already decided', { id, status });
+  }
+}
+
+export class SelfApprovalError extends DomainError {
+  constructor(id: string) {
+    super('SELF_APPROVAL', 'Someone other than the person who asked approves an adjustment', {
+      id,
+    });
+  }
+}
+
 /** Developer report F-01: received goods always say where they came from. */
 export class ReceiptNeedsSourceError extends DomainError {
   constructor(sessionId: string) {

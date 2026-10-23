@@ -11,6 +11,7 @@ import {
   LocationInactiveError,
   MovementNotAllowedAtLocationError,
   VariantInactiveError,
+  ReceiptCorrectionNotPossibleError,
 } from './inventory.errors.js';
 import { isMovementAllowed } from './inventory.policy.js';
 import * as repo from './inventory.repository.js';
@@ -86,6 +87,7 @@ export async function applyMovements(
       transferId: entry.transferId ?? null,
       reason: entry.reason ?? null,
       note: entry.note ?? null,
+      reasonCode: entry.reasonCode ?? null,
       unitCostAmount: entry.unitCost?.amount ?? null,
       unitCostCurrency: entry.unitCost?.currency ?? null,
       rateToBase: entry.unitCost?.rateToBase ?? null,
@@ -195,6 +197,31 @@ function valueOf(
 ): { value: bigint; unitCostBase: bigint } {
   const qty = entry.quantity;
 
+  // A received line taken back leaves at its own cost, not the average (developer report F-02),
+  // so the books undo exactly what the receipt posted. Only while it is still there: the stock
+  // left must keep a value, and none at all once nothing is left.
+  if (entry.type === 'RECEIPT_CORRECTION' && qty < 0 && entry.unitCost) {
+    const need = -qty;
+    const unitCostBase = toBaseAmount(
+      entry.unitCost.amount,
+      entry.unitCost.currency,
+      entry.unitCost.rateToBase,
+    );
+    const value = -unitCostBase * BigInt(need);
+    const available = balance.quantity - balance.reservedQuantity;
+    const left = balance.valueBaseAmount + value;
+    const leftQuantity = balance.quantity - need;
+    if (need > available || left < 0n || (leftQuantity === 0 && left !== 0n)) {
+      throw new ReceiptCorrectionNotPossibleError({
+        ...keyOf(entry),
+        requested: need,
+        quantity: balance.quantity,
+        available,
+      });
+    }
+    return { value, unitCostBase };
+  }
+
   if (qty < 0) {
     const need = -qty;
     const available = balance.quantity - balance.reservedQuantity;
@@ -281,6 +308,7 @@ export function toMovementView(m: InventoryMovement): MovementView {
     transferId: m.transferId,
     reason: m.reason,
     note: m.note,
+    reasonCode: m.reasonCode as MovementView['reasonCode'],
     unitCost:
       m.unitCostAmount !== null && m.unitCostCurrency !== null && m.rateToBase !== null
         ? {

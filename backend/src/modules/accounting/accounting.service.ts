@@ -206,6 +206,9 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
       cogs: await accountByRole(q, 'COGS'),
       damage: await accountByRole(q, 'DAMAGE'),
       adjustment: await accountByRole(q, 'STOCK_ADJUSTMENT'),
+      marketing: await accountByRole(q, 'MARKETING_EXPENSE'),
+      misc: await accountByRole(q, 'MISC_EXPENSE'),
+      gifts: await accountByRole(q, 'GIFTS_EXPENSE'),
     };
   }
 

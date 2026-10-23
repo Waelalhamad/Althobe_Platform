@@ -30,6 +30,7 @@ import {
   type LedgerDeps,
 } from './inventory.ledger.js';
 import { isMovementAllowed } from './inventory.policy.js';
+import { correctReceiptSchema } from './inventory.schema.js';
 import * as repo from './inventory.repository.js';
 import type { MovementEntry, MovementView } from './inventory.types.js';
 import {
@@ -80,6 +81,8 @@ export interface ScanSessionView {
   committedAt: Date | null;
   lines: ScanLineView[];
   totalQuantity: number;
+  /** A confirmed receipt only: what it holds now, after its corrections. */
+  received?: { variant: VariantView; quantity: number }[];
 }
 
 export interface ScanResult {
@@ -412,10 +415,28 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
           ? [{ variant, quantity: line.quantity, unitCost: canSeeCost(ctx) ? costOf(line) : null }]
           : [];
       });
+      // A confirmed receipt: each variant as it stands after its corrections (F-02), including
+      // a variant that only came in by one (a wrong size moved to it).
+      let received: { variant: VariantView; quantity: number }[] | undefined;
+      if (session.kind === 'RECEIVE' && session.status === 'COMMITTED') {
+        const net = new Map<string, number>();
+        for (const m of await repo.movementsByReference(db, 'SCAN_SESSION', session.id)) {
+          if (m.type === 'PURCHASE' || m.type === 'RECEIPT_CORRECTION') {
+            net.set(m.variantId, (net.get(m.variantId) ?? 0) + m.quantity);
+          }
+        }
+        const extra = [...net.keys()].filter((id) => !variantById.has(id));
+        for (const v of await deps.catalogue.variantsByIds(db, extra)) variantById.set(v.id, v);
+        received = [...net].flatMap(([id, quantity]) => {
+          const variant = variantById.get(id);
+          return variant ? [{ variant, quantity }] : [];
+        });
+      }
       return {
         ...toSessionHeader(session),
         lines,
         totalQuantity: lines.reduce((sum, l) => sum + l.quantity, 0),
+        ...(received ? { received } : {}),
       };
     },
 
@@ -437,6 +458,65 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         const { result } = await commitInTx(tx, data.sessionId, ctx);
         return result;
       });
+    },
+
+    /**
+     * Trusted call for parties (developer report F-02): corrects a confirmed receipt in the
+     * caller's transaction. Each line becomes what it should have been — less of it (0 takes it
+     * all back), more of it, or part of it moved to another variant — always at the line's own
+     * cost, on the same receipt. Refused once the goods are no longer there to take back.
+     */
+    async correctReceiptInTx(tx: Tx, sessionId: string, input: unknown, ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.inventory.receive);
+      const data = parse(correctReceiptSchema, input);
+      const session = await lockSession(tx, sessionId, 'update');
+      if (session.kind !== 'RECEIVE') {
+        throw new ScanSessionNotOpenError(sessionId, `${session.kind} is not a receipt`);
+      }
+      if (session.status !== 'COMMITTED')
+        throw new ScanSessionNotOpenError(sessionId, session.status);
+      const received = (await repo.movementsByReference(tx, 'SCAN_SESSION', sessionId)).map(
+        toMovementView,
+      );
+      const entries: MovementEntry[] = [];
+      for (const change of data.changes) {
+        const own = received.filter(
+          (m) =>
+            m.variantId === change.variantId &&
+            (m.type === 'PURCHASE' || m.type === 'RECEIPT_CORRECTION'),
+        );
+        // Its cost: as received, or — for a variant that came in by a correction (a wrong size
+        // moved to it) — as moved; both carry the received line's cost.
+        const first = own.find((m) => m.type === 'PURCHASE') ?? own.find((m) => m.quantity > 0);
+        if (!first?.unitCost) throw new NotFoundError('receipt_line', change.variantId);
+        const now = own.reduce((s, m) => s + m.quantity, 0);
+        const base = {
+          locationId: session.location_id,
+          type: 'RECEIPT_CORRECTION' as const,
+          unitCost: first.unitCost,
+          referenceType: 'SCAN_SESSION' as const,
+          referenceId: sessionId,
+          reason: data.reason,
+        };
+        if (change.toVariantId) {
+          // Part of the line was another variant all along: it moves, at the same cost.
+          const moved = now - change.quantity;
+          if (moved <= 0) continue;
+          await activeVariant(tx, change.toVariantId);
+          entries.push(
+            { ...base, variantId: change.variantId, quantity: -moved },
+            { ...base, variantId: change.toVariantId, quantity: moved },
+          );
+        } else if (change.quantity !== now) {
+          entries.push({ ...base, variantId: change.variantId, quantity: change.quantity - now });
+        }
+      }
+      const result = await applyMovements(tx, deps, entries, ctx, {
+        action: 'inventory.receipt.correct',
+        entityType: 'scan_session',
+        entityId: sessionId,
+      });
+      return { locationId: session.location_id, movements: result.movements };
     },
 
     /**

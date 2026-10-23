@@ -333,9 +333,40 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     }));
 
     // Corrections that are not counts (counts go through a stocktake). Requires Idempotency-Key.
+    // A manual adjustment (developer report F-03): small take-aways apply at once, the rest
+    // wait for a second person. Answers { status: APPLIED | PENDING, movements, requestId }.
     priv.post('/inventory/adjustments', async (request) => ({
-      data: await s.inventory.adjustStock(request.body as never, writeContextOf(request)),
+      data: await s.inventory.requestAdjustment(request.body as never, writeContextOf(request)),
     }));
+
+    priv.get(
+      '/inventory/adjustment-requests',
+      async (request: FastifyRequest<{ Querystring: { status?: string } }>) => ({
+        data: await s.inventory.listAdjustmentRequests(request.query, actorOf(request)),
+      }),
+    );
+
+    priv.post(
+      '/inventory/adjustment-requests/:id/approve',
+      async (request: Params<{ id: string }>) => ({
+        data: await s.inventory.approveAdjustment(
+          request.params.id,
+          request.body,
+          writeContextOf(request),
+        ),
+      }),
+    );
+
+    priv.post(
+      '/inventory/adjustment-requests/:id/reject',
+      async (request: Params<{ id: string }>) => ({
+        data: await s.inventory.rejectAdjustment(
+          request.params.id,
+          request.body,
+          writeContextOf(request),
+        ),
+      }),
+    );
 
     // ── Scan sessions ────────────────────────────────────────────────────────────────────────
     priv.get(
@@ -680,6 +711,11 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
     // Confirming a receipt or goods out with its terms, instead of the plain commit.
     priv.post('/parties/receipts/:id', async (request: Id) => ({
       data: await par.commitReceipt(request.params.id, request.body, actorOf(request)),
+    }));
+
+    // تصحيح الاستلام (developer report F-02): { changes: [{ variantId, quantity, toVariantId? }], reason }.
+    priv.post('/parties/receipts/:id/correct', async (request: Id) => ({
+      data: await par.correctReceipt(request.params.id, request.body, writeContextOf(request)),
     }));
 
     priv.post('/parties/goods-out/:id', async (request: Id) => ({

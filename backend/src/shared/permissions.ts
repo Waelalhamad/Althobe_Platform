@@ -16,6 +16,8 @@ export const PERMISSIONS = {
     stocktakeCount: 'inventory.stocktake.count',
     stocktakeApply: 'inventory.stocktake.apply',
     costView: 'inventory.cost.view',
+    // Developer report F-03: an adjustment past the limit waits for someone else to accept it.
+    adjustApprove: 'inventory.adjust.approve',
   },
   products: {
     read: 'products.read',

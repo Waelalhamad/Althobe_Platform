@@ -42,6 +42,8 @@ enum MovementType {
   ADJUSTMENT
   DAMAGE
   STOCKTAKE
+  // A received line corrected, signed, at its original cost (developer report F-02).
+  RECEIPT_CORRECTION
 
   @@map("movement_type")
 }
@@ -140,28 +142,31 @@ model User {
 
   sessions Session[]
 
-  movements           InventoryMovement[]
-  reservations        Reservation[]
-  scanSessions        ScanSession[]         @relation("ScanSessionCreatedBy")
-  scanSessionsClosed  ScanSession[]         @relation("ScanSessionCommittedBy")
-  scanEvents          ScanSessionEvent[]
-  stocktakesCreated   Stocktake[]           @relation("StocktakeCreatedBy")
-  stocktakesApplied   Stocktake[]           @relation("StocktakeAppliedBy")
-  stocktakeEvents     StocktakeScanEvent[]
-  auditLogs           AuditLog[]
-  productPhotos       ProductPhoto[]
-  exchangeRates       ExchangeRate[]
-  rateHistory         ExchangeRateHistory[]
-  journalEntries      JournalEntry[]
-  periodsClosed       AccountingPeriod[]
-  shiftsOpened        PosShift[]            @relation("PosShiftOpenedBy")
-  shiftsClosed        PosShift[]            @relation("PosShiftClosedBy")
-  posSales            PosSale[]
-  payrollRunsCreated  PayrollRun[]          @relation("PayrollRunCreatedBy")
-  payrollRunsApproved PayrollRun[]          @relation("PayrollRunApprovedBy")
-  payrollPayments     PayrollPayment[]
-  employeeAdvances    EmployeeAdvance[]
-  partyEntries        PartyEntry[]
+  movements            InventoryMovement[]
+  reservations         Reservation[]
+  scanSessions         ScanSession[]         @relation("ScanSessionCreatedBy")
+  scanSessionsClosed   ScanSession[]         @relation("ScanSessionCommittedBy")
+  scanEvents           ScanSessionEvent[]
+  stocktakesCreated    Stocktake[]           @relation("StocktakeCreatedBy")
+  stocktakesApplied    Stocktake[]           @relation("StocktakeAppliedBy")
+  stocktakeEvents      StocktakeScanEvent[]
+  auditLogs            AuditLog[]
+  productPhotos        ProductPhoto[]
+  exchangeRates        ExchangeRate[]
+  rateHistory          ExchangeRateHistory[]
+  journalEntries       JournalEntry[]
+  periodsClosed        AccountingPeriod[]
+  shiftsOpened         PosShift[]            @relation("PosShiftOpenedBy")
+  shiftsClosed         PosShift[]            @relation("PosShiftClosedBy")
+  posSales             PosSale[]
+  payrollRunsCreated   PayrollRun[]          @relation("PayrollRunCreatedBy")
+  payrollRunsApproved  PayrollRun[]          @relation("PayrollRunApprovedBy")
+  payrollPayments      PayrollPayment[]
+  employeeAdvances     EmployeeAdvance[]
+  partyEntries         PartyEntry[]
+  receiptTerms         ReceiptTerms[]
+  adjustmentsRequested AdjustmentRequest[]   @relation("AdjustmentRequestedBy")
+  adjustmentsDecided   AdjustmentRequest[]   @relation("AdjustmentDecidedBy")
 
   @@map("users")
 }
@@ -406,18 +411,19 @@ model ProductVariant {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  product          Product              @relation(fields: [productId], references: [id])
-  optionValues     VariantOptionValue[]
-  prices           VariantPrice[]
-  externalBarcodes VariantBarcode[]
-  balances         InventoryBalance[]
-  movements        InventoryMovement[]
-  reservations     Reservation[]
-  scanLines        ScanSessionLine[]
-  scanEvents       ScanSessionEvent[]
-  stocktakeLines   StocktakeLine[]
-  stocktakeEvents  StocktakeScanEvent[]
-  posSaleLines     PosSaleLine[]
+  product            Product              @relation(fields: [productId], references: [id])
+  optionValues       VariantOptionValue[]
+  prices             VariantPrice[]
+  externalBarcodes   VariantBarcode[]
+  balances           InventoryBalance[]
+  movements          InventoryMovement[]
+  adjustmentRequests AdjustmentRequest[]
+  reservations       Reservation[]
+  scanLines          ScanSessionLine[]
+  scanEvents         ScanSessionEvent[]
+  stocktakeLines     StocktakeLine[]
+  stocktakeEvents    StocktakeScanEvent[]
+  posSaleLines       PosSaleLine[]
 
   @@unique([productId, optionKey], map: "uq_product_variants_option_key")
   @@index([productId], map: "idx_product_variants_product_id")
@@ -505,16 +511,17 @@ model Location {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  balances         InventoryBalance[]
-  movements        InventoryMovement[]
-  reservations     Reservation[]
-  scanSessionsFrom ScanSession[]       @relation("ScanSessionLocation")
-  scanSessionsTo   ScanSession[]       @relation("ScanSessionToLocation")
-  stocktakes       Stocktake[]
-  glAccount        GlAccount?
-  journalLines     JournalLine[]
-  posShifts        PosShift[]
-  posSales         PosSale[]
+  balances           InventoryBalance[]
+  movements          InventoryMovement[]
+  adjustmentRequests AdjustmentRequest[]
+  reservations       Reservation[]
+  scanSessionsFrom   ScanSession[]       @relation("ScanSessionLocation")
+  scanSessionsTo     ScanSession[]       @relation("ScanSessionToLocation")
+  stocktakes         Stocktake[]
+  glAccount          GlAccount?
+  journalLines       JournalLine[]
+  posShifts          PosShift[]
+  posSales           PosSale[]
 
   @@map("locations")
 }
@@ -559,6 +566,8 @@ model InventoryMovement {
   transferId         String?       @map("transfer_id") @db.Uuid
   reason             String?
   note               String?
+  // ADJUSTMENT: why, from a fixed list, each with its account (developer report F-03).
+  reasonCode         String?       @map("reason_code")
   unitCostAmount     BigInt?       @map("unit_cost_amount")
   unitCostCurrency   String?       @map("unit_cost_currency") @db.Char(3)
   // Units of the cost's currency per 1 USD, the base (ADR-012); 1 for USD.
@@ -569,9 +578,10 @@ model InventoryMovement {
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   idempotencyKey     String?       @map("idempotency_key")
 
-  variant   ProductVariant @relation(fields: [variantId], references: [id])
-  location  Location       @relation(fields: [locationId], references: [id])
-  createdBy User           @relation(fields: [createdById], references: [id])
+  variant            ProductVariant      @relation(fields: [variantId], references: [id])
+  location           Location            @relation(fields: [locationId], references: [id])
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  adjustmentRequests AdjustmentRequest[]
 
   @@index([variantId, locationId, seq(sort: Desc)], map: "idx_inventory_movements_variant_location_seq")
   @@index([locationId, seq], map: "idx_inventory_movements_location_seq")
@@ -624,8 +634,9 @@ model ScanSession {
   createdBy   User      @relation("ScanSessionCreatedBy", fields: [createdById], references: [id])
   committedBy User?     @relation("ScanSessionCommittedBy", fields: [committedById], references: [id])
 
-  lines  ScanSessionLine[]
-  events ScanSessionEvent[]
+  lines        ScanSessionLine[]
+  events       ScanSessionEvent[]
+  receiptTerms ReceiptTerms?
 
   @@index([status, locationId], map: "idx_scan_sessions_status_location")
   @@map("scan_sessions")
@@ -1108,8 +1119,9 @@ model Party {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  entries  PartyEntry[]
-  posSales PosSale[]
+  entries      PartyEntry[]
+  posSales     PosSale[]
+  receiptTerms ReceiptTerms[]
 
   @@index([kind, nameAr], map: "idx_parties_kind_name")
   @@map("parties")
@@ -1137,4 +1149,49 @@ model PartyEntry {
   @@unique([kind, sourceId], map: "uq_party_entries_source")
   @@index([partyId, createdAt], map: "idx_party_entries_party")
   @@map("party_entries")
+}
+
+// What a receipt was confirmed as (developer report F-01/F-02): its corrections post the same way.
+model ReceiptTerms {
+  sessionId   String   @id @map("session_id") @db.Uuid
+  // SUPPLIER · CASH · OPENING · OWNER
+  source      String
+  partyId     String?  @map("party_id") @db.Uuid
+  invoiceNo   String?  @map("invoice_no")
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session   ScanSession @relation(fields: [sessionId], references: [id])
+  party     Party?      @relation(fields: [partyId], references: [id])
+  createdBy User        @relation(fields: [createdById], references: [id])
+
+  @@map("receipt_terms")
+}
+
+// A manual adjustment waiting for a second person (developer report F-03).
+model AdjustmentRequest {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  variantId     String    @map("variant_id") @db.Uuid
+  locationId    String    @map("location_id") @db.Uuid
+  delta         Int
+  reasonCode    String    @map("reason_code")
+  note          String?
+  valueEstimate BigInt    @map("value_estimate")
+  // PENDING · APPROVED · REJECTED
+  status        String    @default("PENDING")
+  requestedById String    @map("requested_by") @db.Uuid
+  requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  decidedById   String?   @map("decided_by") @db.Uuid
+  decidedAt     DateTime? @map("decided_at") @db.Timestamptz(3)
+  decisionNote  String?   @map("decision_note")
+  movementId    String?   @map("movement_id") @db.Uuid
+
+  variant     ProductVariant     @relation(fields: [variantId], references: [id])
+  location    Location           @relation(fields: [locationId], references: [id])
+  requestedBy User               @relation("AdjustmentRequestedBy", fields: [requestedById], references: [id])
+  decidedBy   User?              @relation("AdjustmentDecidedBy", fields: [decidedById], references: [id])
+  movement    InventoryMovement? @relation(fields: [movementId], references: [id])
+
+  @@index([status, requestedAt(sort: Desc)], map: "idx_adjustment_requests_status")
+  @@map("adjustment_requests")
 }

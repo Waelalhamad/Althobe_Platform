@@ -2,6 +2,7 @@ import { Card, PageTitle } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
+import { api } from '../api';
 import { formatMoney, formatQuantity } from '../format';
 import { PAGES } from '../help';
 import {
@@ -175,6 +176,11 @@ function Attention() {
     ...partiesSummaryQuery,
     enabled: can(user, 'parties.read'),
   });
+  const { data: pendingAdjustments = [] } = useQuery({
+    queryKey: ['adjustments', 'PENDING'],
+    queryFn: async () => api.adjustmentRequests('PENDING'),
+    enabled: can(user, 'inventory.adjust.approve'),
+  });
   const { data: payroll } = useQuery({
     ...payrollSummaryQuery,
     enabled: can(user, 'payroll.manage'),
@@ -216,6 +222,15 @@ function Attention() {
     items.push(
       <Link key="sessions" to="/stock" className="text-brand">
         {sessions.length} عملية مسح لم تُؤكَّد بعد
+      </Link>,
+    );
+  }
+  // Someone else's adjustments wait for this person (developer report F-03).
+  const toDecide = pendingAdjustments.filter((r) => r.requestedById !== user?.id);
+  if (toDecide.length) {
+    items.push(
+      <Link key="adjust" to="/adjustments" className="text-brand">
+        {toDecide.length} طلب تعديل مخزون بانتظار موافقتك
       </Link>,
     );
   }

@@ -16,6 +16,9 @@ const accounts: InventoryAccounts = {
   cogs: 'cogs',
   damage: 'damage',
   adjustment: 'adjustment',
+  marketing: 'marketing',
+  misc: 'misc',
+  gifts: 'gifts',
 };
 
 function movement(overrides: Partial<MovementView>): MovementView {
@@ -32,6 +35,7 @@ function movement(overrides: Partial<MovementView>): MovementView {
     transferId: null,
     reason: null,
     note: null,
+    reasonCode: null,
     unitCost: { amount: 1_000n, currency: 'USD', rateToBase: '1' },
     unitCostBaseAmount: 1_000n,
     valueBaseAmount: 10_000n,

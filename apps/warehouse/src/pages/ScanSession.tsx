@@ -286,6 +286,9 @@ export function ScanSessionPage() {
           </Alert>
         </div>
       )}
+      {session.status === 'COMMITTED' && session.kind === 'RECEIVE' && session.received && (
+        <CorrectReceipt session={session} />
+      )}
       {session.status === 'CANCELLED' && (
         <div className="mb-4">
           <Alert tone="warn">هذه الجلسة ملغاة ولم تؤثر على المخزون.</Alert>
@@ -625,6 +628,154 @@ function TermsCard({
             ? 'القيمة تُكتب على الزبون.'
             : 'بدون زبون: إخراج بضاعة فقط، بدون فاتورة.'}
       </p>
+    </Card>
+  );
+}
+
+/**
+ * تصحيح الاستلام (developer report F-02): a mistake in a confirmed receipt is put right on the
+ * receipt itself — the right quantity (0 takes the line back), or part of it moved to the right
+ * size — at the line's own cost. Nothing of it reaches the profit, unlike an adjustment.
+ */
+function CorrectReceipt({ session }: { session: ScanSession }) {
+  const { data: user } = useQuery(meQuery);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const received = session.received ?? [];
+  const [qty, setQty] = useState<Record<string, string>>({});
+  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState('');
+  const [key, setKey] = useState(() => crypto.randomUUID());
+  const products = [...new Set(received.map((r) => r.variant.product.id))];
+  const { data: sizes = [] } = useQuery({
+    queryKey: ['variants', 'receipt-sizes', ...products],
+    queryFn: async () =>
+      (await Promise.all(products.map(async (productId) => api.variants({ productId })))).flat(),
+    enabled: open,
+  });
+
+  const changes = received.flatMap((r) => {
+    const text = qty[r.variant.id];
+    const target = moveTo[r.variant.id];
+    const n = text === undefined || text.trim() === '' ? r.quantity : Number(text);
+    if (!Number.isInteger(n) || n < 0) return [];
+    if (target)
+      return n < r.quantity ? [{ variantId: r.variant.id, quantity: n, toVariantId: target }] : [];
+    return n !== r.quantity ? [{ variantId: r.variant.id, quantity: n }] : [];
+  });
+  const correct = useMutation({
+    mutationFn: async () => api.correctReceipt(session.id, { changes, reason: reason.trim() }, key),
+    onSuccess: async () => {
+      setKey(crypto.randomUUID());
+      setQty({});
+      setMoveTo({});
+      setReason('');
+      setOpen(false);
+      toast('تم تصحيح الاستلام — بالتكلفة الأصلية وعلى نفس الحساب');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['session', session.id] }),
+        queryClient.invalidateQueries({ queryKey: ['balances'] }),
+      ]);
+    },
+  });
+  if (!can(user, 'inventory.receive')) return null;
+  if (!open) {
+    return (
+      <div className="mb-4">
+        <Button variant="secondary" onClick={() => setOpen(true)}>
+          ✏️ تصحيح الاستلام (غلطة بالكمية أو المقاس)
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <Card className="mb-4 flex flex-col gap-3">
+      <h2 className="font-bold">تصحيح الاستلام</h2>
+      <p className="text-sm text-ink-muted">
+        اكتب الكمية الصحيحة لكل صنف (0 = ما وصل أبداً)، أو انقل الزيادة لمقاسها الصح. التصحيح بيمشي
+        بتكلفة الاستلام نفسها وعلى نفس الحساب (المورد أو الرصيد الافتتاحي)، وما بيأثر على الأرباح.
+        ما بيمشي إذا القطع انباعت أو انتقلت.
+      </p>
+      <table className="w-full">
+        <thead className="text-sm text-ink-muted">
+          <tr>
+            <th className="p-2 text-start">الصنف</th>
+            <th className="p-2 text-start">بالاستلام هلق</th>
+            <th className="p-2 text-start">الكمية الصحيحة</th>
+            <th className="p-2 text-start">الفرق لمقاس تاني؟</th>
+          </tr>
+        </thead>
+        <tbody>
+          {received.map((r) => (
+            <tr key={r.variant.id} className="border-t border-stone">
+              <td className="p-2">
+                <div className="font-medium">{r.variant.product.nameAr}</div>
+                <div className="text-sm text-ink-muted">{r.variant.title}</div>
+              </td>
+              <td className="tabular p-2 text-lg font-bold">{r.quantity}</td>
+              <td className="p-2">
+                <Input
+                  dir="ltr"
+                  inputMode="numeric"
+                  className="w-24"
+                  aria-label={`الكمية الصحيحة — ${r.variant.title}`}
+                  value={qty[r.variant.id] ?? String(r.quantity)}
+                  onChange={(e) => setQty({ ...qty, [r.variant.id]: e.target.value })}
+                />
+              </td>
+              <td className="p-2">
+                <Select
+                  value={moveTo[r.variant.id] ?? ''}
+                  onChange={(e) => setMoveTo({ ...moveTo, [r.variant.id]: e.target.value })}
+                >
+                  <option value="">— لا، ما وصل —</option>
+                  {sizes
+                    .filter(
+                      (v) =>
+                        v.product.id === r.variant.product.id &&
+                        v.id !== r.variant.id &&
+                        v.isActive,
+                    )
+                    .map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.title}
+                      </option>
+                    ))}
+                </Select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Field label="سبب التصحيح (إلزامي)">
+        <Input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="خطأ إدخال بالمقاس…"
+        />
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <ConfirmButton
+          disabled={changes.length === 0 || reason.trim().length < 3 || correct.isPending}
+          onConfirm={() => correct.mutate()}
+        >
+          حفظ التصحيح
+        </ConfirmButton>
+        <Button
+          variant="danger"
+          onClick={() => {
+            setMoveTo({});
+            setQty(Object.fromEntries(received.map((r) => [r.variant.id, '0'])));
+          }}
+        >
+          إلغاء الاستلام كله
+        </Button>
+        <Button variant="ghost" onClick={() => setOpen(false)}>
+          رجوع
+        </Button>
+      </div>
+      {correct.isError && <Alert>{errorText(correct.error)}</Alert>}
     </Card>
   );
 }

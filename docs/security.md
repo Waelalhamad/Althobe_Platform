@@ -65,6 +65,7 @@ retail.sell            (implemented, ADR-014: sell, open and close one's own shi
 retail.manage          (implemented: discounts, refunds, closing another person's shift)
 employees.read         (implemented, ADR-015: names and jobs, no pay)
 payroll.manage         (implemented: salaries, advances, pay sheets, paying)
+inventory.adjust.approve (implemented, ADR-017: accept or refuse someone else's adjustment)
 parties.read           (implemented, ADR-016: balances and statements of suppliers and customers)
 parties.manage         (implemented: add, edit, pay, collect, wholesale invoices)
 admin.users.write

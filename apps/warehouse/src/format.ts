@@ -77,6 +77,10 @@ const ERRORS: Record<string, string> = {
   REFUND_EXCEEDS_SALE: 'الكمية أكبر مما بقي في الفاتورة',
   NOT_REFUNDABLE: 'لا يمكن إرجاع هذه الفاتورة هنا',
   RECEIPT_NEEDS_SOURCE: 'اختر من وين إجت البضاعة قبل التأكيد',
+  RECEIPT_CORRECTION_NOT_POSSIBLE:
+    'هالكمية ما عادت موجودة لترجع بتكلفتها (انباعت أو انتقلت) — صحّحها بالجرد',
+  ADJUSTMENT_NOT_PENDING: 'هالطلب انقرر قبل',
+  SELF_APPROVAL: 'ما فيك توافق على طلب إنت طلبته — شخص تاني لازم يوافق',
   STOCKTAKE_STALE: 'هذا الجرد أقدم من 3 أيام والمخزون تغيّر بعده — ألغه واعمل جرد جديد',
   BACKDATED_NEEDS_REASON: 'القيد بتاريخ أقدم من يومين بده سبب مكتوب بالبيان',
   NOT_FOUND: 'غير موجود',
@@ -112,6 +116,16 @@ export const MOVEMENT_TYPE: Record<string, string> = {
   ADJUSTMENT: 'تعديل',
   DAMAGE: 'تالف',
   STOCKTAKE: 'فرق جرد',
+  RECEIPT_CORRECTION: 'تصحيح استلام',
+};
+
+/** Why stock was adjusted by hand (F-03), and where it goes in the books. */
+export const ADJUSTMENT_REASON: Record<string, { label: string; account: string }> = {
+  COUNT_DIFFERENCE: { label: 'فرق جرد', account: 'فروقات المخزون' },
+  DAMAGE: { label: 'تالف', account: 'التالف' },
+  SAMPLE: { label: 'عينة تسويق', account: 'الدعاية والتسويق' },
+  INTERNAL_USE: { label: 'استهلاك داخلي', account: 'مصاريف متنوعة' },
+  GIFT: { label: 'هدية / إكرامية', account: 'هدايا وإكراميات' },
 };
 
 /** سند قبض، سند صرف… — the name of each kind of journal entry (ADR-013). */

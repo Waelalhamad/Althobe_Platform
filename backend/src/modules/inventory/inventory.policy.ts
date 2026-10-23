@@ -13,11 +13,15 @@ const ALL_MOVEMENTS: readonly MovementType[] = [
   'ADJUSTMENT',
   'DAMAGE',
   'STOCKTAKE',
+  'RECEIPT_CORRECTION',
 ];
 
 const ALLOWED_MOVEMENTS: Record<LocationKind, ReadonlySet<MovementType>> = {
   WAREHOUSE: new Set(ALL_MOVEMENTS),
-  STORE: new Set(ALL_MOVEMENTS.filter((type) => type !== 'PURCHASE')),
+  // Receipts (and so their corrections) happen at warehouses only.
+  STORE: new Set(
+    ALL_MOVEMENTS.filter((type) => type !== 'PURCHASE' && type !== 'RECEIPT_CORRECTION'),
+  ),
 };
 
 const RESERVATIONS_ALLOWED: ReadonlySet<LocationKind> = new Set(['WAREHOUSE']);

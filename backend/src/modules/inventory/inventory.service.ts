@@ -12,6 +12,8 @@ import {
 import { parse } from '../../shared/validation.js';
 import type { VariantView } from '../catalogue/catalogue.service.js';
 import {
+  AdjustmentRequestStateError,
+  SelfApprovalError,
   MovementNotAllowedAtLocationError,
   ReservationNotFoundError,
   LocationInactiveError,
@@ -30,6 +32,7 @@ import * as repo from './inventory.repository.js';
 import {
   adjustStockSchema,
   balanceQuerySchema,
+  decideAdjustmentSchema,
   damageStockSchema,
   issueStockSchema,
   listBalancesSchema,
@@ -49,7 +52,24 @@ import {
   type ReserveStockInput,
   type TransferStockInput,
 } from './inventory.schema.js';
-import type { BalanceView, LedgerResult, MovementView } from './inventory.types.js';
+import type {
+  AdjustmentReason,
+  BalanceView,
+  LedgerResult,
+  MovementView,
+} from './inventory.types.js';
+
+/** At most this much taken away by hand applies without a second person (F-03). */
+const AUTO_PIECES = 3;
+const AUTO_VALUE_BASE = 5_000n;
+
+const ADJUSTMENT_LABEL: Record<AdjustmentReason, string> = {
+  COUNT_DIFFERENCE: 'فرق جرد',
+  DAMAGE: 'تالف',
+  SAMPLE: 'عينة تسويق',
+  INTERNAL_USE: 'استهلاك داخلي',
+  GIFT: 'هدية / إكرامية',
+};
 
 export type { BalanceView, LedgerResult, MovementView } from './inventory.types.js';
 
@@ -84,6 +104,88 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
   }
 
   const canSeeCost = (ctx: ActorContext) => ctx.permissions.has(PERMISSIONS.inventory.costView);
+
+  async function applyAdjustment(
+    tx: Tx,
+    data: ReturnType<typeof adjustStockSchema.parse>,
+    ctx: ActorContext & { idempotencyKey?: string },
+    requestedBy?: string,
+  ): Promise<LedgerResult> {
+    const label = ADJUSTMENT_LABEL[data.reasonCode];
+    return applyMovements(
+      tx,
+      deps,
+      [
+        {
+          variantId: data.variantId,
+          locationId: data.locationId,
+          type: 'ADJUSTMENT',
+          quantity: data.delta,
+          unitCost: data.delta > 0 ? (data.unitCost ?? null) : null,
+          referenceType: 'MANUAL',
+          reasonCode: data.reasonCode,
+          reason: data.note ? `${label} — ${data.note}` : label,
+          note: requestedBy ? `طلبه ${requestedBy}` : null,
+        },
+      ],
+      ctx,
+      { action: 'inventory.adjust', entityType: 'variant', entityId: data.variantId },
+    );
+  }
+
+  async function decide(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    input: unknown,
+    ctx: WriteContext,
+  ) {
+    assertPermission(ctx, PERMISSIONS.inventory.adjustApprove);
+    const { note } = parse(decideAdjustmentSchema, input ?? {});
+    return write(ctx, `inventory.adjust.${status.toLowerCase()}`, { id, note }, async (tx) => {
+      await tx.$queryRaw`SELECT id FROM adjustment_requests WHERE id = ${id}::uuid FOR UPDATE`;
+      const request = await tx.adjustmentRequest.findUnique({
+        where: { id },
+        include: { requestedBy: { select: { nameAr: true } } },
+      });
+      if (!request) throw new NotFoundError('adjustment_request', id);
+      if (request.status !== 'PENDING') throw new AdjustmentRequestStateError(id, request.status);
+      if (request.requestedById === ctx.userId) throw new SelfApprovalError(id);
+      let movementId: string | null = null;
+      if (status === 'APPROVED') {
+        const result = await applyAdjustment(
+          tx,
+          {
+            variantId: request.variantId,
+            locationId: request.locationId,
+            delta: request.delta,
+            reasonCode: request.reasonCode as AdjustmentReason,
+            note: request.note ?? undefined,
+          },
+          ctx,
+          request.requestedBy.nameAr,
+        );
+        movementId = result.movements[0]!.id;
+      }
+      await tx.adjustmentRequest.update({
+        where: { id },
+        data: {
+          status,
+          decidedById: ctx.userId,
+          decidedAt: new Date(),
+          decisionNote: note || null,
+          movementId,
+        },
+      });
+      await writeAudit(tx, {
+        actorId: ctx.userId,
+        action: `inventory.adjust.${status.toLowerCase()}`,
+        entityType: 'adjustment_request',
+        entityId: id,
+        after: { movementId },
+      });
+      return { id, status, movementId };
+    });
+  }
 
   async function readMovements(input: MovementsQuery, ctx: ActorContext): Promise<MovementView[]> {
     assertPermission(ctx, PERMISSIONS.inventory.view);
@@ -181,29 +283,98 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
       });
     },
 
-    /** A correction that is *not* a count. Counts go through a stocktake. */
+    /**
+     * A correction that is *not* a count (counts go through a stocktake), applied at once. The
+     * app asks through `requestAdjustment`, which applies only small take-aways at once.
+     */
     async adjustStock(input: AdjustStockInput, ctx: WriteContext): Promise<LedgerResult> {
       assertPermission(ctx, PERMISSIONS.inventory.adjust);
       const data = parse(adjustStockSchema, input);
-      return write(ctx, 'inventory.adjust', data, async (tx) =>
-        applyMovements(
-          tx,
-          deps,
-          [
-            {
-              variantId: data.variantId,
-              locationId: data.locationId,
-              type: 'ADJUSTMENT',
-              quantity: data.delta,
-              unitCost: data.delta > 0 ? (data.unitCost ?? null) : null,
-              referenceType: 'MANUAL',
-              reason: data.reason,
-            },
-          ],
-          ctx,
-          { action: 'inventory.adjust', entityType: 'variant', entityId: data.variantId },
-        ),
-      );
+      return write(ctx, 'inventory.adjust', data, async (tx) => applyAdjustment(tx, data, ctx));
+    },
+
+    /**
+     * تعديل يدوي (developer report F-03). A small take-away (at most 3 pieces and 50 $) applies
+     * at once; anything bigger, and any increase, waits for someone else with
+     * inventory.adjust.approve and changes nothing until then.
+     */
+    async requestAdjustment(input: AdjustStockInput, ctx: WriteContext) {
+      assertPermission(ctx, PERMISSIONS.inventory.adjust);
+      const data = parse(adjustStockSchema, input);
+      return write(ctx, 'inventory.adjust.request', data, async (tx) => {
+        const balance = await repo.findBalance(tx, data);
+        const average =
+          balance && balance.quantity > 0 ? balance.valueBaseAmount / BigInt(balance.quantity) : 0n;
+        const estimate = average * BigInt(Math.abs(data.delta));
+        const small = data.delta < 0 && -data.delta <= AUTO_PIECES && estimate <= AUTO_VALUE_BASE;
+        if (small) {
+          const result = await applyAdjustment(tx, data, ctx);
+          return { status: 'APPLIED' as const, movements: result.movements, requestId: null };
+        }
+        const request = await tx.adjustmentRequest.create({
+          data: {
+            variantId: data.variantId,
+            locationId: data.locationId,
+            delta: data.delta,
+            reasonCode: data.reasonCode,
+            note: data.note || null,
+            valueEstimate: estimate,
+            requestedById: ctx.userId,
+          },
+        });
+        await writeAudit(tx, {
+          actorId: ctx.userId,
+          action: 'inventory.adjust.request',
+          entityType: 'adjustment_request',
+          entityId: request.id,
+          after: { delta: data.delta, reasonCode: data.reasonCode, estimate },
+        });
+        return { status: 'PENDING' as const, movements: [], requestId: request.id };
+      });
+    },
+
+    async listAdjustmentRequests(input: { status?: string }, ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.inventory.view);
+      const rows = await db.adjustmentRequest.findMany({
+        where: input.status ? { status: input.status } : {},
+        orderBy: { requestedAt: 'desc' },
+        take: 100,
+        include: {
+          requestedBy: { select: { nameAr: true } },
+          decidedBy: { select: { nameAr: true } },
+          location: { select: { nameAr: true } },
+        },
+      });
+      const variants = await deps.catalogue.variantsByIds(db, [
+        ...new Set(rows.map((r) => r.variantId)),
+      ]);
+      const byId = new Map(variants.map((v) => [v.id, v]));
+      const costs = canSeeCost(ctx);
+      return rows.map((r) => ({
+        id: r.id,
+        variant: byId.get(r.variantId) ?? null,
+        location: r.location.nameAr,
+        delta: r.delta,
+        reasonCode: r.reasonCode,
+        note: r.note,
+        valueEstimate: costs ? r.valueEstimate : null,
+        status: r.status,
+        requestedBy: r.requestedBy.nameAr,
+        requestedById: r.requestedById,
+        requestedAt: r.requestedAt,
+        decidedBy: r.decidedBy?.nameAr ?? null,
+        decidedAt: r.decidedAt,
+        decisionNote: r.decisionNote,
+      }));
+    },
+
+    /** Someone other than the asker accepts: the adjustment applies now, against today's stock. */
+    async approveAdjustment(id: string, input: unknown, ctx: WriteContext) {
+      return decide(id, 'APPROVED', input, ctx);
+    },
+
+    async rejectAdjustment(id: string, input: unknown, ctx: WriteContext) {
+      return decide(id, 'REJECTED', input, ctx);
     },
 
     async damageStock(input: DamageStockInput, ctx: WriteContext): Promise<LedgerResult> {

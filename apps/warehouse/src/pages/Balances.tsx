@@ -8,12 +8,20 @@ import {
   Input,
   PageTitle,
   Select,
+  useToast,
 } from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { api, type Balance, type Variant } from '../api';
-import { errorText, formatMoney, formatQuantity, formatRetail } from '../format';
+import { api, type AdjustmentReason, type Balance, type Variant } from '../api';
+import {
+  ADJUSTMENT_REASON,
+  errorText,
+  formatMoney,
+  formatQuantity,
+  formatRetail,
+  normalizeDigits,
+} from '../format';
 import { PAGES } from '../help';
 import { balancesQuery, can, locationsQuery, meQuery } from '../queries';
 
@@ -206,17 +214,39 @@ function AdjustForm({
   onDone: () => void;
 }) {
   const [delta, setDelta] = useState('');
-  const [reason, setReason] = useState('');
+  const [reasonCode, setReasonCode] = useState<AdjustmentReason | ''>('');
+  const [note, setNote] = useState('');
   const [key] = useState(() => crypto.randomUUID());
   const queryClient = useQueryClient();
+  const toast = useToast();
 
-  const n = Number(delta);
-  const valid = Number.isInteger(n) && n !== 0 && reason.trim().length >= 3;
+  const n = Number(normalizeDigits(delta));
+  // Only a count difference adds stock; a gift says who got it (developer report F-03).
+  const valid =
+    Number.isInteger(n) &&
+    n !== 0 &&
+    reasonCode !== '' &&
+    (n < 0 || reasonCode === 'COUNT_DIFFERENCE') &&
+    (reasonCode !== 'GIFT' || note.trim().length > 0);
 
   const adjust = useMutation({
     mutationFn: async () =>
-      api.adjust({ variantId, locationId, delta: n, reason: reason.trim() }, key),
-    onSuccess: async () => {
+      api.adjust(
+        {
+          variantId,
+          locationId,
+          delta: n,
+          reasonCode: reasonCode as AdjustmentReason,
+          ...(note.trim() ? { note: note.trim() } : {}),
+        },
+        key,
+      ),
+    onSuccess: async (r) => {
+      toast(
+        r.status === 'PENDING'
+          ? 'انبعت الطلب — ما بيتغير المخزون لحتى يوافق عليه شخص تاني'
+          : 'تم التعديل',
+      );
       await queryClient.invalidateQueries({ queryKey: ['balances'] });
       onDone();
     },
@@ -225,7 +255,8 @@ function AdjustForm({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-ink-muted">
-        للتصحيح فقط (مثل قطعة وُضعت في غير مكانها). لعدّ البضاعة استخدم «الجرد».
+        لعدّ البضاعة استخدم «الجرد». غلطة بالاستلام بتنصلّح من صفحة الاستلام نفسه («تصحيح
+        الاستلام»)، مش من هون. الزيادة، أو أكتر من 3 قطع أو 50 $، بتستنى موافقة شخص تاني.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-32">
@@ -238,9 +269,26 @@ function AdjustForm({
             />
           </Field>
         </div>
-        <div className="min-w-64 flex-1">
+        <div className="w-56">
           <Field label="السبب (إلزامي)">
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Select
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value as AdjustmentReason)}
+            >
+              <option value="">— اختر —</option>
+              {Object.entries(ADJUSTMENT_REASON)
+                .filter(([k]) => n < 0 || k === 'COUNT_DIFFERENCE')
+                .map(([k, r]) => (
+                  <option key={k} value={k}>
+                    {r.label}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="min-w-48 flex-1">
+          <Field label={reasonCode === 'GIFT' ? 'لمين؟ (إلزامي)' : 'ملاحظة'}>
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
         </div>
         <Button disabled={!valid || adjust.isPending} onClick={() => adjust.mutate()}>

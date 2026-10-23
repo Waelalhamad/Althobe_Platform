@@ -390,6 +390,15 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
           throw new WrongSessionKindError(sessionId, done.kind, 'RECEIVE');
         if (done.alreadyCommitted) return done.result;
 
+        await tx.receiptTerms.create({
+          data: {
+            sessionId,
+            source: terms.source,
+            partyId: terms.partyId ?? null,
+            invoiceNo: terms.invoiceNo ?? null,
+            createdById: ctx.userId,
+          },
+        });
         const goods = done.movements.filter((m) => m.type === 'PURCHASE');
         const value = goods.reduce((s, m) => s + (m.valueBaseAmount ?? 0n), 0n);
         const currencies = [...new Set(goods.map((m) => m.unitCost?.currency ?? 'USD'))];
@@ -493,6 +502,92 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
         });
         return done.result;
       });
+    },
+
+    /**
+     * تصحيح الاستلام (developer report F-02): corrects a confirmed receipt on the receipt itself.
+     * The stock moves at the line's own cost (inventory); what the receipt was owed against moves
+     * with it — the supplier's bill, or opening balances / the owner — and nothing reaches the
+     * profit. Receipts from before sources were kept stay owed with no name, as they were.
+     */
+    async correctReceipt(sessionId: string, input: unknown, ctx: WriteContext) {
+      return inTransaction(db, async (tx) =>
+        withIdempotency(
+          tx,
+          {
+            key: ctx.idempotencyKey,
+            operation: 'parties.receipt.correct',
+            request: { sessionId, input },
+          },
+          async () => {
+            const { movements } = await deps.scanSessions.correctReceiptInTx(
+              tx,
+              sessionId,
+              input,
+              ctx,
+            );
+            const terms = await tx.receiptTerms.findUnique({ where: { sessionId } });
+            const value = movements.reduce((s, m) => s + (m.valueBaseAmount ?? 0n), 0n);
+            const byCurrency = new Map<Currency, { amount: bigint; base: bigint }>();
+            for (const m of movements) {
+              const c = m.unitCost?.currency ?? 'USD';
+              const t = byCurrency.get(c) ?? { amount: 0n, base: 0n };
+              t.amount += (m.unitCost?.amount ?? 0n) * BigInt(m.quantity);
+              t.base += m.valueBaseAmount ?? 0n;
+              byCurrency.set(c, t);
+            }
+            const reason = (input as { reason?: string }).reason ?? '';
+
+            if (terms?.partyId && value !== 0n) {
+              const party = await lockParty(tx, terms.partyId);
+              const own = byCurrency.get(party.currency as Currency) ?? { amount: 0n, base: 0n };
+              await tx.partyEntry.create({
+                data: {
+                  partyId: party.id,
+                  kind: 'BILL_CORRECTION',
+                  amount: own.amount,
+                  amountBase: value,
+                  sourceType: 'SCAN_SESSION',
+                  sourceId: uuidv7(),
+                  note: `تصحيح استلام — ${reason}`,
+                  createdById: ctx.userId,
+                },
+              });
+            }
+            if (terms && (terms.source === 'OPENING' || terms.source === 'OWNER')) {
+              for (const [currency, t] of byCurrency) {
+                if (t.base === 0n) continue;
+                await deps.accounting.postPartyEntry(tx, {
+                  side: 'PAYABLE',
+                  control: {
+                    currency,
+                    amount: currency === 'USD' ? t.base : t.amount,
+                    base: t.base,
+                  },
+                  other: {
+                    role: terms.source === 'OPENING' ? 'OPENING_EQUITY' : 'OWNER_CURRENT',
+                    base: -t.base,
+                  },
+                  voucherType: 'JOURNAL',
+                  sourceType: 'RECEIPT_CORRECTION_SOURCE',
+                  sourceId: uuidv7(),
+                  branch: 'SY',
+                  memo: `تصحيح استلام — ${reason}`,
+                  createdById: ctx.userId,
+                });
+              }
+            }
+            await writeAudit(tx, {
+              actorId: ctx.userId,
+              action: 'parties.receipt.correct',
+              entityType: 'scan_session',
+              entityId: sessionId,
+              after: { value, source: terms?.source ?? null, movements: movements.length },
+            });
+            return { sessionId, value, movements };
+          },
+        ),
+      );
     },
 
     /**

@@ -52,7 +52,11 @@ export function withoutPrismaParams(url: string): string {
 
 // Neon is reached over the network, so a transaction gets more room than Prisma's 5s default.
 // Transactions still contain only database work — no HTTP, no printing (docs/database.md).
-const TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const;
+// TX_TIMEOUT_MS only for the integration tests, run far from the database (vitest.config.ts).
+const TX_OPTIONS = {
+  maxWait: 10_000,
+  timeout: Number(process.env.TX_TIMEOUT_MS) || 20_000,
+} as const;
 
 export async function inTransaction<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.$transaction(fn, TX_OPTIONS);

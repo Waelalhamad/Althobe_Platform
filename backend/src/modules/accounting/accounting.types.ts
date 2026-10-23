@@ -53,7 +53,11 @@ export type SystemRole =
   | 'SALARIES_PAYABLE'
   | 'SALARIES_EXPENSE'
   // Wholesale sales on account (ADR-016).
-  | 'WHOLESALE_SALES';
+  | 'WHOLESALE_SALES'
+  // Where a manual adjustment goes by its reason (developer report F-03).
+  | 'MARKETING_EXPENSE'
+  | 'MISC_EXPENSE'
+  | 'GIFTS_EXPENSE';
 
 /** A line about to be posted. amountBase is USD cents, debit positive. */
 export interface DraftLine {

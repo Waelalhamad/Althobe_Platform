@@ -185,6 +185,19 @@ Errors: `PARTY_CURRENCY_LOCKED` (409), `PARTY_NOT_USABLE`, `PARTY_CURRENCY_MISMA
 `WRONG_SESSION_KIND`, `CASH_MUST_COVER_GOODS`, `UNASSIGNED_EXCEEDED` (422). Vouchers on 1103 or
 2101 are refused with `ACCOUNT_NOT_USABLE` (`PARTY`).
 
+## Endpoints — Receipt corrections and adjustment approvals (ADR-017) — implemented
+
+All **require `Idempotency-Key`**.
+
+| Method | Path | Permission |
+| --- | --- | --- |
+| `POST` | `/parties/receipts/:sessionId/correct` — `{ changes: [{ variantId, quantity, toVariantId? }], reason }` (each line as it should have been; `toVariantId`: the difference moves there) | `inventory.receive` |
+| `POST` | `/inventory/adjustments` — `{ variantId, locationId, delta, reasonCode: COUNT_DIFFERENCE\|DAMAGE\|SAMPLE\|INTERNAL_USE\|GIFT, note? }` → `{ status: APPLIED\|PENDING, requestId }` | `inventory.adjust` |
+| `GET` | `/inventory/adjustment-requests?status=` | `inventory.view` |
+| `POST` | `/inventory/adjustment-requests/:id/approve` · `/reject` — `{ note? }` (not by the asker) | `inventory.adjust.approve` |
+
+Errors: `ADJUSTMENT_NOT_PENDING` (409), `RECEIPT_CORRECTION_NOT_POSSIBLE`, `SELF_APPROVAL` (422).
+
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).
 

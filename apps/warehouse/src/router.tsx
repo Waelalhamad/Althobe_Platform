@@ -33,6 +33,7 @@ import { EntriesPage, EntryPage } from './pages/Entries';
 import { FinancePage } from './pages/Finance';
 import { FinanceReportsPage, type ReportTab } from './pages/FinanceReports';
 import { VoucherPage, type VoucherKind } from './pages/Voucher';
+import { AdjustmentsPage } from './pages/Adjustments';
 import { PartiesPage, PartyPage } from './pages/Parties';
 import { EmployeePage, PayrollPage, PayrollRunPage } from './pages/Payroll';
 import { PosPage } from './pages/Pos';
@@ -84,6 +85,7 @@ const routes = [
     component: CategoryPage,
   }),
   createRoute({ getParentRoute: () => appRoute, path: '/options', component: OptionsPage }),
+  createRoute({ getParentRoute: () => appRoute, path: '/adjustments', component: AdjustmentsPage }),
   createRoute({
     getParentRoute: () => appRoute,
     path: '/products/$productId',

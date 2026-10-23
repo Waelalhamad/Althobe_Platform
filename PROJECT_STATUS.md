@@ -27,6 +27,17 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Receipt corrections and adjustment approvals (2026-10-23, ADR-017; report F-02, F-03):**
+- **«تصحيح الاستلام»** on a confirmed receipt: the right quantity (0 takes a line back), or part
+  moved to the right size. It goes at the line's own cost, against the supplier's bill or the
+  opening balances, and never through the profit. It is refused once the goods were sold or
+  moved.
+- **Manual adjustments have a fixed reason**, each with its account: فرق جرد 5103، تالف 5102،
+  عينة 5210، استهلاك داخلي 5299، هدية 5212 (with who got it). Only a count difference adds
+  stock.
+- **Approval:** an increase, or more than 3 pieces or 50 $ out, waits on «طلبات التعديل» for
+  someone other than the asker (`inventory.adjust.approve`), and changes nothing until then.
+
 **Developer report fixes (2026-10-22, report «أخطاء النظام المالية» of 2026-10-21):**
 - **F-01:** every receipt says where the goods came from:
   - **a supplier:** named, required, with the invoice number;
@@ -57,8 +68,7 @@ and the scan screen show the best-matching photo. **Next for products:** categor
   - a malformed id answers 404, not 500;
   - `/inventory/movements` honours `limit` (1–200);
   - entry memos count pieces the Arabic way.
-- **Still to agree** (bigger designs): F-02 receipt cancel and correction, F-03 adjustment
-  reasons with approval, F-04 Libya as a branch, F-06 gifts, F-07 cost correction, F-12 online
+- **Still to agree** (bigger designs): F-04 Libya as a branch, F-06 gifts, F-07 cost correction, F-12 online
   orders.
 
 **An easier till (2026-10-21):**

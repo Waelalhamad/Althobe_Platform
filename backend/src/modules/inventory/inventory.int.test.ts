@@ -285,13 +285,20 @@ describe('adjust and damage', () => {
     await stock(t.services, w, w.x, w.wh1, 10);
     await expect(
       inv.adjustStock(
-        { variantId: w.x.id, locationId: w.wh1.id, delta: -1, reason: '' },
+        // A gift must say who received it.
+        { variantId: w.x.id, locationId: w.wh1.id, delta: -1, reasonCode: 'GIFT' },
         write(w.owner),
       ),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
 
     await inv.adjustStock(
-      { variantId: w.x.id, locationId: w.wh1.id, delta: -2, reason: 'Found mislabelled' },
+      {
+        variantId: w.x.id,
+        locationId: w.wh1.id,
+        delta: -2,
+        reasonCode: 'COUNT_DIFFERENCE',
+        note: 'Found mislabelled',
+      },
       write(w.owner),
     );
     await inv.damageStock(
@@ -385,7 +392,13 @@ describe('ledger guarantees', () => {
       write(w.owner),
     );
     await inv.adjustStock(
-      { variantId: w.y.id, locationId: w.wh1.id, delta: 3, reason: 'Found behind shelf' },
+      {
+        variantId: w.y.id,
+        locationId: w.wh1.id,
+        delta: 3,
+        reasonCode: 'COUNT_DIFFERENCE',
+        note: 'Found behind shelf',
+      },
       write(w.owner),
     );
     await inv.damageStock(

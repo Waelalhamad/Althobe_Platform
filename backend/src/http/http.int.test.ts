@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createTestContext, stock, type World } from '../../test/helpers.js';
+import { createTestContext, stock, USD, type World } from '../../test/helpers.js';
 import { buildServer, SESSION_COOKIE } from './server.js';
 
 // The Phase 2 API, end to end in-process: cookies, status codes, and the opening-count flow.
@@ -363,13 +363,15 @@ describe('accounts over HTTP (owner only)', () => {
 
 describe('adjustments, history and summary over HTTP', () => {
   it('adjusts once per key, and the history says who did it and why', async () => {
-    await stock(t.services, w, w.x, w.wh1, 10);
+    // 2 pieces at 10.00 $: under the limit, so it applies without a second person (F-03).
+    await stock(t.services, w, w.x, w.wh1, 10, USD(10));
     const owner = await login('boss@test.local');
     const body = {
       variantId: w.x.id,
       locationId: w.wh1.id,
       delta: -2,
-      reason: 'وُجدت قطعتان مع صنف آخر',
+      reasonCode: 'COUNT_DIFFERENCE',
+      note: 'وُجدت قطعتان مع صنف آخر',
     };
 
     const noKey = await call(owner, 'POST', '/inventory/adjustments', body);
@@ -389,7 +391,7 @@ describe('adjustments, history and summary over HTTP', () => {
       }[]
     >(await call(owner, 'GET', `/inventory/movements?variantId=${w.x.id}`));
     expect(history[0]).toMatchObject({
-      movement: { type: 'ADJUSTMENT', quantity: -2, reason: body.reason },
+      movement: { type: 'ADJUSTMENT', quantity: -2, reason: `فرق جرد — ${body.note}` },
       variant: { id: w.x.id },
       createdByName: 'صاحب المحل',
     });

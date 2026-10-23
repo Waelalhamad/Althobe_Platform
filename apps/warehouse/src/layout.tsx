@@ -11,6 +11,7 @@ type To =
   | '/balances'
   | '/stocktakes'
   | '/movements'
+  | '/adjustments'
   | '/reports'
   | '/finance'
   | '/finance/entries'
@@ -55,6 +56,11 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
         anyOf: ['inventory.stocktake.count', 'inventory.stocktake.apply'],
       },
       { to: '/movements', label: 'السجل', anyOf: ['inventory.view'] },
+      {
+        to: '/adjustments',
+        label: 'طلبات التعديل',
+        anyOf: ['inventory.adjust', 'inventory.adjust.approve'],
+      },
       { to: '/reports', label: 'تقرير المخزون', anyOf: ['inventory.view'] },
     ],
   },
