@@ -15,6 +15,20 @@ export class ReceiptCorrectionNotPossibleError extends DomainError {
   }
 }
 
+/** «تراجع» refused: the stock it would take back is no longer there at that value. */
+export class MovementUndoNotPossibleError extends DomainError {
+  constructor(details: Record<string, unknown>) {
+    super('MOVEMENT_UNDO_NOT_POSSIBLE', 'This movement can no longer be undone exactly', details);
+  }
+}
+
+/** Only a manual adjustment or damage write-off, not yet undone and not itself an undo. */
+export class MovementNotUndoableError extends DomainError {
+  constructor(id: string, why: 'KIND' | 'IS_UNDO' | 'ALREADY_UNDONE') {
+    super('MOVEMENT_NOT_UNDOABLE', 'This movement cannot be undone', { id, why });
+  }
+}
+
 export class AdjustmentRequestStateError extends DomainError {
   constructor(id: string, status: string) {
     super('ADJUSTMENT_NOT_PENDING', 'This adjustment was already decided', { id, status });

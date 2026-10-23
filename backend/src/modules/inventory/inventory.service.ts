@@ -17,6 +17,7 @@ import {
   MovementNotAllowedAtLocationError,
   ReservationNotFoundError,
   LocationInactiveError,
+  MovementNotUndoableError,
 } from './inventory.errors.js';
 import {
   applyMovements,
@@ -41,6 +42,7 @@ import {
   releaseStockSchema,
   reserveStockSchema,
   transferStockSchema,
+  undoMovementSchema,
   type AdjustStockInput,
   type BalanceQuery,
   type DamageStockInput,
@@ -377,6 +379,52 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
       return decide(id, 'REJECTED', input, ctx);
     },
 
+    /**
+     * «تراجع» (owner only): undoes a manual adjustment or damage write-off. The same type with the
+     * opposite quantity and exactly the opposite value, so stock and the books return to what
+     * they were. Refused once the pieces it would take back were sold or moved.
+     */
+    async undoMovement(id: string, input: unknown, ctx: WriteContext): Promise<LedgerResult> {
+      assertPermission(ctx, PERMISSIONS.admin.undo);
+      const { reason } = parse(undoMovementSchema, input);
+      return write(ctx, 'inventory.undo', { id, reason }, async (tx) => {
+        // Two undos of the same movement queue here; the second finds it already undone.
+        await tx.$queryRaw`SELECT id FROM inventory_movements WHERE id = ${id}::uuid FOR UPDATE`;
+        const original = await tx.inventoryMovement.findUnique({
+          where: { id },
+          include: { reversedBy: { select: { id: true } } },
+        });
+        if (!original) throw new NotFoundError('movement', id);
+        if (original.reversesId) throw new MovementNotUndoableError(id, 'IS_UNDO');
+        if (original.reversedBy) throw new MovementNotUndoableError(id, 'ALREADY_UNDONE');
+        if (
+          original.referenceType !== 'MANUAL' ||
+          (original.type !== 'ADJUSTMENT' && original.type !== 'DAMAGE')
+        ) {
+          throw new MovementNotUndoableError(id, 'KIND');
+        }
+        return applyMovements(
+          tx,
+          deps,
+          [
+            {
+              variantId: original.variantId,
+              locationId: original.locationId,
+              type: original.type,
+              quantity: -original.quantity,
+              referenceType: 'MANUAL',
+              referenceId: original.id,
+              reasonCode: original.reasonCode as AdjustmentReason | null,
+              reason,
+              undo: { movementId: original.id, value: -original.valueBaseAmount },
+            },
+          ],
+          ctx,
+          { action: 'inventory.undo', entityType: 'movement', entityId: original.id },
+        );
+      });
+    },
+
     async damageStock(input: DamageStockInput, ctx: WriteContext): Promise<LedgerResult> {
       assertPermission(ctx, PERMISSIONS.inventory.damage);
       const data = parse(damageStockSchema, input);
@@ -608,15 +656,23 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     async getMovementHistory(
       input: MovementsQuery,
       ctx: ActorContext,
-    ): Promise<{ movement: MovementView; variant: VariantView | null }[]> {
+    ): Promise<
+      { movement: MovementView; variant: VariantView | null; undoneById: string | null }[]
+    > {
       const movements = await readMovements(input, ctx);
       const variants = await deps.catalogue.variantsByIds(db, [
         ...new Set(movements.map((m) => m.variantId)),
       ]);
       const byId = new Map(variants.map((v) => [v.id, v]));
+      const undos = await db.inventoryMovement.findMany({
+        where: { reversesId: { in: movements.map((m) => m.id) } },
+        select: { id: true, reversesId: true },
+      });
+      const undoneBy = new Map(undos.map((u) => [u.reversesId!, u.id]));
       return movements.map((movement) => ({
         movement,
         variant: byId.get(movement.variantId) ?? null,
+        undoneById: undoneBy.get(movement.id) ?? null,
       }));
     },
 

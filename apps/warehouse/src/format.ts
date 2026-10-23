@@ -79,6 +79,8 @@ const ERRORS: Record<string, string> = {
   RECEIPT_NEEDS_SOURCE: 'اختر من وين إجت البضاعة قبل التأكيد',
   RECEIPT_CORRECTION_NOT_POSSIBLE:
     'هالكمية ما عادت موجودة لترجع بتكلفتها (انباعت أو انتقلت) — صحّحها بالجرد',
+  MOVEMENT_UNDO_NOT_POSSIBLE: 'ما بينفع التراجع: القطع انباعت أو انتقلت بعدها — صحّحها بالجرد',
+  MOVEMENT_NOT_UNDOABLE: 'هالحركة ما بينفع التراجع عنها (أو تراجعت عنها قبل)',
   ADJUSTMENT_NOT_PENDING: 'هالطلب انقرر قبل',
   SELF_APPROVAL: 'ما فيك توافق على طلب إنت طلبته — شخص تاني لازم يوافق',
   STOCKTAKE_STALE: 'هذا الجرد أقدم من 3 أيام والمخزون تغيّر بعده — ألغه واعمل جرد جديد',

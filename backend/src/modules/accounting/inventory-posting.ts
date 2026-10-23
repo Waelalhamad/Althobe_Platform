@@ -70,7 +70,7 @@ export function entryForMovement(m: MovementView, accounts: InventoryAccounts): 
   return {
     voucherType: 'INVENTORY',
     entryDate: businessDate(m.createdAt),
-    memo: `${MEMO[m.type]} · ${pieces(Math.abs(m.quantity))}${details ? ` · ${details}` : ''}`,
+    memo: `${m.reversesId ? 'تراجع عن ' : ''}${MEMO[m.type]} · ${pieces(Math.abs(m.quantity))}${details ? ` · ${details}` : ''}`,
     sourceType: INVENTORY_SOURCE,
     sourceId: m.id,
     createdById: m.createdById,

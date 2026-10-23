@@ -195,8 +195,10 @@ All **require `Idempotency-Key`**.
 | `POST` | `/inventory/adjustments` — `{ variantId, locationId, delta, reasonCode: COUNT_DIFFERENCE\|DAMAGE\|SAMPLE\|INTERNAL_USE\|GIFT, note? }` → `{ status: APPLIED\|PENDING, requestId }` | `inventory.adjust` |
 | `GET` | `/inventory/adjustment-requests?status=` | `inventory.view` |
 | `POST` | `/inventory/adjustment-requests/:id/approve` · `/reject` — `{ note? }` (not by the asker) | `inventory.adjust.approve` |
+| `POST` | `/inventory/movements/:id/undo` — `{ reason }` (ADR-018: a `MANUAL` adjustment or damage, exactly the other way) | `admin.undo` |
 
-Errors: `ADJUSTMENT_NOT_PENDING` (409), `RECEIPT_CORRECTION_NOT_POSSIBLE`, `SELF_APPROVAL` (422).
+Errors: `ADJUSTMENT_NOT_PENDING` (409), `RECEIPT_CORRECTION_NOT_POSSIBLE`, `SELF_APPROVAL`,
+`MOVEMENT_UNDO_NOT_POSSIBLE`, `MOVEMENT_NOT_UNDOABLE` (422).
 
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).

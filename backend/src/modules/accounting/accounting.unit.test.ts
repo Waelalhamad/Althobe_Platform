@@ -41,6 +41,7 @@ function movement(overrides: Partial<MovementView>): MovementView {
     valueBaseAmount: 10_000n,
     createdById: 'u',
     createdAt: new Date('2026-10-19T09:00:00Z'),
+    reversesId: null,
     ...overrides,
   };
 }
@@ -137,6 +138,20 @@ describe('posting rules for stock movements (ADR-013)', () => {
     expect(counter('ADJUSTMENT', 1n)).toBe('adjustment');
     expect(counter('STOCKTAKE', -1n)).toBe('adjustment');
     expect(counter('OPENING', 1n)).toBe('opening');
+  });
+
+  it('an undone damage posts exactly the other way, to the same account', () => {
+    const damage = { type: 'DAMAGE' as const, referenceType: 'MANUAL' as const, unitCost: null };
+    const original = entryForMovement(
+      movement({ ...damage, quantity: -2, valueBaseAmount: -4_200n }),
+      accounts,
+    );
+    const undo = entryForMovement(
+      movement({ ...damage, id: 'm2', quantity: 2, valueBaseAmount: 4_200n, reversesId: 'm1' }),
+      accounts,
+    );
+    expect(sides(undo)).toEqual(sides(original).map(([id, amount]) => [id, -(amount as bigint)]));
+    expect(undo!.memo).toMatch(/^تراجع عن تالف · قطعتان/);
   });
 
   it('a movement worth nothing posts nothing', () => {

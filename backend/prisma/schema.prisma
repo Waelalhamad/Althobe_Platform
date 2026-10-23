@@ -577,11 +577,15 @@ model InventoryMovement {
   createdById        String        @map("created_by") @db.Uuid
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   idempotencyKey     String?       @map("idempotency_key")
+  // «تراجع»: the manual adjustment or damage this movement undoes (at most once).
+  reversesId         String?       @unique(map: "uq_inventory_movements_reverses_id") @map("reverses_id") @db.Uuid
 
   variant            ProductVariant      @relation(fields: [variantId], references: [id])
   location           Location            @relation(fields: [locationId], references: [id])
   createdBy          User                @relation(fields: [createdById], references: [id])
   adjustmentRequests AdjustmentRequest[]
+  reverses           InventoryMovement?  @relation("MovementUndo", fields: [reversesId], references: [id])
+  reversedBy         InventoryMovement?  @relation("MovementUndo")
 
   @@index([variantId, locationId, seq(sort: Desc)], map: "idx_inventory_movements_variant_location_seq")
   @@index([locationId, seq], map: "idx_inventory_movements_location_seq")

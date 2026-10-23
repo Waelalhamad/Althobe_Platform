@@ -27,6 +27,10 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**«تراجع» (2026-10-23, ADR-018):** the owner undoes a manual adjustment or damage made by mistake,
+from the history, with a reason. Same type, opposite quantity, exactly the original value, so no
+profit or loss comes of it. Refused once the pieces were sold or moved. Nothing is ever deleted.
+
 **Receipt corrections and adjustment approvals (2026-10-23, ADR-017; report F-02, F-03):**
 - **«تصحيح الاستلام»** on a confirmed receipt: the right quantity (0 takes a line back), or part
   moved to the right size. It goes at the line's own cost, against the supplier's bill or the

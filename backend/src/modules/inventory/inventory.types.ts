@@ -25,6 +25,8 @@ export interface MovementEntry extends BalanceKey {
   unitCost?: UnitCost | null;
   /** TRANSFER_IN only: index of its TRANSFER_OUT in the same call. The value moves with the goods. */
   pairedWith?: number;
+  /** An undo: the movement it undoes and exactly the value that leaves or returns with it. */
+  undo?: { movementId: string; value: bigint };
 }
 
 export interface BalanceView extends BalanceKey {
@@ -54,6 +56,8 @@ export interface MovementView extends BalanceKey {
   valueBaseAmount: bigint | null;
   createdById: string;
   createdAt: Date;
+  /** «تراجع»: the movement this one undoes. */
+  reversesId: string | null;
 }
 
 export interface LedgerResult {

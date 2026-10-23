@@ -59,6 +59,8 @@ export const PERMISSIONS = {
     locations: 'admin.locations.write',
     // The exchange rates (ADR-012).
     rates: 'admin.rates.write',
+    // «تراجع»: undo a manual adjustment or a damage write-off, exactly.
+    undo: 'admin.undo',
   },
 } as const;
 

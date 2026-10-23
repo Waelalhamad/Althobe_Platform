@@ -470,12 +470,15 @@ export interface Movement {
   note: string | null;
   createdById: string;
   createdAt: string;
+  /** «تراجع»: the movement this one undoes. */
+  reversesId: string | null;
 }
 
 export interface HistoryRow {
   movement: Movement;
   variant: Variant | null;
   createdByName: string | null;
+  undoneById: string | null;
 }
 
 export interface SummaryRow {
@@ -974,6 +977,14 @@ export const api = {
       'POST',
       '/inventory/adjustments',
       input,
+      { 'idempotency-key': idempotencyKey },
+    ),
+  /** «تراجع» (owner): undoes a manual adjustment or damage, exactly. */
+  undoMovement: async (id: string, reason: string, idempotencyKey: string) =>
+    request<{ movements: Movement[] }>(
+      'POST',
+      `/inventory/movements/${id}/undo`,
+      { reason },
       { 'idempotency-key': idempotencyKey },
     ),
   adjustmentRequests: async (status?: 'PENDING' | 'APPROVED' | 'REJECTED') =>

@@ -339,6 +339,15 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.inventory.requestAdjustment(request.body as never, writeContextOf(request)),
     }));
 
+    // «تراجع» (owner): undo a manual adjustment or damage write-off. Requires Idempotency-Key.
+    priv.post('/inventory/movements/:id/undo', async (request: Params<{ id: string }>) => ({
+      data: await s.inventory.undoMovement(
+        request.params.id,
+        request.body,
+        writeContextOf(request),
+      ),
+    }));
+
     priv.get(
       '/inventory/adjustment-requests',
       async (request: FastifyRequest<{ Querystring: { status?: string } }>) => ({

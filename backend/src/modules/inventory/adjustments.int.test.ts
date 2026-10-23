@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { ALL_PERMISSIONS } from '../../shared/permissions.js';
 import { createTestContext, stock, USD, write, type World } from '../../../test/helpers.js';
 
 // Developer report F-03: a manual adjustment has a fixed reason, each posting to its own account,
@@ -79,5 +80,79 @@ describe('manual adjustments (developer report F-03)', () => {
         ),
       ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     }
+  });
+});
+
+describe('«تراجع»: the owner undoes an adjustment or a damage write-off exactly', () => {
+  const undo = async (id: string, actor = w.owner, reason = 'انعمل بالغلط') =>
+    inv.undoMovement(id, { reason }, write(actor));
+  const value = async () =>
+    (await inv.getBalance({ variantId: w.x.id, locationId: w.wh1.id }, w.owner)).valueBaseAmount;
+
+  it('puts stock and the books back at the original value, not today’s average', async () => {
+    const out = await ask(-1, 'COUNT_DIFFERENCE');
+    // A dearer delivery moves the average; the undo still returns exactly what left.
+    await stock(t.services, w, w.x, w.wh1, 10, USD(20));
+    const before = await value();
+    const result = await undo(out.movements[0]!.id);
+    expect(result.movements[0]).toMatchObject({ quantity: 1, valueBaseAmount: 1_000n });
+    expect(await quantity()).toBe(30);
+    expect(await value()).toBe(before! + 1_000n);
+    expect(await account('5103')).toBe(0n);
+
+    const damaged = await inv.damageStock(
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 2, reason: 'انكب عليها شاي' },
+      write(w.owner),
+    );
+    await undo(damaged.movements[0]!.id);
+    expect(await quantity()).toBe(30);
+    expect(await account('5102')).toBe(0n);
+
+    const history = await inv.getMovementHistory({ variantId: w.x.id }, w.owner);
+    const undone = history.filter((r) => r.undoneById).map((r) => r.movement.id);
+    expect(undone.sort()).toEqual([out.movements[0]!.id, damaged.movements[0]!.id].sort());
+  });
+
+  it('only once, never an undo, and only manual adjustments and damage', async () => {
+    const out = await ask(-1, 'SAMPLE');
+    const first = await undo(out.movements[0]!.id);
+    await expect(undo(out.movements[0]!.id)).rejects.toMatchObject({
+      code: 'MOVEMENT_NOT_UNDOABLE',
+    });
+    await expect(undo(first.movements[0]!.id)).rejects.toMatchObject({
+      code: 'MOVEMENT_NOT_UNDOABLE',
+    });
+    const [received] = (await inv.getMovements({ variantId: w.x.id }, w.owner)).filter(
+      (m) => m.quantity === 20,
+    );
+    await expect(undo(received!.id)).rejects.toMatchObject({ code: 'MOVEMENT_NOT_UNDOABLE' });
+    await expect(undo(out.movements[0]!.id, w.owner, '')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('refuses when the pieces it would take back are gone', async () => {
+    const up = await ask(2, 'COUNT_DIFFERENCE');
+    const approved = await inv.approveAdjustment(up.requestId!, {}, write(w.approver));
+    await inv.issueStock(
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 22, referenceType: 'MANUAL' },
+      write(w.owner),
+    );
+    await expect(undo(approved.movementId!)).rejects.toMatchObject({
+      code: 'MOVEMENT_UNDO_NOT_POSSIBLE',
+    });
+    expect(await quantity()).toBe(0);
+  });
+
+  it('is the owner’s alone', async () => {
+    const out = await ask(-1, 'COUNT_DIFFERENCE');
+    const manager = {
+      userId: w.approver.userId,
+      permissions: new Set(ALL_PERMISSIONS.filter((p) => !p.startsWith('admin.'))),
+    };
+    await expect(undo(out.movements[0]!.id, manager)).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    expect(await quantity()).toBe(19);
   });
 });

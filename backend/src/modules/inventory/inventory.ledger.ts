@@ -12,6 +12,7 @@ import {
   MovementNotAllowedAtLocationError,
   VariantInactiveError,
   ReceiptCorrectionNotPossibleError,
+  MovementUndoNotPossibleError,
 } from './inventory.errors.js';
 import { isMovementAllowed } from './inventory.policy.js';
 import * as repo from './inventory.repository.js';
@@ -95,6 +96,7 @@ export async function applyMovements(
       valueBaseAmount: value,
       createdById: ctx.userId,
       idempotencyKey: ctx.idempotencyKey ?? null,
+      reversesId: entry.undo?.movementId ?? null,
     });
   });
 
@@ -200,6 +202,27 @@ function valueOf(
   // A received line taken back leaves at its own cost, not the average (developer report F-02),
   // so the books undo exactly what the receipt posted. Only while it is still there: the stock
   // left must keep a value, and none at all once nothing is left.
+  // An undo moves exactly the value the original moved, the other way, so neither profit nor
+  // loss comes of it. Taking stock back needs it still there at a value that stays sound.
+  if (entry.undo) {
+    const value = entry.undo.value;
+    const unitCostBase = divRoundHalfUp(value < 0n ? -value : value, BigInt(Math.abs(qty)));
+    if (qty < 0) {
+      const available = balance.quantity - balance.reservedQuantity;
+      const left = balance.valueBaseAmount + value;
+      const leftQuantity = balance.quantity + qty;
+      if (-qty > available || left < 0n || (leftQuantity === 0 && left !== 0n)) {
+        throw new MovementUndoNotPossibleError({
+          ...keyOf(entry),
+          requested: -qty,
+          quantity: balance.quantity,
+          available,
+        });
+      }
+    }
+    return { value, unitCostBase };
+  }
+
   if (entry.type === 'RECEIPT_CORRECTION' && qty < 0 && entry.unitCost) {
     const need = -qty;
     const unitCostBase = toBaseAmount(
@@ -321,6 +344,7 @@ export function toMovementView(m: InventoryMovement): MovementView {
     valueBaseAmount: m.valueBaseAmount,
     createdById: m.createdById,
     createdAt: m.createdAt,
+    reversesId: m.reversesId,
   };
 }
 

@@ -72,6 +72,9 @@ export const adjustStockSchema = z
 
 export const decideAdjustmentSchema = z.object({ note: note });
 
+/** «تراجع»: why the movement is undone, always. */
+export const undoMovementSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
 /** Correcting a confirmed receipt (developer report F-02), line by line. */
 export const correctReceiptSchema = z.object({
   changes: z
