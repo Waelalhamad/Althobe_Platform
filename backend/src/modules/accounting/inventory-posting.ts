@@ -30,6 +30,7 @@ const MEMO: Record<MovementView['type'], string> = {
   ADJUSTMENT: 'تعديل مخزون',
   DAMAGE: 'تالف',
   STOCKTAKE: 'فرق جرد',
+  GIFT: 'هدية / إكرامية',
 };
 
 /**
@@ -38,7 +39,7 @@ const MEMO: Record<MovementView['type'], string> = {
  * the value (debit in, credit out); the other side depends on the type:
  *
  *   OPENING      ↔ opening balances         PURCHASE  ↔ suppliers (what we owe for the goods)
- *   SALE, RETURN ↔ cost of goods sold       DAMAGE    ↔ damaged goods
+ *   SALE, RETURN ↔ cost of goods sold       DAMAGE    ↔ damaged goods   GIFT ↔ gifts
  *   ADJUSTMENT, STOCKTAKE ↔ stock differences
  *   TRANSFER_OUT / TRANSFER_IN ↔ goods in transit (the two halves cancel out)
  *
@@ -99,6 +100,8 @@ function counterFor(m: MovementView, a: InventoryAccounts): string {
       return a.cogs;
     case 'DAMAGE':
       return a.damage;
+    case 'GIFT':
+      return a.gifts;
     case 'ADJUSTMENT':
       return adjustmentAccount(m.reasonCode, a);
     case 'STOCKTAKE':

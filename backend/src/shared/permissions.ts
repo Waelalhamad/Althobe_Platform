@@ -61,6 +61,8 @@ export const PERMISSIONS = {
     rates: 'admin.rates.write',
     // «تراجع»: undo a manual adjustment or a damage write-off, exactly.
     undo: 'admin.undo',
+    // Gifts (developer report F-06): only the owner gives them.
+    gifts: 'admin.gifts',
   },
 } as const;
 

@@ -44,6 +44,14 @@ export class SelfApprovalError extends DomainError {
 }
 
 /** Developer report F-01: received goods always say where they came from. */
+export class GiftNeedsRecipientError extends DomainError {
+  constructor(sessionId: string) {
+    super('GIFT_NEEDS_RECIPIENT', 'Confirm a gift with who received it (POST /gifts/:id)', {
+      sessionId,
+    });
+  }
+}
+
 export class ReceiptNeedsSourceError extends DomainError {
   constructor(sessionId: string) {
     super(

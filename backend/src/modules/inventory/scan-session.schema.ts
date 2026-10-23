@@ -3,7 +3,7 @@ import { unitCostSchema } from '../../shared/money.js';
 
 export const openScanSessionSchema = z
   .object({
-    kind: z.enum(['OPENING', 'RECEIVE', 'TRANSFER', 'DAMAGE', 'SALE', 'RETURN']),
+    kind: z.enum(['OPENING', 'RECEIVE', 'TRANSFER', 'DAMAGE', 'SALE', 'RETURN', 'GIFT']),
     locationId: z.uuid(),
     toLocationId: z.uuid().optional(),
     reason: z.string().trim().min(3).max(500).optional(),

@@ -15,6 +15,7 @@ import type { VariantView } from '../catalogue/catalogue.service.js';
 import {
   CostNotAllowedError,
   EmptyScanSessionError,
+  GiftNeedsRecipientError,
   LocationInactiveError,
   MissingCostError,
   MovementNotAllowedAtLocationError,
@@ -58,10 +59,11 @@ const PERMISSION_BY_KIND: Record<ScanSessionKind, Permission> = {
   DAMAGE: PERMISSIONS.inventory.damage,
   SALE: PERMISSIONS.inventory.issue,
   RETURN: PERMISSIONS.inventory.return,
+  GIFT: PERMISSIONS.admin.gifts,
 };
 
 const COSTED_KINDS: ReadonlySet<ScanSessionKind> = new Set(['OPENING', 'RECEIVE']);
-const OUTGOING_KINDS: ReadonlySet<ScanSessionKind> = new Set(['DAMAGE', 'SALE']);
+const OUTGOING_KINDS: ReadonlySet<ScanSessionKind> = new Set(['DAMAGE', 'SALE', 'GIFT']);
 
 export interface ScanLineView {
   variant: VariantView;
@@ -455,6 +457,10 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         if (kind?.kind === 'RECEIVE' && kind.status === 'OPEN') {
           throw new ReceiptNeedsSourceError(data.sessionId);
         }
+        // And a gift says who received it and why.
+        if (kind?.kind === 'GIFT' && kind.status === 'OPEN') {
+          throw new GiftNeedsRecipientError(data.sessionId);
+        }
         const { result } = await commitInTx(tx, data.sessionId, ctx);
         return result;
       });
@@ -520,7 +526,7 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     },
 
     /**
-     * Trusted call for parties (ADR-016): commits in the caller's transaction, so a supplier's
+     * Trusted call for parties (ADR-016) and gifts (F-06): commits in the caller's transaction, so a supplier's
      * bill or a customer's invoice is recorded with the goods or not at all. `movements` keep
      * their cost; `alreadyCommitted` tells a retry from the first commit.
      */
@@ -564,6 +570,8 @@ function entryTypeOf(kind: ScanSessionKind) {
       return 'SALE' as const;
     case 'RETURN':
       return 'RETURN' as const;
+    case 'GIFT':
+      return 'GIFT' as const;
   }
 }
 
@@ -610,7 +618,7 @@ function entriesFor(
     variantId: line.variantId,
     locationId: session.location_id,
     type: entryTypeOf(session.kind),
-    // Damage and sales take stock away; everything else here brings it in.
+    // Damage, sales and gifts take stock away; everything else here brings it in.
     quantity: OUTGOING_KINDS.has(session.kind) ? -line.quantity : line.quantity,
     unitCost: COSTED_KINDS.has(session.kind) ? costOf(line) : null,
     reason: session.reason,

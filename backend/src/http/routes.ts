@@ -339,6 +339,42 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.inventory.requestAdjustment(request.body as never, writeContextOf(request)),
     }));
 
+    // ── Gifts (developer report F-06): only the owner gives them ──────────────────────────────
+    priv.get('/gift-recipients', async (request) => ({
+      data: await s.gifts.listRecipients(actorOf(request)),
+    }));
+
+    priv.get('/gifts', async (request) => ({
+      data: await s.gifts.listGifts(request.query, actorOf(request)),
+    }));
+
+    priv.get('/gifts/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.gifts.getGift(request.params.id, actorOf(request)),
+    }));
+
+    // Confirms a GIFT scan session: { recipientId | recipient: { name, kind, phone? }, occasion,
+    // reference? }. The plain session commit refuses a gift (GIFT_NEEDS_RECIPIENT).
+    priv.post('/gifts/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.gifts.confirmGift(request.params.id, request.body, actorOf(request)),
+    }));
+
+    // The delivery receipt, base64 in JSON like product photos.
+    priv.post(
+      '/gifts/:id/photo',
+      { bodyLimit: 5_000_000 },
+      async (request: Params<{ id: string }>) => ({
+        data: await s.gifts.uploadPhoto(request.params.id, request.body, actorOf(request)),
+      }),
+    );
+
+    priv.get(
+      '/gifts/:id/photo',
+      async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+        const url = await s.gifts.photoUrl(request.params.id, actorOf(request));
+        return reply.header('cache-control', 'private, max-age=300').redirect(url, 302);
+      },
+    );
+
     // «تراجع» (owner): undo a manual adjustment or damage write-off. Requires Idempotency-Key.
     priv.post('/inventory/movements/:id/undo', async (request: Params<{ id: string }>) => ({
       data: await s.inventory.undoMovement(

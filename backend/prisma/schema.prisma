@@ -44,6 +44,8 @@ enum MovementType {
   STOCKTAKE
   // A received line corrected, signed, at its original cost (developer report F-02).
   RECEIPT_CORRECTION
+  // Given away by the owner (developer report F-06), apart from damage.
+  GIFT
 
   @@map("movement_type")
 }
@@ -78,6 +80,7 @@ enum ScanSessionKind {
   DAMAGE
   SALE
   RETURN
+  GIFT
 
   @@map("scan_session_kind")
 }
@@ -165,6 +168,8 @@ model User {
   employeeAdvances     EmployeeAdvance[]
   partyEntries         PartyEntry[]
   receiptTerms         ReceiptTerms[]
+  giftRecipients       GiftRecipient[]
+  gifts                Gift[]
   adjustmentsRequested AdjustmentRequest[]   @relation("AdjustmentRequestedBy")
   adjustmentsDecided   AdjustmentRequest[]   @relation("AdjustmentDecidedBy")
 
@@ -641,6 +646,7 @@ model ScanSession {
   lines        ScanSessionLine[]
   events       ScanSessionEvent[]
   receiptTerms ReceiptTerms?
+  gift         Gift?
 
   @@index([status, locationId], map: "idx_scan_sessions_status_location")
   @@map("scan_sessions")
@@ -1198,4 +1204,38 @@ model AdjustmentRequest {
 
   @@index([status, requestedAt(sort: Desc)], map: "idx_adjustment_requests_status")
   @@map("adjustment_requests")
+}
+
+// Who receives gifts (developer report F-06), kept once and chosen next time.
+model GiftRecipient {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String
+  // SHIPPING · CUSTOMER · WHOLESALE · INFLUENCER · OFFICIAL · EMPLOYEE · OTHER
+  kind        String
+  phone       String?
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  createdBy User   @relation(fields: [createdById], references: [id])
+  gifts     Gift[]
+
+  @@map("gift_recipients")
+}
+
+// A GIFT scan session confirmed: who received it, and why.
+model Gift {
+  sessionId   String   @id @map("session_id") @db.Uuid
+  recipientId String   @map("recipient_id") @db.Uuid
+  occasion    String
+  reference   String?
+  photoKey    String?  @map("photo_key")
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session   ScanSession   @relation(fields: [sessionId], references: [id])
+  recipient GiftRecipient @relation(fields: [recipientId], references: [id])
+  createdBy User          @relation(fields: [createdById], references: [id])
+
+  @@index([recipientId, createdAt], map: "idx_gifts_recipient")
+  @@map("gifts")
 }

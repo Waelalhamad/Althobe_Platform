@@ -277,7 +277,7 @@ function AdjustForm({
             >
               <option value="">— اختر —</option>
               {Object.entries(ADJUSTMENT_REASON)
-                .filter(([k]) => n < 0 || k === 'COUNT_DIFFERENCE')
+                .filter(([k]) => (n < 0 || k === 'COUNT_DIFFERENCE') && k !== 'GIFT')
                 .map(([k, r]) => (
                   <option key={k} value={k}>
                     {r.label}

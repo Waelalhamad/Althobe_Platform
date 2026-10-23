@@ -37,6 +37,7 @@ import {
   toUsdCents,
 } from '../format';
 import { PhotoThumb } from '../photo';
+import { GiftCard, GiftDone, giftBody, giftReady, NO_GIFT, type GiftDraft } from './GiftForm';
 import {
   balancesQuery,
   boxesQuery,
@@ -142,7 +143,10 @@ export function ScanSessionPage() {
   // Outgoing sessions take stock away from the source: show what is available there, so an
   // over-scan is visible before confirming rather than refused after.
   const outgoing =
-    session?.kind === 'TRANSFER' || session?.kind === 'DAMAGE' || session?.kind === 'SALE';
+    session?.kind === 'TRANSFER' ||
+    session?.kind === 'DAMAGE' ||
+    session?.kind === 'SALE' ||
+    session?.kind === 'GIFT';
   const { data: sourceBalances } = useQuery({
     ...balancesQuery(session?.locationId ?? ''),
     enabled: Boolean(open && outgoing && session?.locationId),
@@ -192,6 +196,7 @@ export function ScanSessionPage() {
 
   const toast = useToast();
   const [terms, setTerms] = useState<Terms>(NO_TERMS);
+  const [gift, setGift] = useState<GiftDraft>(NO_GIFT);
   const { data: boxes = [] } = useQuery({
     ...boxesQuery,
     enabled: Boolean(open && session?.kind === 'RECEIVE' && terms.paidNow),
@@ -216,17 +221,24 @@ export function ScanSessionPage() {
           ...(paid ? { paid } : {}),
         });
       }
+      if (session?.kind === 'GIFT') return api.confirmGift(sessionId, giftBody(gift));
       if (session?.kind === 'SALE' && terms.partyId) {
         return api.commitGoodsOut(sessionId, { partyId: terms.partyId, amount: terms.amount });
       }
       return api.commit(sessionId);
     },
     onSuccess: async () => {
-      toast('تم الحفظ في المخزون — الأرصدة محدّثة');
+      toast(
+        session?.kind === 'GIFT'
+          ? 'انسجّلت الهدية وطلعت القطع من المخزون'
+          : 'تم الحفظ في المخزون — الأرصدة محدّثة',
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['session', sessionId] }),
         queryClient.invalidateQueries({ queryKey: ['balances'] }),
         queryClient.invalidateQueries({ queryKey: ['open-sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['gift-recipients'] }),
+        queryClient.invalidateQueries({ queryKey: ['gifts'] }),
       ]);
     },
   });
@@ -285,6 +297,9 @@ export function ScanSessionPage() {
             </Link>
           </Alert>
         </div>
+      )}
+      {session.status === 'COMMITTED' && session.kind === 'GIFT' && (
+        <GiftDone sessionId={sessionId} />
       )}
       {session.status === 'COMMITTED' && session.kind === 'RECEIVE' && session.received && (
         <CorrectReceipt session={session} />
@@ -358,6 +373,16 @@ export function ScanSessionPage() {
       {open && (session.kind === 'RECEIVE' || session.kind === 'SALE') && (
         <TermsCard session={session} terms={terms} onChange={setTerms} />
       )}
+      {open && session.kind === 'GIFT' && (
+        <GiftCard
+          session={session}
+          draft={gift}
+          onChange={setGift}
+          costOf={(id) =>
+            sourceBalances?.find((r) => r.variant.id === id)?.balance.averageCostBaseAmount
+          }
+        />
+      )}
 
       {open && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -381,10 +406,11 @@ export function ScanSessionPage() {
                 savingLines > 0 ||
                 session.totalQuantity === 0 ||
                 overScanned.length > 0 ||
-                !termsReady(session, terms, termsCurrency)
+                !termsReady(session, terms, termsCurrency) ||
+                (session.kind === 'GIFT' && !giftReady(gift))
               }
             >
-              تأكيد وحفظ في المخزون
+              {session.kind === 'GIFT' ? 'تأكيد الهدية' : 'تأكيد وحفظ في المخزون'}
             </ConfirmButton>
           </div>
         </div>

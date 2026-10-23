@@ -12,6 +12,7 @@ type To =
   | '/stocktakes'
   | '/movements'
   | '/adjustments'
+  | '/gifts'
   | '/reports'
   | '/finance'
   | '/finance/entries'
@@ -61,6 +62,7 @@ const NAV: { section: Section; group: string | null; items: NavItem[] }[] = [
         label: 'طلبات التعديل',
         anyOf: ['inventory.adjust', 'inventory.adjust.approve'],
       },
+      { to: '/gifts', label: 'الهدايا', anyOf: ['admin.gifts', 'accounting.view'] },
       { to: '/reports', label: 'تقرير المخزون', anyOf: ['inventory.view'] },
     ],
   },

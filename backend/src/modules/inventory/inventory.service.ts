@@ -380,7 +380,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     },
 
     /**
-     * «تراجع» (owner only): undoes a manual adjustment or damage write-off. The same type with the
+     * «تراجع» (owner only): undoes a manual adjustment, damage write-off or gift. The same type with the
      * opposite quantity and exactly the opposite value, so stock and the books return to what
      * they were. Refused once the pieces it would take back were sold or moved.
      */
@@ -397,12 +397,10 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
         if (!original) throw new NotFoundError('movement', id);
         if (original.reversesId) throw new MovementNotUndoableError(id, 'IS_UNDO');
         if (original.reversedBy) throw new MovementNotUndoableError(id, 'ALREADY_UNDONE');
-        if (
-          original.referenceType !== 'MANUAL' ||
-          (original.type !== 'ADJUSTMENT' && original.type !== 'DAMAGE')
-        ) {
-          throw new MovementNotUndoableError(id, 'KIND');
-        }
+        const manual =
+          original.referenceType === 'MANUAL' &&
+          (original.type === 'ADJUSTMENT' || original.type === 'DAMAGE');
+        if (!manual && original.type !== 'GIFT') throw new MovementNotUndoableError(id, 'KIND');
         return applyMovements(
           tx,
           deps,
@@ -598,6 +596,23 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
         take: limit,
       });
       return rows.map(toMovementView);
+    },
+
+    /**
+     * Trusted call for gifts (F-06): the GIFT movements of these sessions, each with whether it
+     * was undone («تراجع»), so a gift report shows what really left.
+     */
+    async giftMovements(
+      q: Queryable,
+      sessionIds: string[],
+    ): Promise<{ movement: MovementView; undone: boolean }[]> {
+      if (sessionIds.length === 0) return [];
+      const rows = await q.inventoryMovement.findMany({
+        where: { type: 'GIFT', referenceType: 'SCAN_SESSION', referenceId: { in: sessionIds } },
+        orderBy: { seq: 'asc' },
+        include: { reversedBy: { select: { id: true } } },
+      });
+      return rows.map((r) => ({ movement: toMovementView(r), undone: r.reversedBy !== null }));
     },
 
     /** Trusted call for accounting's books check: total stock value per location, USD cents. */

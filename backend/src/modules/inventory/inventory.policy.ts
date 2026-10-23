@@ -14,6 +14,7 @@ const ALL_MOVEMENTS: readonly MovementType[] = [
   'DAMAGE',
   'STOCKTAKE',
   'RECEIPT_CORRECTION',
+  'GIFT',
 ];
 
 const ALLOWED_MOVEMENTS: Record<LocationKind, ReadonlySet<MovementType>> = {

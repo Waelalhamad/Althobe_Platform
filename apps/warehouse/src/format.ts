@@ -7,6 +7,7 @@ import {
   type OptionValue,
   type PriceKey,
   type Prices,
+  type RecipientKind,
   type SessionKind,
   type Variant,
 } from './api';
@@ -79,6 +80,8 @@ const ERRORS: Record<string, string> = {
   RECEIPT_NEEDS_SOURCE: 'اختر من وين إجت البضاعة قبل التأكيد',
   RECEIPT_CORRECTION_NOT_POSSIBLE:
     'هالكمية ما عادت موجودة لترجع بتكلفتها (انباعت أو انتقلت) — صحّحها بالجرد',
+  GIFT_NEEDS_RECIPIENT: 'اكتب لمين الهدية وشو المناسبة قبل التأكيد',
+  NOT_A_GIFT: 'هالجلسة مو هدية',
   MOVEMENT_UNDO_NOT_POSSIBLE: 'ما بينفع التراجع: القطع انباعت أو انتقلت بعدها — صحّحها بالجرد',
   MOVEMENT_NOT_UNDOABLE: 'هالحركة ما بينفع التراجع عنها (أو تراجعت عنها قبل)',
   ADJUSTMENT_NOT_PENDING: 'هالطلب انقرر قبل',
@@ -119,6 +122,7 @@ export const MOVEMENT_TYPE: Record<string, string> = {
   DAMAGE: 'تالف',
   STOCKTAKE: 'فرق جرد',
   RECEIPT_CORRECTION: 'تصحيح استلام',
+  GIFT: 'هدية / إكرامية',
 };
 
 /** Why stock was adjusted by hand (F-03), and where it goes in the books. */
@@ -179,6 +183,17 @@ export const SESSION_KIND: Record<SessionKind, string> = {
   // at the POS (ADR-014).
   SALE: 'إخراج بضاعة',
   RETURN: 'مرتجع',
+  GIFT: 'هدية / إكرامية',
+};
+
+export const RECIPIENT_KIND: Record<RecipientKind, string> = {
+  SHIPPING: 'شركة شحن',
+  CUSTOMER: 'زبون',
+  WHOLESALE: 'تاجر جملة',
+  INFLUENCER: 'مؤثر / إعلان',
+  OFFICIAL: 'جهة رسمية',
+  EMPLOYEE: 'موظف',
+  OTHER: 'غير ذلك',
 };
 
 const numberFormat = new Intl.NumberFormat('ar-SY-u-nu-latn');

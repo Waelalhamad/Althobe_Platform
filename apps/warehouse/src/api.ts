@@ -2,7 +2,35 @@
 // generated from the OpenAPI document. Money and sequence numbers arrive as strings.
 
 export type LocationKind = 'WAREHOUSE' | 'STORE';
-export type SessionKind = 'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN';
+export type SessionKind =
+  'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN' | 'GIFT';
+
+/** Who receives gifts (F-06). */
+export type RecipientKind =
+  'SHIPPING' | 'CUSTOMER' | 'WHOLESALE' | 'INFLUENCER' | 'OFFICIAL' | 'EMPLOYEE' | 'OTHER';
+
+export interface GiftRecipient {
+  id: string;
+  name: string;
+  kind: RecipientKind;
+  phone: string | null;
+}
+
+export interface Gift {
+  sessionId: string;
+  date: string;
+  givenAt: string;
+  locationId: string;
+  recipient: GiftRecipient;
+  occasion: string;
+  reference: string | null;
+  hasPhoto: boolean;
+  createdBy: string;
+  lines: { variant: Variant | null; quantity: number; valueBaseAmount: string }[];
+  quantity: number;
+  valueBaseAmount: string;
+  undone: boolean;
+}
 export type Currency = 'SYP' | 'USD' | 'LYD' | 'TRY';
 
 /** ADR-012: retail in SYP (Syria) and LYD (Libya), wholesale in USD. One currency per list. */
@@ -886,6 +914,26 @@ export const api = {
       paid?: { boxId: string; amount: string };
     },
   ) => post<{ sessionId: string; movements: Movement[] }>(`/parties/receipts/${id}`, terms),
+  /** A gift confirmed with who received it and why (F-06). */
+  confirmGift: async (
+    id: string,
+    body: {
+      recipientId?: string;
+      recipient?: { name: string; kind: RecipientKind; phone?: string };
+      occasion: string;
+      reference?: string;
+    },
+  ) => post<Gift>(`/gifts/${id}`, body),
+  giftPhoto: async (id: string, image: string) => post<Gift>(`/gifts/${id}/photo`, { image }),
+  gift: async (id: string) => get<Gift>(`/gifts/${id}`),
+  gifts: async (params: {
+    from?: string;
+    to?: string;
+    recipientId?: string;
+    kind?: string;
+    locationId?: string;
+  }) => get<Gift[]>(`/gifts?${query(params)}`),
+  giftRecipients: async () => get<GiftRecipient[]>('/gift-recipients'),
   /** Goods out confirmed as a wholesale sale on the customer's account. */
   commitGoodsOut: async (id: string, terms: { partyId: string; amount: string; note?: string }) =>
     post<{ sessionId: string; movements: Movement[] }>(`/parties/goods-out/${id}`, terms),

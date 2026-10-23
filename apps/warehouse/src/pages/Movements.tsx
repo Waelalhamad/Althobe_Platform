@@ -181,8 +181,8 @@ function UndoButton({ row }: { row: HistoryRow }) {
     },
   });
   const undoable =
-    m.referenceType === 'MANUAL' &&
-    (m.type === 'ADJUSTMENT' || m.type === 'DAMAGE') &&
+    ((m.referenceType === 'MANUAL' && (m.type === 'ADJUSTMENT' || m.type === 'DAMAGE')) ||
+      m.type === 'GIFT') &&
     !m.reversesId &&
     !row.undoneById;
   if (!undoable) return null;

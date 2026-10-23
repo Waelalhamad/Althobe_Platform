@@ -36,12 +36,11 @@ describe('manual adjustments (developer report F-03)', () => {
     expect((await ask(-1, 'SAMPLE')).status).toBe('APPLIED');
     expect((await ask(-1, 'INTERNAL_USE')).status).toBe('APPLIED');
     expect((await ask(-1, 'DAMAGE')).status).toBe('APPLIED');
-    expect((await ask(-1, 'GIFT', 'شركة الشحن')).status).toBe('APPLIED');
     expect((await ask(-1, 'COUNT_DIFFERENCE')).status).toBe('APPLIED');
-    expect(await quantity()).toBe(15);
+    expect(await quantity()).toBe(16);
     expect(
-      await Promise.all(['5210', '5299', '5102', '5212', '5103'].map(async (c) => account(c))),
-    ).toEqual([1_000n, 1_000n, 1_000n, 1_000n, 1_000n]);
+      await Promise.all(['5210', '5299', '5102', '5103'].map(async (c) => account(c))),
+    ).toEqual([1_000n, 1_000n, 1_000n, 1_000n]);
   });
 
   it('an increase, or a bigger take-away, waits for a second person and changes nothing until then', async () => {
@@ -67,7 +66,7 @@ describe('manual adjustments (developer report F-03)', () => {
     expect(listed.map((r) => r.status).sort()).toEqual(['APPROVED', 'REJECTED']);
   });
 
-  it('refuses a reason outside the list, an increase that is not a count, and a gift with no name', async () => {
+  it('refuses a reason outside the list, an increase that is not a count, and a gift (F-06 has its own)', async () => {
     for (const bad of [
       { delta: -1, reasonCode: 'خطأ إدخال' },
       { delta: 1, reasonCode: 'DAMAGE' },

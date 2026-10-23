@@ -195,10 +195,14 @@ All **require `Idempotency-Key`**.
 | `POST` | `/inventory/adjustments` — `{ variantId, locationId, delta, reasonCode: COUNT_DIFFERENCE\|DAMAGE\|SAMPLE\|INTERNAL_USE\|GIFT, note? }` → `{ status: APPLIED\|PENDING, requestId }` | `inventory.adjust` |
 | `GET` | `/inventory/adjustment-requests?status=` | `inventory.view` |
 | `POST` | `/inventory/adjustment-requests/:id/approve` · `/reject` — `{ note? }` (not by the asker) | `inventory.adjust.approve` |
+| `GET` | `/gift-recipients` · `/gifts?from=&to=&recipientId=&kind=&locationId=` · `/gifts/:sessionId` (ADR-019) | `admin.gifts` or `accounting.view` |
+| `POST` | `/gifts/:sessionId` — `{ recipientId \| recipient: { name, kind, phone? }, occasion, reference? }` confirms a `GIFT` scan session | `admin.gifts` |
+| `POST` | `/gifts/:sessionId/photo` — `{ image }` (base64) · `GET` the same path redirects to the photo | `admin.gifts` |
 | `POST` | `/inventory/movements/:id/undo` — `{ reason }` (ADR-018: a `MANUAL` adjustment or damage, exactly the other way) | `admin.undo` |
 
 Errors: `ADJUSTMENT_NOT_PENDING` (409), `RECEIPT_CORRECTION_NOT_POSSIBLE`, `SELF_APPROVAL`,
-`MOVEMENT_UNDO_NOT_POSSIBLE`, `MOVEMENT_NOT_UNDOABLE` (422).
+`MOVEMENT_UNDO_NOT_POSSIBLE`, `MOVEMENT_NOT_UNDOABLE`, `GIFT_NEEDS_RECIPIENT`, `NOT_A_GIFT`
+(422).
 
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated
 client (the app uses a hand-typed client in `apps/warehouse/src/api.ts`).

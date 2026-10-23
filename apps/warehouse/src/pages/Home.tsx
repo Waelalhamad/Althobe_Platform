@@ -473,6 +473,17 @@ function StartActions({
         {SESSION_KIND.DAMAGE}
       </Button>
     ),
+    // Only the owner gives gifts (F-06); who received it is asked before confirming.
+    can(user, 'admin.gifts') && (
+      <Button
+        key="gift"
+        variant="secondary"
+        disabled={busy}
+        onClick={() => onStart({ ...base, kind: 'GIFT' })}
+      >
+        🎁 {SESSION_KIND.GIFT}
+      </Button>
+    ),
   ].filter(Boolean);
 
   return (

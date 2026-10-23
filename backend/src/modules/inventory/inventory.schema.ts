@@ -65,8 +65,10 @@ export const adjustStockSchema = z
         message: 'Only a count difference adds stock',
       });
     }
-    if (a.reasonCode === 'GIFT' && !a.note?.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['note'], message: 'A gift says who received it' });
+    // Gifts have their own flow now (F-06), with who received it and why. GIFT stays a reason
+    // only for the adjustments made before it.
+    if (a.reasonCode === 'GIFT') {
+      ctx.addIssue({ code: 'custom', path: ['reasonCode'], message: 'A gift is given as a gift' });
     }
   });
 
