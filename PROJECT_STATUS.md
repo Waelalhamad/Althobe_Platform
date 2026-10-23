@@ -27,6 +27,14 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Libya as a branch (2026-10-23, ADR-020; report F-04):** WH2 is «مستودع ليبيا» (branch LY), and
+every stock posting there is Libya's.
+- **Sending:** a transfer to the other branch is a shipment. It leaves for «بالطريق» at once.
+- **Receiving:** the other end scans what arrived on «الشحنات» ← «استلام الشحنة». What arrived
+  enters at its value, and what did not is «فقد بالشحن» (5104).
+- **People kept to a branch:** a user can be kept to one branch (Users ← الفرع), and then sees and
+  moves only its stock.
+
 **Gifts (2026-10-23, ADR-019; report F-06):** «🎁 هدية / إكرامية» at each location (owner only):
 scan the pieces, and say who received them (kept in a list, with their kind) and why. A shipment
 number and a delivery receipt photo are optional. They leave stock to 5212, never to damage.

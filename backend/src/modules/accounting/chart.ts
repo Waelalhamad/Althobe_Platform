@@ -101,6 +101,8 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '5101', nameAr: 'تكلفة البضاعة المباعة', role: 'COGS' },
   { code: '5102', nameAr: 'بضاعة تالفة', role: 'DAMAGE' },
   { code: '5103', nameAr: 'فروقات الجرد والتعديلات', role: 'STOCK_ADJUSTMENT' },
+  // F-04: pieces sent between branches that never arrived.
+  { code: '5104', nameAr: 'فقد بالشحن', role: 'SHIPPING_LOSS' },
   { code: '52', nameAr: 'المصاريف التشغيلية', heading: true },
   { code: '5201', nameAr: 'الإيجار' },
   { code: '5202', nameAr: 'الرواتب والأجور', role: 'SALARIES_EXPENSE' },
@@ -202,8 +204,8 @@ export async function ensureLocationAccounts(tx: Tx, locations: LocationView[]):
         parentId: parent.id,
         kind: 'INVENTORY',
         locationId: location.id,
-        // Every location is in Syria today; the owner changes it on the account if not.
-        branch: 'SY',
+        // The location's branch (F-04); none for the road between branches.
+        branch: location.branch,
       },
     });
     created += 1;

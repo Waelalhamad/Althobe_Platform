@@ -17,6 +17,8 @@ export interface InventoryAccounts {
   marketing: string;
   misc: string;
   gifts: string;
+  /** F-04: sent between branches and never arrived. */
+  shippingLoss: string;
 }
 
 const MEMO: Record<MovementView['type'], string> = {
@@ -31,6 +33,7 @@ const MEMO: Record<MovementView['type'], string> = {
   DAMAGE: 'تالف',
   STOCKTAKE: 'فرق جرد',
   GIFT: 'هدية / إكرامية',
+  SHIPPING_LOSS: 'فقد بالشحن',
 };
 
 /**
@@ -102,6 +105,8 @@ function counterFor(m: MovementView, a: InventoryAccounts): string {
       return a.damage;
     case 'GIFT':
       return a.gifts;
+    case 'SHIPPING_LOSS':
+      return a.shippingLoss;
     case 'ADJUSTMENT':
       return adjustmentAccount(m.reasonCode, a);
     case 'STOCKTAKE':

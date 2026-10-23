@@ -57,7 +57,9 @@ export type SystemRole =
   // Where a manual adjustment goes by its reason (developer report F-03).
   | 'MARKETING_EXPENSE'
   | 'MISC_EXPENSE'
-  | 'GIFTS_EXPENSE';
+  | 'GIFTS_EXPENSE'
+  // Sent between branches and never arrived (F-04).
+  | 'SHIPPING_LOSS';
 
 /** A line about to be posted. amountBase is USD cents, debit positive. */
 export interface DraftLine {

@@ -80,7 +80,12 @@ export const ALL_PERMISSIONS: readonly Permission[] = Object.values(PERMISSIONS)
 export interface ActorContext {
   userId: string;
   permissions: ReadonlySet<Permission>;
+  /** F-04: kept to one branch's stock (a Libya warehouse keeper); absent or null: every branch. */
+  branch?: BranchCode | null;
 }
+
+/** Syria and Libya (F-04). Accounting's Branch is the same two codes. */
+export type BranchCode = 'SY' | 'LY';
 
 // Stock writes additionally carry an idempotency key, so a retried request never acts twice.
 export interface WriteContext extends ActorContext {

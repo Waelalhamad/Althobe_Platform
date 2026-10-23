@@ -2,9 +2,15 @@ import type { InventoryMovement, Prisma } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
 import type { Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
+import type { BranchCode } from '../../shared/permissions.js';
 import { divRoundHalfUp, toBaseAmount, type Currency } from '../../shared/money.js';
 import type { CatalogueService } from '../catalogue/catalogue.service.js';
-import type { LocationsService, LocationView } from '../locations/locations.service.js';
+import {
+  inBranch,
+  LocationOutOfBranchError,
+  type LocationsService,
+  type LocationView,
+} from '../locations/locations.service.js';
 import {
   InsufficientAvailableStockError,
   InsufficientStockError,
@@ -13,6 +19,7 @@ import {
   VariantInactiveError,
   ReceiptCorrectionNotPossibleError,
   MovementUndoNotPossibleError,
+  ShipmentRequiredError,
 } from './inventory.errors.js';
 import { isMovementAllowed } from './inventory.policy.js';
 import * as repo from './inventory.repository.js';
@@ -32,6 +39,8 @@ export interface LedgerDeps {
 export interface LedgerContext {
   userId: string;
   idempotencyKey?: string | null;
+  /** F-04: a user kept to a branch moves only its stock. */
+  branch?: BranchCode | null;
 }
 
 export interface LedgerAudit {
@@ -61,7 +70,7 @@ export async function applyMovements(
   if (entries.length === 0) return { movements: [], balances: [] };
 
   const keys = repo.uniqueSortedKeys(entries);
-  await assertReferencesUsable(tx, deps, entries);
+  await assertReferencesUsable(tx, deps, entries, ctx);
 
   await repo.ensureBalances(tx, keys);
   const state = await repo.lockBalances(tx, keys);
@@ -154,7 +163,12 @@ export async function changeReserved(tx: Tx, key: BalanceKey, delta: number): Pr
   return toBalanceView(balance);
 }
 
-async function assertReferencesUsable(tx: Tx, deps: LedgerDeps, entries: MovementEntry[]) {
+async function assertReferencesUsable(
+  tx: Tx,
+  deps: LedgerDeps,
+  entries: MovementEntry[],
+  ctx: LedgerContext,
+) {
   const variantIds = [...new Set(entries.map((e) => e.variantId))];
   const locationIds = [...new Set(entries.map((e) => e.locationId))];
   // Sequential on purpose: an interactive transaction is one connection; Prisma does not support
@@ -174,10 +188,23 @@ async function assertReferencesUsable(tx: Tx, deps: LedgerDeps, entries: Movemen
     const location = locationById.get(id);
     if (!location) throw new NotFoundError('location', id);
     if (!location.isActive) throw new LocationInactiveError(id);
+    if (!inBranch({ userId: ctx.userId, permissions: new Set(), branch: ctx.branch }, location)) {
+      throw new LocationOutOfBranchError(id, location.branch ?? '');
+    }
   }
+  // Two warehouses in different branches never swap stock directly: it goes on the road.
+  entries.forEach((entry) => {
+    if (entry.pairedWith === undefined) return;
+    const from = locationById.get(entries[entry.pairedWith]!.locationId)!;
+    const to = locationById.get(entry.locationId)!;
+    if (from.branch && to.branch && from.branch !== to.branch) {
+      throw new ShipmentRequiredError({ fromLocationId: from.id, toLocationId: to.id });
+    }
+  });
   for (const entry of entries) {
     const location = locationById.get(entry.locationId)!;
-    if (!isMovementAllowed(location.kind, entry.type)) {
+    const road = location.kind === 'TRANSIT';
+    if (!isMovementAllowed(location.kind, entry.type) || road !== Boolean(entry.viaShipment)) {
       throw new MovementNotAllowedAtLocationError({
         locationId: location.id,
         kind: location.kind,

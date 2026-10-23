@@ -80,6 +80,10 @@ const ERRORS: Record<string, string> = {
   RECEIPT_NEEDS_SOURCE: 'اختر من وين إجت البضاعة قبل التأكيد',
   RECEIPT_CORRECTION_NOT_POSSIBLE:
     'هالكمية ما عادت موجودة لترجع بتكلفتها (انباعت أو انتقلت) — صحّحها بالجرد',
+  LOCATION_OUT_OF_BRANCH: 'هالموقع بفرع تاني — ما بتقدر تشتغل عليه',
+  SHIPMENT_REQUIRED: 'البضاعة لفرع تاني بتروح «شحنة»: من «نقل بضاعة» واختار مستودع الفرع التاني',
+  SHIPMENT_EXCESS: 'في قطع ما انبعتت بهالشحنة، أو أكتر من يلي انبعت — شيلها قبل التأكيد',
+  SHIPMENT_NOT_IN_TRANSIT: 'هالشحنة انستلمت قبل',
   GIFT_NEEDS_RECIPIENT: 'اكتب لمين الهدية وشو المناسبة قبل التأكيد',
   NOT_A_GIFT: 'هالجلسة مو هدية',
   MOVEMENT_UNDO_NOT_POSSIBLE: 'ما بينفع التراجع: القطع انباعت أو انتقلت بعدها — صحّحها بالجرد',
@@ -123,6 +127,7 @@ export const MOVEMENT_TYPE: Record<string, string> = {
   STOCKTAKE: 'فرق جرد',
   RECEIPT_CORRECTION: 'تصحيح استلام',
   GIFT: 'هدية / إكرامية',
+  SHIPPING_LOSS: 'فقد بالشحن',
 };
 
 /** Why stock was adjusted by hand (F-03), and where it goes in the books. */
@@ -172,7 +177,11 @@ export const ROLE: Record<string, string> = {
   accountant: 'محاسب',
 };
 
-export const LOCATION_KIND: Record<LocationKind, string> = { WAREHOUSE: 'مخزن', STORE: 'متجر' };
+export const LOCATION_KIND: Record<LocationKind, string> = {
+  WAREHOUSE: 'مخزن',
+  STORE: 'متجر',
+  TRANSIT: 'بالطريق',
+};
 
 export const SESSION_KIND: Record<SessionKind, string> = {
   OPENING: 'جرد افتتاحي',
@@ -184,6 +193,7 @@ export const SESSION_KIND: Record<SessionKind, string> = {
   SALE: 'إخراج بضاعة',
   RETURN: 'مرتجع',
   GIFT: 'هدية / إكرامية',
+  SHIPMENT_IN: 'استلام شحنة',
 };
 
 export const RECIPIENT_KIND: Record<RecipientKind, string> = {

@@ -22,8 +22,11 @@ import {
   OpeningAlreadyRecordedError,
   ReceiptNeedsSourceError,
   ScanSessionNotOpenError,
+  ShipmentExcessError,
+  ShipmentStateError,
   VariantInactiveError,
 } from './inventory.errors.js';
+import { inBranch, LocationOutOfBranchError } from '../locations/locations.service.js';
 import {
   applyMovements,
   redactMovement,
@@ -60,6 +63,7 @@ const PERMISSION_BY_KIND: Record<ScanSessionKind, Permission> = {
   SALE: PERMISSIONS.inventory.issue,
   RETURN: PERMISSIONS.inventory.return,
   GIFT: PERMISSIONS.admin.gifts,
+  SHIPMENT_IN: PERMISSIONS.inventory.receive,
 };
 
 const COSTED_KINDS: ReadonlySet<ScanSessionKind> = new Set(['OPENING', 'RECEIVE']);
@@ -85,6 +89,15 @@ export interface ScanSessionView {
   totalQuantity: number;
   /** A confirmed receipt only: what it holds now, after its corrections. */
   received?: { variant: VariantView; quantity: number }[];
+  /** F-04: the shipment this session sent or receives; what was sent, for the receiving end. */
+  shipment?: {
+    id: string;
+    number: number;
+    status: string;
+    fromLocationId: string;
+    toLocationId: string;
+    sent: { variant: VariantView; quantity: number; received: number | null }[];
+  };
 }
 
 export interface ScanResult {
@@ -139,6 +152,7 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
   ): Promise<SessionRow> {
     const session = await lockSession(tx, sessionId, 'share');
     assertPermission(ctx, PERMISSION_BY_KIND[session.kind]);
+    await deps.locations.assertInBranch(tx, ctx, session.location_id);
     if (session.status !== 'OPEN') throw new ScanSessionNotOpenError(sessionId, session.status);
     return session;
   }
@@ -184,6 +198,7 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
   async function commitInTx(tx: Tx, sessionId: string, ctx: ActorContext) {
     const session = await lockSession(tx, sessionId, 'update');
     assertPermission(ctx, PERMISSION_BY_KIND[session.kind]);
+    await deps.locations.assertInBranch(tx, ctx, session.location_id);
     const done = async (alreadyCommitted: boolean) => ({
       alreadyCommitted,
       kind: session.kind,
@@ -202,7 +217,10 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         orderBy: { createdAt: 'asc' },
       })
     ).filter((line) => line.quantity > 0);
-    if (lines.length === 0) throw new EmptyScanSessionError(session.id);
+    // A shipment may arrive with nothing in it: all of it is then lost on the road.
+    if (lines.length === 0 && session.kind !== 'SHIPMENT_IN') {
+      throw new EmptyScanSessionError(session.id);
+    }
 
     // Opening stock needs its cost too (ADR-013): stock that enters at zero would make the
     // books show it as free and every sale of it as pure profit.
@@ -219,16 +237,151 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
       );
     }
 
-    await applyMovements(tx, deps, entriesFor(session, lines), ctx, {
-      action: 'inventory.scan_session.commit',
-      entityType: 'scan_session',
-      entityId: session.id,
-    });
+    if (session.kind === 'SHIPMENT_IN') {
+      await receiveShipment(tx, session, lines, ctx);
+    } else {
+      const shipTo = await shipmentDestination(tx, session);
+      const transit = shipTo ? await deps.locations.transitLocation(tx) : null;
+      await applyMovements(tx, deps, entriesFor(session, lines, transit?.id), ctx, {
+        action: 'inventory.scan_session.commit',
+        entityType: 'scan_session',
+        entityId: session.id,
+      });
+      if (shipTo) await recordShipment(tx, session, lines, ctx);
+    }
     await tx.scanSession.update({
       where: { id: session.id },
       data: { status: 'COMMITTED', committedById: ctx.userId, committedAt: new Date() },
     });
     return done(false);
+  }
+
+  /**
+   * F-04: a transfer to a location in another branch is a shipment. Its pieces leave for the
+   * road between branches, and enter the destination only when it confirms what arrived.
+   */
+  async function shipmentDestination(tx: Tx, session: SessionRow): Promise<string | null> {
+    if (session.kind !== 'TRANSFER' || !session.to_location_id) return null;
+    const [from, to] = await Promise.all([
+      deps.locations.locationsByIds(tx, [session.location_id]),
+      deps.locations.locationsByIds(tx, [session.to_location_id]),
+    ]);
+    return from[0]?.branch !== to[0]?.branch ? session.to_location_id : null;
+  }
+
+  async function recordShipment(
+    tx: Tx,
+    session: SessionRow,
+    lines: { variantId: string; quantity: number }[],
+    ctx: ActorContext,
+  ) {
+    const shipment = await tx.shipment.create({
+      data: {
+        fromLocationId: session.location_id,
+        toLocationId: session.to_location_id!,
+        sendSessionId: session.id,
+        note: session.note,
+        sentById: ctx.userId,
+        lines: {
+          create: lines.map((l) => ({ variantId: l.variantId, sentQuantity: l.quantity })),
+        },
+      },
+    });
+    await writeAudit(tx, {
+      actorId: ctx.userId,
+      action: 'inventory.shipment.send',
+      entityType: 'shipment',
+      entityId: shipment.id,
+      after: { number: shipment.number, pieces: lines.reduce((s, l) => s + l.quantity, 0) },
+    });
+  }
+
+  /**
+   * What arrived leaves the road for the destination, at the value it travelled at; what was sent
+   * and did not arrive is lost on the road. More than was sent, or something not sent, is
+   * refused: it belongs to another shipment, or to a count.
+   */
+  async function receiveShipment(
+    tx: Tx,
+    session: SessionRow,
+    lines: { variantId: string; quantity: number }[],
+    ctx: ActorContext,
+  ) {
+    const found = await tx.shipment.findUnique({ where: { receiveSessionId: session.id } });
+    if (!found) throw new NotFoundError('shipment', session.id);
+    await tx.$queryRaw`SELECT id FROM shipments WHERE id = ${found.id}::uuid FOR UPDATE`;
+    const shipment = await tx.shipment.findUniqueOrThrow({
+      where: { id: found.id },
+      include: { lines: true },
+    });
+    if (shipment.status !== 'IN_TRANSIT')
+      throw new ShipmentStateError(shipment.id, shipment.status);
+
+    const arrived = new Map(lines.map((l) => [l.variantId, l.quantity]));
+    const excess = lines
+      .filter((l) => {
+        const sent = shipment.lines.find((s) => s.variantId === l.variantId);
+        return !sent || l.quantity > sent.sentQuantity;
+      })
+      .map((l) => l.variantId);
+    if (excess.length) throw new ShipmentExcessError(shipment.id, excess);
+
+    const transit = await deps.locations.transitLocation(tx);
+    const road = {
+      referenceType: 'SCAN_SESSION' as const,
+      referenceId: session.id,
+      transferId: shipment.id,
+    };
+    const entries: MovementEntry[] = [];
+    for (const line of shipment.lines) {
+      const received = arrived.get(line.variantId) ?? 0;
+      if (received > 0) {
+        entries.push(
+          {
+            ...road,
+            variantId: line.variantId,
+            locationId: transit.id,
+            type: 'TRANSFER_OUT',
+            quantity: -received,
+            viaShipment: true,
+          },
+          {
+            ...road,
+            variantId: line.variantId,
+            locationId: session.location_id,
+            type: 'TRANSFER_IN',
+            quantity: received,
+            pairedWith: entries.length,
+          },
+        );
+      }
+      if (received < line.sentQuantity) {
+        entries.push({
+          ...road,
+          variantId: line.variantId,
+          locationId: transit.id,
+          type: 'SHIPPING_LOSS',
+          quantity: received - line.sentQuantity,
+          reason: `شحنة رقم ${shipment.number}`,
+          viaShipment: true,
+        });
+      }
+    }
+    await applyMovements(tx, deps, entries, ctx, {
+      action: 'inventory.shipment.receive',
+      entityType: 'shipment',
+      entityId: shipment.id,
+    });
+    for (const line of shipment.lines) {
+      await tx.shipmentLine.update({
+        where: { shipmentId_variantId: { shipmentId: shipment.id, variantId: line.variantId } },
+        data: { receivedQuantity: arrived.get(line.variantId) ?? 0 },
+      });
+    }
+    await tx.shipment.update({
+      where: { id: shipment.id },
+      data: { status: 'RECEIVED', receivedById: ctx.userId, receivedAt: new Date() },
+    });
   }
 
   return {
@@ -246,6 +399,18 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         }
         // Fail at open, not after twenty minutes of scanning: e.g. the store cannot receive.
         const source = locations.find((l) => l.id === data.locationId)!;
+        // The road between branches is reached only by a shipment (F-04).
+        const road = locations.find((l) => l.kind === 'TRANSIT');
+        if (road) {
+          throw new MovementNotAllowedAtLocationError({
+            locationId: road.id,
+            kind: road.kind,
+            movement: entryTypeOf(data.kind),
+          });
+        }
+        if (!inBranch(ctx, source)) {
+          throw new LocationOutOfBranchError(source.id, source.branch ?? '');
+        }
         const firstMovement = entryTypeOf(data.kind);
         if (!isMovementAllowed(source.kind, firstMovement)) {
           throw new MovementNotAllowedAtLocationError({
@@ -384,8 +549,16 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
       ctx: ActorContext,
     ): Promise<(Omit<ScanSessionView, 'lines'> & { lineCount: number })[]> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
+      const mine = await deps.locations.branchLocationIds(db, ctx);
       const rows = await db.scanSession.findMany({
-        where: { status: 'OPEN', ...(input.locationId ? { locationId: input.locationId } : {}) },
+        where: {
+          status: 'OPEN',
+          ...(input.locationId ? { locationId: input.locationId } : {}),
+          ...(mine ? { locationId: { in: mine } } : {}),
+          ...(input.locationId && mine && !mine.includes(input.locationId)
+            ? { id: { in: [] } }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         take: 50,
         include: { lines: { select: { quantity: true } } },
@@ -405,11 +578,18 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         include: { lines: { orderBy: { createdAt: 'asc' } } },
       });
       if (!session) throw new NotFoundError('scan_session', data.sessionId);
+      await deps.locations.assertInBranch(db, ctx, session.locationId);
 
-      const variants = await deps.catalogue.variantsByIds(
-        db,
-        session.lines.map((l) => l.variantId),
-      );
+      const shipmentRow = await db.shipment.findFirst({
+        where: { OR: [{ sendSessionId: session.id }, { receiveSessionId: session.id }] },
+        include: { lines: true },
+      });
+      const variants = await deps.catalogue.variantsByIds(db, [
+        ...new Set([
+          ...session.lines.map((l) => l.variantId),
+          ...(shipmentRow?.lines.map((l) => l.variantId) ?? []),
+        ]),
+      ]);
       const variantById = new Map(variants.map((v) => [v.id, v]));
       const lines = session.lines.flatMap((line) => {
         const variant = variantById.get(line.variantId);
@@ -434,11 +614,27 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
           return variant ? [{ variant, quantity }] : [];
         });
       }
+      const shipment = shipmentRow
+        ? {
+            id: shipmentRow.id,
+            number: shipmentRow.number,
+            status: shipmentRow.status,
+            fromLocationId: shipmentRow.fromLocationId,
+            toLocationId: shipmentRow.toLocationId,
+            sent: shipmentRow.lines.flatMap((l) => {
+              const variant = variantById.get(l.variantId);
+              return variant
+                ? [{ variant, quantity: l.sentQuantity, received: l.receivedQuantity }]
+                : [];
+            }),
+          }
+        : undefined;
       return {
         ...toSessionHeader(session),
         lines,
         totalQuantity: lines.reduce((sum, l) => sum + l.quantity, 0),
         ...(received ? { received } : {}),
+        ...(shipment ? { shipment } : {}),
       };
     },
 
@@ -537,6 +733,7 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
       await inTransaction(db, async (tx) => {
         const session = await lockSession(tx, data.sessionId, 'update');
         assertPermission(ctx, PERMISSION_BY_KIND[session.kind]);
+        await deps.locations.assertInBranch(tx, ctx, session.location_id);
         if (session.status !== 'OPEN')
           throw new ScanSessionNotOpenError(session.id, session.status);
         await tx.scanSession.update({
@@ -572,6 +769,8 @@ function entryTypeOf(kind: ScanSessionKind) {
       return 'RETURN' as const;
     case 'GIFT':
       return 'GIFT' as const;
+    case 'SHIPMENT_IN':
+      return 'TRANSFER_IN' as const;
   }
 }
 
@@ -579,6 +778,7 @@ function referenceTypeOf(kind: ScanSessionKind) {
   return kind === 'OPENING' ? ('OPENING' as const) : ('SCAN_SESSION' as const);
 }
 
+/** `transitId`: a shipment to another branch goes on the road instead (F-04). */
 function entriesFor(
   session: SessionRow,
   lines: {
@@ -588,6 +788,7 @@ function entriesFor(
     unitCostCurrency: string | null;
     rateToBase: { toString(): string } | null;
   }[],
+  transitId?: string,
 ): MovementEntry[] {
   const reference = { referenceType: referenceTypeOf(session.kind), referenceId: session.id };
 
@@ -604,11 +805,12 @@ function entriesFor(
       },
       {
         variantId: line.variantId,
-        locationId: session.to_location_id!,
+        locationId: transitId ?? session.to_location_id!,
         type: 'TRANSFER_IN' as const,
         quantity: line.quantity,
         transferId: session.id,
         pairedWith: i * 2,
+        ...(transitId ? { viaShipment: true } : {}),
         ...reference,
       },
     ]);

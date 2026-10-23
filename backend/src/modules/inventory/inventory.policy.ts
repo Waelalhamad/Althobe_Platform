@@ -23,6 +23,9 @@ const ALLOWED_MOVEMENTS: Record<LocationKind, ReadonlySet<MovementType>> = {
   STORE: new Set(
     ALL_MOVEMENTS.filter((type) => type !== 'PURCHASE' && type !== 'RECEIPT_CORRECTION'),
   ),
+  // The road between branches (F-04): shipments pass through it, and what never arrives is
+  // lost from it. Nothing else happens there.
+  TRANSIT: new Set(['TRANSFER_OUT', 'TRANSFER_IN', 'SHIPPING_LOSS']),
 };
 
 const RESERVATIONS_ALLOWED: ReadonlySet<LocationKind> = new Set(['WAREHOUSE']);

@@ -19,6 +19,7 @@ const accounts: InventoryAccounts = {
   marketing: 'marketing',
   misc: 'misc',
   gifts: 'gifts',
+  shippingLoss: 'shipping-loss',
 };
 
 function movement(overrides: Partial<MovementView>): MovementView {

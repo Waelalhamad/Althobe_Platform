@@ -118,12 +118,20 @@ export async function listBalances(
 
 export async function listMovements(
   q: Queryable,
-  args: { variantId?: string; locationId?: string; beforeSeq?: bigint; limit: number },
+  args: {
+    variantId?: string;
+    locationId?: string;
+    /** F-04: kept to these locations (a user kept to a branch). */
+    locationIds?: string[] | null;
+    beforeSeq?: bigint;
+    limit: number;
+  },
 ) {
   return q.inventoryMovement.findMany({
     where: {
       ...(args.variantId ? { variantId: args.variantId } : {}),
       ...(args.locationId ? { locationId: args.locationId } : {}),
+      ...(args.locationIds ? { locationId: { in: args.locationIds } } : {}),
       ...(args.beforeSeq !== undefined ? { seq: { lt: args.beforeSeq } } : {}),
     },
     orderBy: { seq: 'desc' },

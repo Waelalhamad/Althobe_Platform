@@ -1,9 +1,9 @@
 // Hand-typed client for the Phase 2 endpoints (docs/api.md). Phase 3 replaces this with a client
 // generated from the OpenAPI document. Money and sequence numbers arrive as strings.
 
-export type LocationKind = 'WAREHOUSE' | 'STORE';
+export type LocationKind = 'WAREHOUSE' | 'STORE' | 'TRANSIT';
 export type SessionKind =
-  'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN' | 'GIFT';
+  'OPENING' | 'RECEIVE' | 'TRANSFER' | 'DAMAGE' | 'SALE' | 'RETURN' | 'GIFT' | 'SHIPMENT_IN';
 
 /** Who receives gifts (F-06). */
 export type RecipientKind =
@@ -46,6 +46,8 @@ export interface User {
   nameEn: string | null;
   roles: string[];
   permissions: string[];
+  /** F-04: kept to one branch's stock; null: every branch. */
+  branch: Branch | null;
 }
 
 export interface Location {
@@ -54,7 +56,31 @@ export interface Location {
   nameAr: string;
   nameEn: string | null;
   kind: LocationKind;
+  branch: Branch | null;
   isActive: boolean;
+  /** Where this user works (F-04); the other branch's are destinations of a shipment. */
+  mine: boolean;
+}
+
+/** Goods sent between branches (F-04). */
+export interface Shipment {
+  id: string;
+  number: number;
+  status: 'IN_TRANSIT' | 'RECEIVED';
+  fromLocationId: string;
+  toLocationId: string;
+  sendSessionId: string;
+  receiveSessionId: string | null;
+  note: string | null;
+  sentBy: string;
+  sentAt: string;
+  receivedBy: string | null;
+  receivedAt: string | null;
+  lines: { variant: Variant | null; sent: number; received: number | null }[];
+  sent: number;
+  received: number | null;
+  lost: number | null;
+  valueBaseAmount: string | null;
 }
 
 /** ثوب، طقم … in a tree up to three levels (ADR-011). */
@@ -473,6 +499,15 @@ export interface ScanSession extends ScanSessionHeader {
   lines: ScanLine[];
   /** A confirmed receipt: each variant as it stands after its corrections (F-02). */
   received?: { variant: Variant; quantity: number }[];
+  /** F-04: the shipment this session sent or receives. */
+  shipment?: {
+    id: string;
+    number: number;
+    status: 'IN_TRANSIT' | 'RECEIVED';
+    fromLocationId: string;
+    toLocationId: string;
+    sent: { variant: Variant; quantity: number; received: number | null }[];
+  };
 }
 
 export interface Balance {
@@ -524,6 +559,7 @@ export interface Account {
   email: string;
   nameAr: string;
   roles: string[];
+  branch: Branch | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -1063,12 +1099,20 @@ export const api = {
     }),
 
   users: async () => get<Account[]>('/users'),
-  createUser: async (input: { email: string; nameAr: string; roles: string[] }) =>
-    post<{ user: Account; password: string }>('/users', input),
+  createUser: async (input: {
+    email: string;
+    nameAr: string;
+    roles: string[];
+    branch: Branch | null;
+  }) => post<{ user: Account; password: string }>('/users', input),
   updateUser: async (
     id: string,
-    patch: { nameAr?: string; roles?: string[]; isActive?: boolean },
+    patch: { nameAr?: string; roles?: string[]; isActive?: boolean; branch?: Branch | null },
   ) => request<Account>('PATCH', `/users/${id}`, patch),
+  shipments: async (status?: 'IN_TRANSIT' | 'RECEIVED') =>
+    get<Shipment[]>(`/shipments?${query({ status })}`),
+  /** Opens (or returns) the receiving scan of a shipment. */
+  receiveShipment: async (id: string) => post<{ sessionId: string }>(`/shipments/${id}/receive`),
   resetPassword: async (id: string) => post<{ password: string }>(`/users/${id}/reset-password`),
   changePassword: async (currentPassword: string, newPassword: string) =>
     post<{ ok: true }>('/auth/change-password', { currentPassword, newPassword }),

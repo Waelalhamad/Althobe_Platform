@@ -2,12 +2,12 @@ import { Card, Code, EmptyState, PageTitle } from '@althobe/ui/components';
 import { useQuery } from '@tanstack/react-query';
 import { formatMoney, formatQuantity } from '../format';
 import { PAGES } from '../help';
-import { can, locationsQuery, meQuery, summaryQuery } from '../queries';
+import { can, myLocationsQuery, meQuery, summaryQuery } from '../queries';
 
 /** Stock on hand per location and product. Value (SYP, moving average) only for cost viewers. */
 export function ReportsPage() {
   const { data: user } = useQuery(meQuery);
-  const { data: locations = [] } = useQuery(locationsQuery);
+  const { data: locations = [] } = useQuery(myLocationsQuery);
   const { data: rows = [], isLoading } = useQuery(summaryQuery);
   const showCost = can(user, 'inventory.cost.view');
 

@@ -65,6 +65,8 @@ retail.sell            (implemented, ADR-014: sell, open and close one's own shi
 retail.manage          (implemented: discounts, refunds, closing another person's shift)
 employees.read         (implemented, ADR-015: names and jobs, no pay)
 payroll.manage         (implemented: salaries, advances, pay sheets, paying)
+Branch scope (ADR-020): users.branch SY | LY keeps a user to one branch's stock. Writes are checked
+in the stock ledger, and reads in each service (LOCATION_OUT_OF_BRANCH). Null means every branch.
 admin.gifts            (implemented, ADR-019: give gifts; owner only)
 admin.undo             (implemented, ADR-018: undo a manual adjustment or damage; owner only)
 inventory.adjust.approve (implemented, ADR-017: accept or refuse someone else's adjustment)

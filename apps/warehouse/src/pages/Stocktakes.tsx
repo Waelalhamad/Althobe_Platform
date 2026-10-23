@@ -5,12 +5,12 @@ import { useState } from 'react';
 import { api } from '../api';
 import { errorText, STOCKTAKE_STATUS } from '../format';
 import { PAGES } from '../help';
-import { can, locationsQuery, meQuery, stocktakesQuery } from '../queries';
+import { can, myLocationsQuery, meQuery, stocktakesQuery } from '../queries';
 import { TermHint } from './Help';
 
 export function StocktakesPage() {
   const { data: user } = useQuery(meQuery);
-  const { data: locations = [] } = useQuery(locationsQuery);
+  const { data: locations = [] } = useQuery(myLocationsQuery);
   const { data: stocktakes = [], isLoading } = useQuery(stocktakesQuery);
   const [locationId, setLocationId] = useState('');
   const navigate = useNavigate();

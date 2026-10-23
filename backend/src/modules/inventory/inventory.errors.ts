@@ -44,6 +44,32 @@ export class SelfApprovalError extends DomainError {
 }
 
 /** Developer report F-01: received goods always say where they came from. */
+/** F-04: stock goes to the other branch as a shipment, never as an instant transfer. */
+export class ShipmentRequiredError extends DomainError {
+  constructor(details: Record<string, unknown>) {
+    super('SHIPMENT_REQUIRED', 'Goods for another branch go as a shipment', details);
+  }
+}
+
+/** F-04: only what was sent can arrive, and no more of it. */
+export class ShipmentExcessError extends DomainError {
+  constructor(shipmentId: string, variantIds: string[]) {
+    super('SHIPMENT_EXCESS', 'More arrived than was sent, or something that was not sent', {
+      shipmentId,
+      variantIds,
+    });
+  }
+}
+
+export class ShipmentStateError extends DomainError {
+  constructor(shipmentId: string, status: string) {
+    super('SHIPMENT_NOT_IN_TRANSIT', 'This shipment was already received', {
+      shipmentId,
+      status,
+    });
+  }
+}
+
 export class GiftNeedsRecipientError extends DomainError {
   constructor(sessionId: string) {
     super('GIFT_NEEDS_RECIPIENT', 'Confirm a gift with who received it (POST /gifts/:id)', {

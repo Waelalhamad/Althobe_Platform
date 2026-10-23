@@ -17,7 +17,7 @@ import { useState } from 'react';
 import { api, type HistoryRow } from '../api';
 import { errorText, formatQuantity, MOVEMENT_TYPE, variantName } from '../format';
 import { PAGES } from '../help';
-import { can, locationsQuery, meQuery, movementsQuery } from '../queries';
+import { can, myLocationsQuery, meQuery, movementsQuery } from '../queries';
 
 const route = getRouteApi('/app/movements');
 
@@ -25,7 +25,7 @@ const route = getRouteApi('/app/movements');
 export function MovementsPage() {
   const { variantId, locationId } = route.useSearch();
   const navigate = useNavigate();
-  const { data: locations = [] } = useQuery(locationsQuery);
+  const { data: locations = [] } = useQuery(myLocationsQuery);
   const { data: rows = [], isLoading } = useQuery(movementsQuery({ variantId, locationId }));
   const { data: user } = useQuery(meQuery);
   const canUndo = can(user, 'admin.undo');

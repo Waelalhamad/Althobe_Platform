@@ -8,6 +8,7 @@ import {
   assertPermission,
   PERMISSIONS,
   type ActorContext,
+  type BranchCode,
   type Permission,
 } from '../../shared/permissions.js';
 import { parse } from '../../shared/validation.js';
@@ -63,16 +64,21 @@ const rolesSchema = z
   .min(1)
   .refine((roles) => roles.every(isRoleName), `Roles must be among: ${ROLE_NAMES.join(', ')}`);
 
+// F-04: null works in every branch; SY or LY only there.
+const branchSchema = z.enum(['SY', 'LY']).nullable();
+
 const adminCreateSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(200),
   nameAr: z.string().trim().min(1).max(120),
   roles: rolesSchema,
+  branch: branchSchema.optional(),
 });
 
 const updateUserSchema = z.object({
   nameAr: z.string().trim().min(1).max(120).optional(),
   roles: rolesSchema.optional(),
   isActive: z.boolean().optional(),
+  branch: branchSchema.optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -85,6 +91,7 @@ export interface AccountView {
   email: string;
   nameAr: string;
   roles: string[];
+  branch: string | null;
   isActive: boolean;
   lastLoginAt: Date | null;
   createdAt: Date;
@@ -95,6 +102,7 @@ const accountSelect = {
   email: true,
   nameAr: true,
   roles: true,
+  branch: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -107,6 +115,8 @@ export interface SessionUser {
   nameEn: string | null;
   roles: string[];
   permissions: Permission[];
+  /** F-04: the branch this user is kept to; null: every branch. */
+  branch: BranchCode | null;
 }
 
 export interface Authenticated {
@@ -127,6 +137,7 @@ export function createAuthService(db: Db) {
     nameAr: string;
     nameEn: string | null;
     roles: string[];
+    branch: string | null;
   }): SessionUser {
     // Pick fields explicitly: callers pass whole database rows, and spreading one would send
     // password_hash to the browser. (A spread did exactly that before 2026-09-24.)
@@ -137,6 +148,7 @@ export function createAuthService(db: Db) {
       nameEn: u.nameEn,
       roles: u.roles,
       permissions: [...permissionsFor(u.roles)],
+      branch: (u.branch as BranchCode | null) ?? null,
     };
   }
 
@@ -199,7 +211,10 @@ export function createAuthService(db: Db) {
         });
       }
       const user = toSessionUser(session.user);
-      return { user, actor: { userId: user.id, permissions: new Set(user.permissions) } };
+      return {
+        user,
+        actor: { userId: user.id, permissions: new Set(user.permissions), branch: user.branch },
+      };
     },
 
     /** Server-side revocation: deleting the cookie alone is not logout. */
@@ -237,7 +252,13 @@ export function createAuthService(db: Db) {
       const passwordHash = await hash(password);
       const user = await inTransaction(db, async (tx) => {
         const created = await tx.user.create({
-          data: { email: data.email, nameAr: data.nameAr, roles: data.roles, passwordHash },
+          data: {
+            email: data.email,
+            nameAr: data.nameAr,
+            roles: data.roles,
+            branch: data.branch ?? null,
+            passwordHash,
+          },
           select: accountSelect,
         });
         await writeAudit(tx, {
@@ -287,11 +308,12 @@ export function createAuthService(db: Db) {
             ...(data.nameAr !== undefined ? { nameAr: data.nameAr } : {}),
             ...(data.roles !== undefined ? { roles: data.roles } : {}),
             ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+            ...(data.branch !== undefined ? { branch: data.branch } : {}),
           },
           select: accountSelect,
         });
-        // Deactivation and role changes take effect now, not at the next login.
-        if (data.isActive === false || data.roles !== undefined) {
+        // Deactivation, role and branch changes take effect now, not at the next login.
+        if (data.isActive === false || data.roles !== undefined || data.branch !== undefined) {
           await tx.session.updateMany({
             where: { userId, revokedAt: null },
             data: { revokedAt: new Date() },
@@ -302,8 +324,18 @@ export function createAuthService(db: Db) {
           action: 'admin.users.update',
           entityType: 'user',
           entityId: userId,
-          before: { nameAr: before.nameAr, roles: before.roles, isActive: before.isActive },
-          after: { nameAr: after.nameAr, roles: after.roles, isActive: after.isActive },
+          before: {
+            nameAr: before.nameAr,
+            roles: before.roles,
+            isActive: before.isActive,
+            branch: before.branch,
+          },
+          after: {
+            nameAr: after.nameAr,
+            roles: after.roles,
+            isActive: after.isActive,
+            branch: after.branch,
+          },
         });
         return after;
       });

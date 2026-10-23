@@ -23,7 +23,7 @@ import {
   normalizeDigits,
 } from '../format';
 import { PAGES } from '../help';
-import { balancesQuery, can, locationsQuery, meQuery } from '../queries';
+import { balancesQuery, can, myLocationsQuery, meQuery } from '../queries';
 
 const route = getRouteApi('/app/balances');
 
@@ -31,7 +31,7 @@ export function BalancesPage() {
   const { locationId: selected } = route.useSearch();
   const navigate = useNavigate();
   const { data: user } = useQuery(meQuery);
-  const { data: locations = [] } = useQuery(locationsQuery);
+  const { data: locations = [] } = useQuery(myLocationsQuery);
   const locationId = selected ?? locations[0]?.id;
   const { data: rows = [], isLoading } = useQuery({
     ...balancesQuery(locationId ?? ''),

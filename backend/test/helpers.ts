@@ -7,6 +7,7 @@ import type { UnitCostInput } from '../src/shared/money.js';
 import {
   ALL_PERMISSIONS,
   type ActorContext,
+  type BranchCode,
   type Permission,
   type WriteContext,
 } from '../src/shared/permissions.js';
@@ -22,6 +23,8 @@ export interface World {
   wh1: LocationView;
   wh2: LocationView;
   store: LocationView;
+  /** The Libya warehouse (F-04). */
+  ly: LocationView;
   /** Option types القماش / اللون / القياس with a few values each. */
   options: { fabric: OptionType; colour: OptionType; size: OptionType };
   /** Category ثوب تجريبي (THB-TEST), made of القماش, اللون, القياس. */
@@ -122,11 +125,25 @@ async function buildWorld(db: Db, services: Services): Promise<World> {
   const owner = { userId: ownerUser.id, permissions: new Set(ALL_PERMISSIONS) };
   const approver = { userId: approverUser.id, permissions: new Set(ALL_PERMISSIONS) };
 
-  const [wh1, wh2, store] = await Promise.all([
-    db.location.create({ data: { code: 'WH1', nameAr: 'المخزن الرئيسي', kind: 'WAREHOUSE' } }),
-    db.location.create({ data: { code: 'WH2', nameAr: 'المخزن الثاني', kind: 'WAREHOUSE' } }),
-    db.location.create({ data: { code: 'STORE', nameAr: 'المتجر', kind: 'STORE' } }),
-  ]);
+  // Both warehouses are in Syria here; the Libya warehouse and the road between branches are
+  // for the shipment tests (F-04).
+  const [wh1, wh2, store, ly] = (
+    await Promise.all([
+      db.location.create({
+        data: { code: 'WH1', nameAr: 'المخزن الرئيسي', kind: 'WAREHOUSE', branch: 'SY' },
+      }),
+      db.location.create({
+        data: { code: 'WH2', nameAr: 'المخزن الثاني', kind: 'WAREHOUSE', branch: 'SY' },
+      }),
+      db.location.create({
+        data: { code: 'STORE', nameAr: 'المتجر', kind: 'STORE', branch: 'SY' },
+      }),
+      db.location.create({
+        data: { code: 'LY1', nameAr: 'مستودع ليبيا', kind: 'WAREHOUSE', branch: 'LY' },
+      }),
+      db.location.create({ data: { code: 'TRANSIT', nameAr: 'بالطريق', kind: 'TRANSIT' } }),
+    ])
+  ).map((l) => ({ ...l, branch: l.branch as BranchCode | null }));
 
   const options = await createOptionTypes(db);
   const category = await services.catalogue.createCategory(
@@ -149,9 +166,10 @@ async function buildWorld(db: Db, services: Services): Promise<World> {
   return {
     owner,
     approver,
-    wh1,
-    wh2,
-    store,
+    wh1: wh1!,
+    wh2: wh2!,
+    store: store!,
+    ly: ly!,
     options,
     category,
     x: bySize('54'),

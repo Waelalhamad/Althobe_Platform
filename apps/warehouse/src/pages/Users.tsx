@@ -7,11 +7,12 @@ import {
   Field,
   Input,
   PageTitle,
+  Select,
 } from '@althobe/ui/components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { api, type Account } from '../api';
-import { errorText, ROLE } from '../format';
+import { api, type Account, type Branch } from '../api';
+import { BRANCH, errorText, ROLE } from '../format';
 import { PAGES } from '../help';
 import { meQuery, usersQuery } from '../queries';
 
@@ -94,6 +95,26 @@ function RolePicker({ value, onChange }: { value: string[]; onChange: (roles: st
   );
 }
 
+/** F-04: everyone works in every branch, unless kept to one (a keeper in Libya). */
+function BranchPicker({
+  value,
+  onChange,
+}: {
+  value: Branch | null;
+  onChange: (b: Branch | null) => void;
+}) {
+  return (
+    <Select
+      value={value ?? ''}
+      onChange={(e) => onChange((e.target.value || null) as Branch | null)}
+    >
+      <option value="">كل الفروع</option>
+      <option value="SY">سوريا بس</option>
+      <option value="LY">ليبيا بس</option>
+    </Select>
+  );
+}
+
 function CreateUser({
   onCreated,
 }: {
@@ -102,10 +123,11 @@ function CreateUser({
   const [email, setEmail] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [roles, setRoles] = useState<string[]>(['warehouse_keeper']);
+  const [branch, setBranch] = useState<Branch | null>(null);
   const queryClient = useQueryClient();
 
   const create = useMutation({
-    mutationFn: async () => api.createUser({ email, nameAr, roles }),
+    mutationFn: async () => api.createUser({ email, nameAr, roles, branch }),
     onSuccess: async ({ user, password }) => {
       onCreated({ email: user.email, password });
       setEmail('');
@@ -139,6 +161,11 @@ function CreateUser({
         <Field label="الأدوار">
           <RolePicker value={roles} onChange={setRoles} />
         </Field>
+        <div className="w-56">
+          <Field label="الفرع" hint="موظف ليبيا: «ليبيا بس» — بيشوف ويشتغل على مخزون ليبيا بس">
+            <BranchPicker value={branch} onChange={setBranch} />
+          </Field>
+        </div>
         <div>
           <Button type="submit" disabled={create.isPending || roles.length === 0}>
             إضافة مستخدم
@@ -161,11 +188,12 @@ function UserRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [roles, setRoles] = useState(user.roles);
+  const [branch, setBranch] = useState<Branch | null>(user.branch);
   const queryClient = useQueryClient();
   const refresh = async () => queryClient.invalidateQueries({ queryKey: usersQuery.queryKey });
 
   const update = useMutation({
-    mutationFn: async (patch: { roles?: string[]; isActive?: boolean }) =>
+    mutationFn: async (patch: { roles?: string[]; isActive?: boolean; branch?: Branch | null }) =>
       api.updateUser(user.id, patch),
     onSuccess: async () => {
       setEditing(false);
@@ -193,10 +221,13 @@ function UserRow({
         {editing ? (
           <div className="flex flex-col gap-2">
             <RolePicker value={roles} onChange={setRoles} />
+            <div className="w-48">
+              <BranchPicker value={branch} onChange={setBranch} />
+            </div>
             <div className="flex gap-2">
               <Button
                 disabled={roles.length === 0 || update.isPending}
-                onClick={() => update.mutate({ roles })}
+                onClick={() => update.mutate({ roles, branch })}
               >
                 حفظ
               </Button>
@@ -206,7 +237,12 @@ function UserRow({
             </div>
           </div>
         ) : (
-          user.roles.map((r) => ROLE[r] ?? r).join('، ')
+          <>
+            {user.roles.map((r) => ROLE[r] ?? r).join('، ')}
+            {user.branch && (
+              <span className="font-bold text-brand"> · {BRANCH[user.branch]} بس</span>
+            )}
+          </>
         )}
       </td>
       <td className="tabular p-3 text-sm text-ink-muted" dir="ltr">

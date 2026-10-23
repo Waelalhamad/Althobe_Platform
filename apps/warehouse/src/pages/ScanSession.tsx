@@ -37,6 +37,7 @@ import {
   toUsdCents,
 } from '../format';
 import { PhotoThumb } from '../photo';
+import { ShipmentExpected, ShipmentSendNote } from './Shipments';
 import { GiftCard, GiftDone, giftBody, giftReady, NO_GIFT, type GiftDraft } from './GiftForm';
 import {
   balancesQuery,
@@ -239,6 +240,7 @@ export function ScanSessionPage() {
         queryClient.invalidateQueries({ queryKey: ['open-sessions'] }),
         queryClient.invalidateQueries({ queryKey: ['gift-recipients'] }),
         queryClient.invalidateQueries({ queryKey: ['gifts'] }),
+        queryClient.invalidateQueries({ queryKey: ['shipments'] }),
       ]);
     },
   });
@@ -255,6 +257,12 @@ export function ScanSessionPage() {
   if (!session) return <p className="text-ink-muted">جارٍ التحميل…</p>;
 
   const locationName = (id: string | null) => locations.find((l) => l.id === id)?.nameAr ?? '';
+  // F-04: a transfer to the other branch is a shipment, sent to the road.
+  const branchOf = (id: string | null) => locations.find((l) => l.id === id)?.branch;
+  const shipping =
+    session.kind === 'TRANSFER' &&
+    session.toLocationId !== null &&
+    branchOf(session.toLocationId) !== branchOf(session.locationId);
   const missingCost =
     commit.error instanceof ApiError && commit.error.code === 'SCAN_SESSION_MISSING_COST'
       ? new Set(commit.error.details.variantIds as string[])
@@ -280,7 +288,23 @@ export function ScanSessionPage() {
         {session.toLocationId && ` ← ${locationName(session.toLocationId)}`}
       </PageTitle>
       {session.reason && <p className="-mt-2 mb-4 text-ink-muted">السبب: {session.reason}</p>}
-      {session.note && <p className="-mt-2 mb-4 text-ink-muted">العميل / ملاحظة: {session.note}</p>}
+      {session.note && session.kind !== 'SHIPMENT_IN' && (
+        <p className="-mt-2 mb-4 text-ink-muted">العميل / ملاحظة: {session.note}</p>
+      )}
+      {open && shipping && <ShipmentSendNote destination={locationName(session.toLocationId)} />}
+      {session.status === 'COMMITTED' && session.kind === 'TRANSFER' && session.shipment && (
+        <div className="mb-4">
+          <Alert tone="warn">
+            شحنة رقم {session.shipment.number}:{' '}
+            {session.shipment.status === 'RECEIVED'
+              ? 'وصلت وانستلمت.'
+              : `بالطريق لـ ${locationName(session.shipment.toLocationId)} — بتدخل مخزونهم لما يأكدوا شو وصل.`}{' '}
+            <Link to="/shipments" className="underline">
+              الشحنات
+            </Link>
+          </Alert>
+        </div>
+      )}
       {open && session.kind === 'SALE' && (
         <div className="mb-4">
           <Alert tone="warn">أكّد بعد كل زبون أو فاتورة ليبقى الرصيد صحيحاً طوال اليوم.</Alert>
@@ -373,6 +397,7 @@ export function ScanSessionPage() {
       {open && (session.kind === 'RECEIVE' || session.kind === 'SALE') && (
         <TermsCard session={session} terms={terms} onChange={setTerms} />
       )}
+      {open && session.kind === 'SHIPMENT_IN' && <ShipmentExpected session={session} />}
       {open && session.kind === 'GIFT' && (
         <GiftCard
           session={session}
@@ -404,13 +429,19 @@ export function ScanSessionPage() {
                 commit.isPending ||
                 pending > 0 ||
                 savingLines > 0 ||
-                session.totalQuantity === 0 ||
+                (session.totalQuantity === 0 && session.kind !== 'SHIPMENT_IN') ||
                 overScanned.length > 0 ||
                 !termsReady(session, terms, termsCurrency) ||
                 (session.kind === 'GIFT' && !giftReady(gift))
               }
             >
-              {session.kind === 'GIFT' ? 'تأكيد الهدية' : 'تأكيد وحفظ في المخزون'}
+              {session.kind === 'GIFT'
+                ? 'تأكيد الهدية'
+                : shipping
+                  ? '🚚 أرسل الشحنة'
+                  : session.kind === 'SHIPMENT_IN'
+                    ? 'تأكيد الاستلام'
+                    : 'تأكيد وحفظ في المخزون'}
             </ConfirmButton>
           </div>
         </div>

@@ -192,7 +192,11 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
   async function readMovements(input: MovementsQuery, ctx: ActorContext): Promise<MovementView[]> {
     assertPermission(ctx, PERMISSIONS.inventory.view);
     const data = parse(movementsQuerySchema, input);
-    const rows = await repo.listMovements(db, data);
+    if (data.locationId) await deps.locations.assertInBranch(db, ctx, data.locationId);
+    const rows = await repo.listMovements(db, {
+      ...data,
+      locationIds: await deps.locations.branchLocationIds(db, ctx),
+    });
     const views = rows.map(toMovementView);
     return canSeeCost(ctx) ? views : views.map(redactMovement);
   }
@@ -303,6 +307,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     async requestAdjustment(input: AdjustStockInput, ctx: WriteContext) {
       assertPermission(ctx, PERMISSIONS.inventory.adjust);
       const data = parse(adjustStockSchema, input);
+      await deps.locations.assertInBranch(db, ctx, data.locationId);
       return write(ctx, 'inventory.adjust.request', data, async (tx) => {
         const balance = await repo.findBalance(tx, data);
         const average =
@@ -337,8 +342,12 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
 
     async listAdjustmentRequests(input: { status?: string }, ctx: ActorContext) {
       assertPermission(ctx, PERMISSIONS.inventory.view);
+      const mine = await deps.locations.branchLocationIds(db, ctx);
       const rows = await db.adjustmentRequest.findMany({
-        where: input.status ? { status: input.status } : {},
+        where: {
+          ...(input.status ? { status: input.status } : {}),
+          ...(mine ? { locationId: { in: mine } } : {}),
+        },
         orderBy: { requestedAt: 'desc' },
         take: 100,
         include: {
@@ -513,6 +522,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     async getBalance(input: BalanceQuery, ctx: ActorContext): Promise<BalanceView> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
       const key = parse(balanceQuerySchema, input);
+      await deps.locations.assertInBranch(db, ctx, key.locationId);
       const row = await repo.findBalance(db, key);
       const view = toBalanceView(
         row ?? { ...key, quantity: 0, reservedQuantity: 0, valueBaseAmount: 0n },
@@ -526,6 +536,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
     ): Promise<{ variant: VariantView; balance: BalanceView }[]> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
       const data = parse(listBalancesSchema, input);
+      await deps.locations.assertInBranch(db, ctx, data.locationId);
       const rows = await repo.listBalances(db, data);
       const variants = await deps.catalogue.variantsByIds(
         db,
@@ -635,8 +646,9 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
      */
     async stockSummary(ctx: ActorContext): Promise<StockSummaryRow[]> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
+      const mine = await deps.locations.branchLocationIds(db, ctx);
       const balances = await db.inventoryBalance.findMany({
-        where: { quantity: { gt: 0 } },
+        where: { quantity: { gt: 0 }, ...(mine ? { locationId: { in: mine } } : {}) },
         select: { variantId: true, locationId: true, quantity: true, valueBaseAmount: true },
       });
       const variants = await deps.catalogue.variantsByIds(db, [

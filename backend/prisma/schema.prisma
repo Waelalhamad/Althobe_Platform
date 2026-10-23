@@ -28,6 +28,8 @@ enum UnitOfMeasure {
 enum LocationKind {
   WAREHOUSE
   STORE
+  // Goods sent between branches, on the road (F-04). One, with no branch.
+  TRANSIT
 
   @@map("location_kind")
 }
@@ -46,6 +48,8 @@ enum MovementType {
   RECEIPT_CORRECTION
   // Given away by the owner (developer report F-06), apart from damage.
   GIFT
+  // Sent between branches and never arrived (F-04).
+  SHIPPING_LOSS
 
   @@map("movement_type")
 }
@@ -81,6 +85,8 @@ enum ScanSessionKind {
   SALE
   RETURN
   GIFT
+  // What arrived of a shipment, scanned at its destination (F-04).
+  SHIPMENT_IN
 
   @@map("scan_session_kind")
 }
@@ -135,6 +141,8 @@ model User {
   nameAr       String    @map("name_ar")
   nameEn       String?   @map("name_en")
   isActive     Boolean   @default(true) @map("is_active")
+  // Kept to one branch's stock (F-04); null: every branch.
+  branch       String?   @db.Char(2)
   // argon2id. Null for machine users (e.g. "system"), which can never log in.
   passwordHash String?   @map("password_hash")
   // Role names from src/modules/auth/roles.ts. Code checks permissions, never these names.
@@ -170,6 +178,8 @@ model User {
   receiptTerms         ReceiptTerms[]
   giftRecipients       GiftRecipient[]
   gifts                Gift[]
+  shipmentsSent        Shipment[]            @relation("ShipmentSentBy")
+  shipmentsReceived    Shipment[]            @relation("ShipmentReceivedBy")
   adjustmentsRequested AdjustmentRequest[]   @relation("AdjustmentRequestedBy")
   adjustmentsDecided   AdjustmentRequest[]   @relation("AdjustmentDecidedBy")
 
@@ -429,6 +439,7 @@ model ProductVariant {
   stocktakeLines     StocktakeLine[]
   stocktakeEvents    StocktakeScanEvent[]
   posSaleLines       PosSaleLine[]
+  shipmentLines      ShipmentLine[]
 
   @@unique([productId, optionKey], map: "uq_product_variants_option_key")
   @@index([productId], map: "idx_product_variants_product_id")
@@ -512,6 +523,8 @@ model Location {
   nameAr    String       @map("name_ar")
   nameEn    String?      @map("name_en")
   kind      LocationKind
+  // SY · LY; null only for TRANSIT (F-04).
+  branch    String?      @db.Char(2)
   isActive  Boolean      @default(true) @map("is_active")
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -525,6 +538,8 @@ model Location {
   stocktakes         Stocktake[]
   glAccount          GlAccount?
   journalLines       JournalLine[]
+  shipmentsFrom      Shipment[]          @relation("ShipmentFrom")
+  shipmentsTo        Shipment[]          @relation("ShipmentTo")
   posShifts          PosShift[]
   posSales           PosSale[]
 
@@ -643,10 +658,12 @@ model ScanSession {
   createdBy   User      @relation("ScanSessionCreatedBy", fields: [createdById], references: [id])
   committedBy User?     @relation("ScanSessionCommittedBy", fields: [committedById], references: [id])
 
-  lines        ScanSessionLine[]
-  events       ScanSessionEvent[]
-  receiptTerms ReceiptTerms?
-  gift         Gift?
+  lines            ScanSessionLine[]
+  events           ScanSessionEvent[]
+  receiptTerms     ReceiptTerms?
+  gift             Gift?
+  shipmentSent     Shipment?          @relation("ShipmentSend")
+  shipmentReceived Shipment?          @relation("ShipmentReceive")
 
   @@index([status, locationId], map: "idx_scan_sessions_status_location")
   @@map("scan_sessions")
@@ -1238,4 +1255,45 @@ model Gift {
 
   @@index([recipientId, createdAt], map: "idx_gifts_recipient")
   @@map("gifts")
+}
+
+// A shipment between branches (F-04): sent to the road, then received at its destination.
+model Shipment {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  number           Int       @unique(map: "uq_shipments_number") @default(autoincrement())
+  fromLocationId   String    @map("from_location_id") @db.Uuid
+  toLocationId     String    @map("to_location_id") @db.Uuid
+  // IN_TRANSIT · RECEIVED
+  status           String    @default("IN_TRANSIT")
+  sendSessionId    String    @unique(map: "uq_shipments_send_session") @map("send_session_id") @db.Uuid
+  receiveSessionId String?   @unique(map: "uq_shipments_receive_session") @map("receive_session_id") @db.Uuid
+  note             String?
+  sentById         String    @map("sent_by") @db.Uuid
+  sentAt           DateTime  @default(now()) @map("sent_at") @db.Timestamptz(3)
+  receivedById     String?   @map("received_by") @db.Uuid
+  receivedAt       DateTime? @map("received_at") @db.Timestamptz(3)
+
+  fromLocation   Location       @relation("ShipmentFrom", fields: [fromLocationId], references: [id])
+  toLocation     Location       @relation("ShipmentTo", fields: [toLocationId], references: [id])
+  sendSession    ScanSession    @relation("ShipmentSend", fields: [sendSessionId], references: [id])
+  receiveSession ScanSession?   @relation("ShipmentReceive", fields: [receiveSessionId], references: [id])
+  sentBy         User           @relation("ShipmentSentBy", fields: [sentById], references: [id])
+  receivedBy     User?          @relation("ShipmentReceivedBy", fields: [receivedById], references: [id])
+  lines          ShipmentLine[]
+
+  @@index([status, sentAt], map: "idx_shipments_status")
+  @@map("shipments")
+}
+
+model ShipmentLine {
+  shipmentId       String @map("shipment_id") @db.Uuid
+  variantId        String @map("variant_id") @db.Uuid
+  sentQuantity     Int    @map("sent_quantity")
+  receivedQuantity Int?   @map("received_quantity")
+
+  shipment Shipment       @relation(fields: [shipmentId], references: [id])
+  variant  ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@id([shipmentId, variantId])
+  @@map("shipment_lines")
 }

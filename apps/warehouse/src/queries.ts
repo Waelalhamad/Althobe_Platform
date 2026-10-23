@@ -1,5 +1,13 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api, type Branch, type PartyKind, type Range, type User, type VoucherType } from './api';
+import {
+  api,
+  type Branch,
+  type Location,
+  type PartyKind,
+  type Range,
+  type User,
+  type VoucherType,
+} from './api';
 
 export const meQuery = queryOptions({
   queryKey: ['me'],
@@ -16,6 +24,12 @@ export const locationsQuery = queryOptions({
   queryKey: ['locations'],
   queryFn: api.locations,
   staleTime: 60_000,
+});
+
+/** F-04: only the locations this user works at (a Libya keeper: Libya's). */
+export const myLocationsQuery = queryOptions({
+  ...locationsQuery,
+  select: (locations: Location[]) => locations.filter((l) => l.mine),
 });
 export const categoriesQuery = queryOptions({ queryKey: ['categories'], queryFn: api.categories });
 

@@ -28,7 +28,9 @@ type StartInput = {
 /** عمل المخزون: each location's jobs, the setup steps for whoever builds products. */
 export function StockHomePage() {
   const { data: user } = useQuery(meQuery);
-  const { data: locations = [], isLoading } = useQuery(locationsQuery);
+  const { data: everywhere = [], isLoading } = useQuery(locationsQuery);
+  // F-04: work happens where this user works; the other branch is only a destination.
+  const locations = everywhere.filter((l) => l.mine);
   const { data: openSessions = [] } = useQuery(openSessionsQuery);
   const balances = useQueries({ queries: locations.map((l) => balancesQuery(l.id)) });
   const navigate = useNavigate();
@@ -97,7 +99,7 @@ export function StockHomePage() {
                 user={user}
                 location={location}
                 pieces={pieces}
-                others={locations.filter((l) => l.id !== location.id && l.isActive)}
+                others={everywhere.filter((l) => l.id !== location.id && l.isActive)}
                 onStart={(input) => start.mutate(input)}
                 busy={start.isPending}
               />
@@ -335,6 +337,7 @@ function StartActions({
           {others.map((l) => (
             <option key={l.id} value={l.id}>
               {l.nameAr}
+              {l.branch !== location.branch && ' — شحنة (بتوصل بعد أيام)'}
             </option>
           ))}
         </Select>

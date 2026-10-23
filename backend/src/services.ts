@@ -12,6 +12,7 @@ import { createRatesService } from './modules/currency/rates.service.js';
 import { createLocationsService } from './modules/locations/locations.service.js';
 import { createInventoryService } from './modules/inventory/inventory.service.js';
 import { createScanSessionService } from './modules/inventory/scan-session.service.js';
+import { createShipmentsService } from './modules/inventory/shipments.service.js';
 import { createStocktakeService } from './modules/inventory/stocktake.service.js';
 
 /** Composition root: the only place modules are wired together. No DI container needed. */
@@ -50,6 +51,7 @@ export function createServices(db: Db, options: { storage?: PhotoStorage | null 
     }),
     payroll: createPayrollService(db, { accounting }),
     scanSessions,
+    shipments: createShipmentsService(db, ledgerDeps),
     stocktakes: createStocktakeService(db, ledgerDeps),
   };
 }

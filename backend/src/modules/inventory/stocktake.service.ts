@@ -85,7 +85,13 @@ interface StocktakeRow {
 }
 
 export function createStocktakeService(db: Db, deps: LedgerDeps) {
-  async function lock(tx: Tx, id: string, mode: 'share' | 'update', expected: StocktakeStatus[]) {
+  async function lock(
+    tx: Tx,
+    id: string,
+    mode: 'share' | 'update',
+    expected: StocktakeStatus[],
+    ctx: ActorContext,
+  ) {
     const rows =
       mode === 'update'
         ? await tx.$queryRaw<StocktakeRow[]>`
@@ -96,6 +102,8 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
             FROM stocktakes WHERE id = ${id}::uuid FOR SHARE`;
     const stocktake = rows[0];
     if (!stocktake) throw new NotFoundError('stocktake', id);
+    // F-04: a user kept to a branch counts only its stock.
+    await deps.locations.assertInBranch(tx, ctx, stocktake.location_id);
     if (!expected.includes(stocktake.status))
       throw new StocktakeStateError(id, stocktake.status, expected);
     return stocktake;
@@ -201,6 +209,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
         const [location] = await deps.locations.locationsByIds(tx, [data.locationId]);
         if (!location) throw new NotFoundError('location', data.locationId);
         if (!location.isActive) throw new LocationInactiveError(location.id);
+        await deps.locations.assertInBranch(tx, ctx, location.id);
 
         const variantIds = [...new Set(data.variantIds ?? [])];
         if (variantIds.length) {
@@ -243,7 +252,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeCount);
       const { stocktakeId } = parse(refSchema, input);
       return inTransaction(db, async (tx) => {
-        const st = await lock(tx, stocktakeId, 'update', ['DRAFT']);
+        const st = await lock(tx, stocktakeId, 'update', ['DRAFT'], ctx);
         const balances = await tx.$queryRaw<{ variant_id: string; quantity: number }[]>`
           SELECT variant_id, quantity FROM inventory_balances
           WHERE location_id = ${st.location_id}::uuid
@@ -296,7 +305,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeCount);
       const data = parse(scanSchema, input);
       return inTransaction(db, async (tx) => {
-        const st = await lock(tx, data.stocktakeId, 'share', ['COUNTING']);
+        const st = await lock(tx, data.stocktakeId, 'share', ['COUNTING'], ctx);
         const variant = await deps.catalogue.lookupBarcode(tx, data.barcode);
 
         const recorded = await tx.stocktakeScanEvent.createMany({
@@ -337,7 +346,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeCount);
       const data = parse(setCountSchema, input);
       return inTransaction(db, async (tx) => {
-        const st = await lock(tx, data.stocktakeId, 'share', ['COUNTING']);
+        const st = await lock(tx, data.stocktakeId, 'share', ['COUNTING'], ctx);
         const [variant] = await deps.catalogue.variantsByIds(tx, [data.variantId]);
         if (!variant) throw new NotFoundError('variant', data.variantId);
         await count(tx, st, data.variantId, 'set', data.countedQuantity);
@@ -360,7 +369,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeCount);
       const data = parse(reviewSchema, input);
       return inTransaction(db, async (tx) => {
-        const st = await lock(tx, data.stocktakeId, 'update', ['COUNTING']);
+        const st = await lock(tx, data.stocktakeId, 'update', ['COUNTING'], ctx);
         const uncounted = await tx.stocktakeLine.findMany({
           where: { stocktakeId: st.id, countedQuantity: null },
           select: { variantId: true },
@@ -395,6 +404,11 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
     ): Promise<StocktakeView> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
       const { stocktakeId } = parse(refSchema, input);
+      const found = await db.stocktake.findUnique({
+        where: { id: stocktakeId },
+        select: { locationId: true },
+      });
+      if (found) await deps.locations.assertInBranch(db, ctx, found.locationId);
       return view(db, stocktakeId);
     },
 
@@ -413,7 +427,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeApply);
       const { stocktakeId } = parse(refSchema, input);
       return inTransaction(db, async (tx) => {
-        const st = await lock(tx, stocktakeId, 'update', ['REVIEW']);
+        const st = await lock(tx, stocktakeId, 'update', ['REVIEW'], ctx);
         if (st.created_by === ctx.userId) throw new SecondApproverRequiredError(st.id);
         const taken = await tx.stocktake.findUnique({
           where: { id: st.id },
@@ -460,8 +474,12 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
     /** Recent stocktakes, newest first — the list screen and resuming a count. */
     async listStocktakes(input: { locationId?: string }, ctx: ActorContext) {
       assertPermission(ctx, PERMISSIONS.inventory.view);
+      const mine = await deps.locations.branchLocationIds(db, ctx);
       const rows = await db.stocktake.findMany({
-        where: input.locationId ? { locationId: input.locationId } : {},
+        where: {
+          ...(input.locationId ? { locationId: input.locationId } : {}),
+          ...(mine ? { locationId: { in: mine } } : {}),
+        },
         orderBy: { createdAt: 'desc' },
         take: 50,
         include: { _count: { select: { lines: true } } },
@@ -473,7 +491,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       assertPermission(ctx, PERMISSIONS.inventory.stocktakeCount);
       const { stocktakeId } = parse(refSchema, input);
       await inTransaction(db, async (tx) => {
-        await lock(tx, stocktakeId, 'update', ['DRAFT', 'COUNTING', 'REVIEW']);
+        await lock(tx, stocktakeId, 'update', ['DRAFT', 'COUNTING', 'REVIEW'], ctx);
         await tx.stocktake.update({
           where: { id: stocktakeId },
           data: { status: 'CANCELLED', cancelledAt: new Date() },

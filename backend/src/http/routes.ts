@@ -339,6 +339,23 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.inventory.requestAdjustment(request.body as never, writeContextOf(request)),
     }));
 
+    // ── Shipments between branches (F-04): a transfer to the other branch is sent to the road;
+    // the receiving end opens a scan of what arrived and confirms it like any session.
+    priv.get(
+      '/shipments',
+      async (request: FastifyRequest<{ Querystring: { status?: string } }>) => ({
+        data: await s.shipments.listShipments(request.query, actorOf(request)),
+      }),
+    );
+
+    priv.get('/shipments/:id', async (request: Params<{ id: string }>) => ({
+      data: await s.shipments.getShipment(request.params.id, actorOf(request)),
+    }));
+
+    priv.post('/shipments/:id/receive', async (request: Params<{ id: string }>) => ({
+      data: await s.shipments.openReceipt(request.params.id, actorOf(request)),
+    }));
+
     // ── Gifts (developer report F-06): only the owner gives them ──────────────────────────────
     priv.get('/gift-recipients', async (request) => ({
       data: await s.gifts.listRecipients(actorOf(request)),

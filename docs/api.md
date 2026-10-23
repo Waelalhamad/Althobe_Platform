@@ -198,10 +198,13 @@ All **require `Idempotency-Key`**.
 | `GET` | `/gift-recipients` · `/gifts?from=&to=&recipientId=&kind=&locationId=` · `/gifts/:sessionId` (ADR-019) | `admin.gifts` or `accounting.view` |
 | `POST` | `/gifts/:sessionId` — `{ recipientId \| recipient: { name, kind, phone? }, occasion, reference? }` confirms a `GIFT` scan session | `admin.gifts` |
 | `POST` | `/gifts/:sessionId/photo` — `{ image }` (base64) · `GET` the same path redirects to the photo | `admin.gifts` |
+| `GET` | `/shipments?status=IN_TRANSIT\|RECEIVED` · `/shipments/:id` (ADR-020; either end in the user's branch) | `inventory.view` |
+| `POST` | `/shipments/:id/receive` opens (or returns) the destination's `SHIPMENT_IN` scan; confirming it is the plain session commit | `inventory.receive` |
 | `POST` | `/inventory/movements/:id/undo` — `{ reason }` (ADR-018: a `MANUAL` adjustment or damage, exactly the other way) | `admin.undo` |
 
 Errors: `ADJUSTMENT_NOT_PENDING` (409), `RECEIPT_CORRECTION_NOT_POSSIBLE`, `SELF_APPROVAL`,
-`MOVEMENT_UNDO_NOT_POSSIBLE`, `MOVEMENT_NOT_UNDOABLE`, `GIFT_NEEDS_RECIPIENT`, `NOT_A_GIFT`
+`MOVEMENT_UNDO_NOT_POSSIBLE`, `MOVEMENT_NOT_UNDOABLE`, `GIFT_NEEDS_RECIPIENT`, `NOT_A_GIFT`,
+`SHIPMENT_REQUIRED`, `SHIPMENT_EXCESS`, `SHIPMENT_NOT_IN_TRANSIT`, `LOCATION_OUT_OF_BRANCH`
 (422).
 
 Still to come: reservation endpoints (with wholesale), the OpenAPI document, and a generated

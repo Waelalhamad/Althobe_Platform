@@ -27,6 +27,8 @@ export interface MovementEntry extends BalanceKey {
   pairedWith?: number;
   /** An undo: the movement it undoes and exactly the value that leaves or returns with it. */
   undo?: { movementId: string; value: bigint };
+  /** F-04: made by a shipment, the only thing that moves stock on the road between branches. */
+  viaShipment?: boolean;
 }
 
 export interface BalanceView extends BalanceKey {
