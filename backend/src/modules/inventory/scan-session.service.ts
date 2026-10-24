@@ -22,6 +22,7 @@ import {
   OpeningAlreadyRecordedError,
   ReceiptNeedsSourceError,
   ScanSessionNotOpenError,
+  ReceiptCorrectionNotPossibleError,
   ShipmentExcessError,
   ShipmentStateError,
   VariantInactiveError,
@@ -88,7 +89,12 @@ export interface ScanSessionView {
   lines: ScanLineView[];
   totalQuantity: number;
   /** A confirmed receipt only: what it holds now, after its corrections. */
-  received?: { variant: VariantView; quantity: number }[];
+  received?: {
+    variant: VariantView;
+    quantity: number;
+    /** The cost every piece of the line carries now (F-07); null without cost view. */
+    unitCost: { amount: bigint; currency: Currency; rateToBase: string } | null;
+  }[];
   /** F-04: the shipment this session sent or receives; what was sent, for the receiving end. */
   shipment?: {
     id: string;
@@ -599,19 +605,23 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
       });
       // A confirmed receipt: each variant as it stands after its corrections (F-02), including
       // a variant that only came in by one (a wrong size moved to it).
-      let received: { variant: VariantView; quantity: number }[] | undefined;
+      let received: ScanSessionView['received'];
       if (session.kind === 'RECEIVE' && session.status === 'COMMITTED') {
         const net = new Map<string, number>();
+        const cost = new Map<string, ReturnType<typeof costOf>>();
         for (const m of await repo.movementsByReference(db, 'SCAN_SESSION', session.id)) {
           if (m.type === 'PURCHASE' || m.type === 'RECEIPT_CORRECTION') {
             net.set(m.variantId, (net.get(m.variantId) ?? 0) + m.quantity);
+            if (m.quantity > 0) cost.set(m.variantId, costOf(m));
           }
         }
         const extra = [...net.keys()].filter((id) => !variantById.has(id));
         for (const v of await deps.catalogue.variantsByIds(db, extra)) variantById.set(v.id, v);
         received = [...net].flatMap(([id, quantity]) => {
           const variant = variantById.get(id);
-          return variant ? [{ variant, quantity }] : [];
+          return variant
+            ? [{ variant, quantity, unitCost: canSeeCost(ctx) ? (cost.get(id) ?? null) : null }]
+            : [];
         });
       }
       const shipment = shipmentRow
@@ -671,6 +681,10 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
     async correctReceiptInTx(tx: Tx, sessionId: string, input: unknown, ctx: ActorContext) {
       assertPermission(ctx, PERMISSIONS.inventory.receive);
       const data = parse(correctReceiptSchema, input);
+      // A cost changes the stock's value with no piece moving: for those who approve (F-07).
+      if (data.changes.some((c) => c.unitCost !== undefined)) {
+        assertPermission(ctx, PERMISSIONS.inventory.adjustApprove);
+      }
       const session = await lockSession(tx, sessionId, 'update');
       if (session.kind !== 'RECEIVE') {
         throw new ScanSessionNotOpenError(sessionId, `${session.kind} is not a receipt`);
@@ -687,9 +701,9 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
             m.variantId === change.variantId &&
             (m.type === 'PURCHASE' || m.type === 'RECEIPT_CORRECTION'),
         );
-        // Its cost: as received, or — for a variant that came in by a correction (a wrong size
-        // moved to it) — as moved; both carry the received line's cost.
-        const first = own.find((m) => m.type === 'PURCHASE') ?? own.find((m) => m.quantity > 0);
+        // Its cost: the last that came in on this line — as received, as moved to it (a wrong size),
+        // or as corrected (F-07). Every piece of the line now carries it.
+        const first = [...own].reverse().find((m) => m.quantity > 0 && m.unitCost);
         if (!first?.unitCost) throw new NotFoundError('receipt_line', change.variantId);
         const now = own.reduce((s, m) => s + m.quantity, 0);
         const base = {
@@ -700,7 +714,28 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
           referenceId: sessionId,
           reason: data.reason,
         };
-        if (change.toVariantId) {
+        if (change.unitCost !== undefined) {
+          // Every piece goes back at the cost it came in at and in again at the right one, so the
+          // stock's value, the supplier's bill (or the opening balances) and nothing else move.
+          // Refused, like any correction, once pieces of it were sold or moved.
+          if (change.unitCost === first.unitCost.amount || now <= 0) continue;
+          if (change.quantity !== now) {
+            throw new ReceiptCorrectionNotPossibleError({
+              variantId: change.variantId,
+              requested: change.quantity,
+              quantity: now,
+            });
+          }
+          entries.push(
+            { ...base, variantId: change.variantId, quantity: -now },
+            {
+              ...base,
+              variantId: change.variantId,
+              quantity: now,
+              unitCost: { ...first.unitCost, amount: change.unitCost },
+            },
+          );
+        } else if (change.toVariantId) {
           // Part of the line was another variant all along: it moves, at the same cost.
           const moved = now - change.quantity;
           if (moved <= 0) continue;

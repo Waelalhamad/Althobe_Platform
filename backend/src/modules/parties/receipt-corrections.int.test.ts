@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Currency } from '../../shared/money.js';
-import { createTestContext, write, type World } from '../../../test/helpers.js';
+import { createTestContext, withoutPermission, write, type World } from '../../../test/helpers.js';
 import type { VariantView } from '../catalogue/catalogue.service.js';
 
 // Developer report F-02: a receipt mistake is corrected on the receipt itself, at the line's own
@@ -138,5 +138,38 @@ describe('correcting a receipt (developer report F-02)', () => {
         write(w.owner),
       ),
     ).rejects.toMatchObject({ code: 'SCAN_SESSION_NOT_OPEN' });
+  });
+
+  it('a wrong cost is corrected: the value and the bill move, the quantity and the profit do not (F-07)', async () => {
+    const supplier = await parties.createParty(
+      { kind: 'SUPPLIER', nameAr: 'مورد', currency: 'USD' },
+      w.owner,
+    );
+    // 6 × X typed at 25 $; it was 17.65 $.
+    const id = await receipt({ source: 'SUPPLIER', partyId: supplier.id }, [[w.x, 6, 25]]);
+    const fix = async (unitCost: bigint, actor = w.owner) =>
+      parties.correctReceipt(
+        id,
+        { changes: [{ variantId: w.x.id, quantity: 6, unitCost }], reason: 'خطأ بالتكلفة' },
+        write(actor),
+      );
+    await fix(1_765n);
+    const balance = await t.services.inventory.getBalance(
+      { variantId: w.x.id, locationId: w.wh1.id },
+      w.owner,
+    );
+    expect(balance).toMatchObject({ quantity: 6, averageCostBaseAmount: 1_765n });
+    expect((await parties.getParty(supplier.id, w.owner)).balance).toBe(10_590n);
+    expect(await account('5103')).toBe(0n);
+    expect((await books.checkBooks(w.owner)).ok).toBe(true);
+
+    // Only those who approve change a cost; and not once a piece of it has gone.
+    const keeper = withoutPermission(w.owner, 'inventory.adjust.approve');
+    await expect(fix(1_700n, keeper)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await t.services.inventory.issueStock(
+      { variantId: w.x.id, locationId: w.wh1.id, quantity: 1 },
+      write(w.owner),
+    );
+    await expect(fix(1_700n)).rejects.toMatchObject({ code: 'RECEIPT_CORRECTION_NOT_POSSIBLE' });
   });
 });

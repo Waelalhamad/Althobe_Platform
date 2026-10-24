@@ -27,6 +27,15 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Cost correction (2026-10-24, report F-07; ADR-017 addendum):**
+- **Correcting a cost:** «تصحيح الاستلام» also takes the right cost per piece of a line. The pieces
+  go back at their cost and in again at the right one, so the stock value and the supplier's bill
+  (or the opening balances) change, and the quantity and the profit do not.
+- **Limits:** it is refused once a piece of the line has gone, and only those with
+  `inventory.adjust.approve` can do it.
+- **Warning at receipt:** a receipt now also warns when a cost is more than 15% from what the same
+  size already costs in that warehouse.
+
 **Libya as a branch (2026-10-23, ADR-020; report F-04):** WH2 is «مستودع ليبيا» (branch LY), and
 every stock posting there is Libya's.
 - **Sending:** a transfer to the other branch is a shipment. It leaves for «بالطريق» at once.

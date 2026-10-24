@@ -191,7 +191,7 @@ All **require `Idempotency-Key`**.
 
 | Method | Path | Permission |
 | --- | --- | --- |
-| `POST` | `/parties/receipts/:sessionId/correct` — `{ changes: [{ variantId, quantity, toVariantId? }], reason }` (each line as it should have been; `toVariantId`: the difference moves there) | `inventory.receive` |
+| `POST` | `/parties/receipts/:sessionId/correct` — `{ changes: [{ variantId, quantity, toVariantId?, unitCost? }], reason }` (`unitCost`: the right cost per piece, F-07; needs `inventory.adjust.approve`) (each line as it should have been; `toVariantId`: the difference moves there) | `inventory.receive` |
 | `POST` | `/inventory/adjustments` — `{ variantId, locationId, delta, reasonCode: COUNT_DIFFERENCE\|DAMAGE\|SAMPLE\|INTERNAL_USE\|GIFT, note? }` → `{ status: APPLIED\|PENDING, requestId }` | `inventory.adjust` |
 | `GET` | `/inventory/adjustment-requests?status=` | `inventory.view` |
 | `POST` | `/inventory/adjustment-requests/:id/approve` · `/reject` — `{ note? }` (not by the asker) | `inventory.adjust.approve` |

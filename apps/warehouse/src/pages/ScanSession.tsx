@@ -90,9 +90,10 @@ const SOURCES: { key: ReceiptSource; label: string; hint: string; money?: boolea
 
 /**
  * Lines whose cost is more than 15% away from the other sizes of the same product in this
- * receipt (F-07): a typo in a cost goes straight into the stock's value.
+ * receipt, or from what the same size already costs in this warehouse (F-07): a typo in a cost
+ * goes straight into the stock's value. `inStock`: average cost per variant, USD cents.
  */
-function costOutliers(session: ScanSession): string[] {
+function costOutliers(session: ScanSession, inStock?: Map<string, bigint>): string[] {
   const usd = session.lines.map((l) =>
     l.unitCost
       ? BigInt(toUsdCents(l.unitCost.amount, l.unitCost.currency, l.unitCost.rateToBase))
@@ -106,6 +107,16 @@ function costOutliers(session: ScanSession): string[] {
       (c, j): c is bigint =>
         j !== i && c !== null && session.lines[j]!.variant.product.id === l.variant.product.id,
     );
+    const before = inStock?.get(l.variant.id);
+    if (before && before > 0n) {
+      const gap = mine - before;
+      if ((gap < 0n ? -gap : gap) * 100n > 15n * before) {
+        out.push(
+          `${l.variant.title}: ${formatMoney(mine.toString())} والموجود منو بالمخزن بـ ${formatMoney(before.toString())}`,
+        );
+        return;
+      }
+    }
     if (others.length === 0) return;
     const n = BigInt(others.length);
     const sum = others.reduce((a, b) => a + b, 0n);
@@ -150,7 +161,8 @@ export function ScanSessionPage() {
     session?.kind === 'GIFT';
   const { data: sourceBalances } = useQuery({
     ...balancesQuery(session?.locationId ?? ''),
-    enabled: Boolean(open && outgoing && session?.locationId),
+    // A receipt checks its costs against what the same sizes already cost here (F-07).
+    enabled: Boolean(open && (outgoing || session?.kind === 'RECEIVE') && session?.locationId),
   });
 
   const updateLine = (line: ScanLine) =>
@@ -274,6 +286,13 @@ export function ScanSessionPage() {
   const available = new Map(
     (sourceBalances ?? []).map((r) => [r.variant.id, r.balance.availableQuantity]),
   );
+  const averages = new Map(
+    (sourceBalances ?? []).flatMap((r) =>
+      r.balance.averageCostBaseAmount && r.balance.quantity > 0
+        ? [[r.variant.id, BigInt(r.balance.averageCostBaseAmount)] as const]
+        : [],
+    ),
+  );
   const availableOf = (variantId: string) =>
     outgoing && open ? (available.get(variantId) ?? 0) : undefined;
   const overScanned =
@@ -395,7 +414,7 @@ export function ScanSessionPage() {
       </Card>
 
       {open && (session.kind === 'RECEIVE' || session.kind === 'SALE') && (
-        <TermsCard session={session} terms={terms} onChange={setTerms} />
+        <TermsCard session={session} terms={terms} onChange={setTerms} averages={averages} />
       )}
       {open && session.kind === 'SHIPMENT_IN' && <ShipmentExpected session={session} />}
       {open && session.kind === 'GIFT' && (
@@ -431,7 +450,7 @@ export function ScanSessionPage() {
                 savingLines > 0 ||
                 (session.totalQuantity === 0 && session.kind !== 'SHIPMENT_IN') ||
                 overScanned.length > 0 ||
-                !termsReady(session, terms, termsCurrency) ||
+                !termsReady(session, terms, termsCurrency, averages) ||
                 (session.kind === 'GIFT' && !giftReady(gift))
               }
             >
@@ -464,13 +483,18 @@ export function ScanSessionPage() {
 }
 
 /** Terms can be sent: a receipt has its source and what that source needs. */
-function termsReady(session: ScanSession, t: Terms, cashCurrency: Currency | null): boolean {
+function termsReady(
+  session: ScanSession,
+  t: Terms,
+  cashCurrency: Currency | null,
+  averages: Map<string, bigint>,
+): boolean {
   if (session.kind === 'RECEIVE') {
     if (!t.source) return false;
     if (t.source === 'SUPPLIER' && !t.partyId) return false;
     if (t.paidNow && !(t.boxId && cashCurrency && toMinorUnits(t.amount, cashCurrency)))
       return false;
-    if (costOutliers(session).length > 0 && !t.costChecked) return false;
+    if (costOutliers(session, averages).length > 0 && !t.costChecked) return false;
     return true;
   }
   if (session.kind === 'SALE' && t.partyId) return /^\d+$/.test(t.amount) && t.amount !== '0';
@@ -485,10 +509,12 @@ function TermsCard({
   session,
   terms,
   onChange,
+  averages,
 }: {
   session: ScanSession;
   terms: Terms;
   onChange: (t: Terms) => void;
+  averages: Map<string, bigint>;
 }) {
   const { data: user } = useQuery(meQuery);
   const receipt = session.kind === 'RECEIVE';
@@ -505,7 +531,7 @@ function TermsCard({
   const goods = one
     ? session.lines.reduce((s, l) => s + BigInt(l.unitCost!.amount) * BigInt(l.quantity), 0n)
     : null;
-  const outliers = receipt ? costOutliers(session) : [];
+  const outliers = receipt ? costOutliers(session, averages) : [];
   // Goods out on account is a sale with money in it: only whoever keeps the accounts.
   if (!receipt && (!manage || parties.length === 0)) return null;
 
@@ -702,6 +728,8 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
   const received = session.received ?? [];
   const [qty, setQty] = useState<Record<string, string>>({});
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  // F-07: the right cost per piece, typed like the receipt's cost; only for those who approve.
+  const [cost, setCost] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [key, setKey] = useState(() => crypto.randomUUID());
   const products = [...new Set(received.map((r) => r.variant.product.id))];
@@ -712,11 +740,17 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
     enabled: open,
   });
 
+  const fixesCost = can(user, 'inventory.adjust.approve');
   const changes = received.flatMap((r) => {
     const text = qty[r.variant.id];
     const target = moveTo[r.variant.id];
     const n = text === undefined || text.trim() === '' ? r.quantity : Number(text);
     if (!Number.isInteger(n) || n < 0) return [];
+    const typed = cost[r.variant.id];
+    const unitCost = typed && r.unitCost ? toMinorUnits(typed, r.unitCost.currency) : null;
+    if (unitCost && r.unitCost && unitCost !== r.unitCost.amount && n === r.quantity && !target) {
+      return [{ variantId: r.variant.id, quantity: n, unitCost }];
+    }
     if (target)
       return n < r.quantity ? [{ variantId: r.variant.id, quantity: n, toVariantId: target }] : [];
     return n !== r.quantity ? [{ variantId: r.variant.id, quantity: n }] : [];
@@ -727,6 +761,7 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
       setKey(crypto.randomUUID());
       setQty({});
       setMoveTo({});
+      setCost({});
       setReason('');
       setOpen(false);
       toast('تم تصحيح الاستلام — بالتكلفة الأصلية وعلى نفس الحساب');
@@ -741,7 +776,7 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
     return (
       <div className="mb-4">
         <Button variant="secondary" onClick={() => setOpen(true)}>
-          ✏️ تصحيح الاستلام (غلطة بالكمية أو المقاس)
+          ✏️ تصحيح الاستلام (غلطة بالكمية أو المقاس أو التكلفة)
         </Button>
       </div>
     );
@@ -750,9 +785,10 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
     <Card className="mb-4 flex flex-col gap-3">
       <h2 className="font-bold">تصحيح الاستلام</h2>
       <p className="text-sm text-ink-muted">
-        اكتب الكمية الصحيحة لكل صنف (0 = ما وصل أبداً)، أو انقل الزيادة لمقاسها الصح. التصحيح بيمشي
-        بتكلفة الاستلام نفسها وعلى نفس الحساب (المورد أو الرصيد الافتتاحي)، وما بيأثر على الأرباح.
-        ما بيمشي إذا القطع انباعت أو انتقلت.
+        اكتب الكمية الصحيحة لكل صنف (0 = ما وصل أبداً)، أو انقل الزيادة لمقاسها الصح، أو صحّح تكلفة
+        القطعة إذا انكتبت غلط (الكمية بتضل نفسها). التصحيح بيمشي بتكلفة الاستلام نفسها وعلى نفس
+        الحساب (المورد أو الرصيد الافتتاحي)، وما بيأثر على الأرباح. ما بيمشي إذا القطع انباعت أو
+        انتقلت.
       </p>
       <table className="w-full">
         <thead className="text-sm text-ink-muted">
@@ -761,6 +797,7 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
             <th className="p-2 text-start">بالاستلام هلق</th>
             <th className="p-2 text-start">الكمية الصحيحة</th>
             <th className="p-2 text-start">الفرق لمقاس تاني؟</th>
+            {fixesCost && <th className="p-2 text-start">التكلفة الصح للقطعة</th>}
           </tr>
         </thead>
         <tbody>
@@ -801,6 +838,28 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
                     ))}
                 </Select>
               </td>
+              {fixesCost && (
+                <td className="p-2">
+                  {r.unitCost && (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        dir="ltr"
+                        inputMode="decimal"
+                        className="w-28"
+                        aria-label={`التكلفة الصحيحة — ${r.variant.title}`}
+                        value={
+                          cost[r.variant.id] ??
+                          fromMinorUnits(r.unitCost.amount, r.unitCost.currency)
+                        }
+                        onChange={(e) => setCost({ ...cost, [r.variant.id]: e.target.value })}
+                      />
+                      <span className="text-sm text-ink-muted">
+                        {CURRENCY_SYMBOL[r.unitCost.currency]}
+                      </span>
+                    </div>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

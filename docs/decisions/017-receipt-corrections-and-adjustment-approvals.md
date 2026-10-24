@@ -76,3 +76,18 @@ and always at the line's own cost (for a variant that came in by a move, the cos
   at least puts them in 5212 with a name, not in damage.
 - The report's data corrections (ب)–(د) can now be done with these tools, once the owner
   confirms the facts.
+
+## Addendum (2026-10-24): a wrong cost (report F-07)
+
+- **The change:** a correction line may carry `unitCost` instead of a new quantity: the right cost
+  per piece, in the line's currency and at the receipt's rate.
+- **How it posts:**
+  - every piece of the line goes back as a `RECEIPT_CORRECTION` at the cost it carries, and in again
+    at the right one;
+  - the value difference moves the supplier's bill (`BILL_CORRECTION`) or the opening balances;
+  - nothing reaches 5103, and the size's average becomes the right cost.
+- **Refused:** once any piece of the line has been sold or moved, and for anyone without
+  `inventory.adjust.approve`.
+- **The line's cost from then on** is the last one that came in on it, so a later correction of the
+  quantity uses the corrected cost.
+

@@ -498,7 +498,12 @@ export interface ScanSessionHeader {
 export interface ScanSession extends ScanSessionHeader {
   lines: ScanLine[];
   /** A confirmed receipt: each variant as it stands after its corrections (F-02). */
-  received?: { variant: Variant; quantity: number }[];
+  received?: {
+    variant: Variant;
+    quantity: number;
+    /** The cost each piece carries now (F-07). */
+    unitCost: { amount: string; currency: Currency; rateToBase: string } | null;
+  }[];
   /** F-04: the shipment this session sent or receives. */
   shipment?: {
     id: string;
@@ -1089,7 +1094,7 @@ export const api = {
   correctReceipt: async (
     sessionId: string,
     input: {
-      changes: { variantId: string; quantity: number; toVariantId?: string }[];
+      changes: { variantId: string; quantity: number; toVariantId?: string; unitCost?: string }[];
       reason: string;
     },
     idempotencyKey: string,

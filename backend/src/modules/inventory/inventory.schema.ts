@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { unitCostSchema } from '../../shared/money.js';
+import { minorAmountSchema, unitCostSchema } from '../../shared/money.js';
 import { ADJUSTMENT_REASONS } from './inventory.types.js';
 
 const quantity = z.number().int().min(1).max(1_000_000);
@@ -81,13 +81,23 @@ export const undoMovementSchema = z.object({ reason: z.string().trim().min(3).ma
 export const correctReceiptSchema = z.object({
   changes: z
     .array(
-      z.object({
-        variantId: z.uuid(),
-        /** The line's quantity as it should have been: 0 takes it all back. */
-        quantity: z.number().int().min(0).max(1_000_000),
-        /** Instead: move this much of it to another variant (a wrong size or design), same cost. */
-        toVariantId: z.uuid().optional(),
-      }),
+      z
+        .object({
+          variantId: z.uuid(),
+          /** The line's quantity as it should have been: 0 takes it all back. */
+          quantity: z.number().int().min(0).max(1_000_000),
+          /** Instead: move this much of it to another variant (a wrong size or design), same cost. */
+          toVariantId: z.uuid().optional(),
+          /**
+           * Instead (developer report F-07): the right cost per piece, in the line's currency and at
+           * the receipt's rate. The quantity stays; only the value changes.
+           */
+          unitCost: minorAmountSchema.optional(),
+        })
+        .refine((c) => !(c.unitCost !== undefined && c.toVariantId), {
+          path: ['unitCost'],
+          message: 'A cost is corrected on its own line',
+        }),
     )
     .min(1)
     .max(200),
