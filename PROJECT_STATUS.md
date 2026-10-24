@@ -27,6 +27,15 @@ page, the scan screen and balances. The suit (الطقم) types موديل ال�
 PC (shrunk in the browser), tagged with the option values they show; every variant, the product list
 and the scan screen show the best-matching photo. **Next for products:** categories.
 
+**Re-audit fixes (2026-10-24):**
+- **Approving alone:** with nobody else active who may approve, the asker approves their own
+  adjustment or applies their own count. It is marked on it («قرّره لحالو», `self_approved` /
+  `applied_alone`). Otherwise four eyes stay.
+- **The two «بالطريق» accounts are named for what they hold:**
+  - the road location's account: «بضاعة بالطريق — شحنات بين الفروع»;
+  - 110599: «تحويلات بين المواقع والفروع».
+- **A manual journal line always has a country:** the one chosen, else the account's, else Syria.
+
 **Cost correction (2026-10-24, report F-07; ADR-017 addendum):**
 - **Correcting a cost:** «تصحيح الاستلام» also takes the right cost per piece of a line. The pieces
   go back at their cost and in again at the right one, so the stock value and the supplier's bill

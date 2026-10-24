@@ -282,13 +282,12 @@ describe('categories are a tree, and editable', () => {
       w.owner,
     );
     expect(updated.groupIds).toEqual([...all, sleeve.id]);
-    // The new type is now required for new products.
-    await expect(
-      catalogue.generateProducts(
-        { categoryId: w.category.id, selections: whiteCotton('60') },
-        w.owner,
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_SELECTION' });
+    // A new product may leave the new type out: it is «بدون» (the product builder, 137e98a).
+    const made = await catalogue.generateProducts(
+      { categoryId: w.category.id, selections: whiteCotton('60') },
+      w.owner,
+    );
+    expect(made.created).toHaveLength(1);
     expect((await catalogue.getVariant(w.x.id, w.owner)).product.nameAr).toBe('ثوب معدل');
 
     await catalogue.updateCategory(w.category.id, { isActive: false }, w.owner);

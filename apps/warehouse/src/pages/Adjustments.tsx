@@ -54,7 +54,9 @@ function RequestCard({ request: r }: { request: AdjustmentRequest }) {
   const toast = useToast();
   const [key, setKey] = useState(() => crypto.randomUUID());
   const mine = user?.id === r.requestedById;
-  const canDecide = can(user, 'inventory.adjust.approve') && !mine && r.status === 'PENDING';
+  // The asker decides their own only when nobody else may approve (re-audit 2026-10-24).
+  const canDecide =
+    can(user, 'inventory.adjust.approve') && (!mine || r.decideAlone) && r.status === 'PENDING';
   const decide = useMutation({
     mutationFn: async (d: 'approve' | 'reject') => api.decideAdjustment(r.id, d, undefined, key),
     onSuccess: async (_x, d) => {
@@ -101,7 +103,7 @@ function RequestCard({ request: r }: { request: AdjustmentRequest }) {
           </Button>
         </div>
       )}
-      {mine && r.status === 'PENDING' && (
+      {mine && !r.decideAlone && r.status === 'PENDING' && (
         <span className="text-sm text-ink-muted">بانتظار موافقة شخص تاني</span>
       )}
       {decide.isError && (

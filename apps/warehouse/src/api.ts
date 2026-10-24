@@ -580,6 +580,8 @@ export interface StocktakeLine {
 }
 
 export interface Stocktake {
+  /** This user may apply a count they made: nobody else may (re-audit 2026-10-24). */
+  applyAlone?: boolean;
   id: string;
   locationId: string;
   scope: 'FULL' | 'PARTIAL';
@@ -811,6 +813,10 @@ export interface AdjustmentRequest {
   decidedBy: string | null;
   decidedAt: string | null;
   decisionNote: string | null;
+  /** Decided by the asker, with nobody else who may approve. */
+  selfApproved: boolean;
+  /** This user may decide their own requests: nobody else may approve. */
+  decideAlone: boolean;
 }
 
 export const api = {

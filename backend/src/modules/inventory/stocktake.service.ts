@@ -6,6 +6,7 @@ import { NotFoundError } from '../../shared/errors.js';
 import { uuidv7 } from '../../shared/ids.js';
 import { assertPermission, PERMISSIONS, type ActorContext } from '../../shared/permissions.js';
 import { parse } from '../../shared/validation.js';
+import { someoneElseHolds } from '../auth/auth.service.js';
 import type { VariantView } from '../catalogue/catalogue.service.js';
 import {
   LocationInactiveError,
@@ -401,7 +402,7 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
     async getStocktake(
       input: z.input<typeof refSchema>,
       ctx: ActorContext,
-    ): Promise<StocktakeView> {
+    ): Promise<StocktakeView & { applyAlone: boolean }> {
       assertPermission(ctx, PERMISSIONS.inventory.view);
       const { stocktakeId } = parse(refSchema, input);
       const found = await db.stocktake.findUnique({
@@ -409,7 +410,14 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
         select: { locationId: true },
       });
       if (found) await deps.locations.assertInBranch(db, ctx, found.locationId);
-      return view(db, stocktakeId);
+      const st = await view(db, stocktakeId);
+      // Whether this person may apply a count they made themselves: only with nobody else.
+      return {
+        ...st,
+        applyAlone:
+          ctx.permissions.has(PERMISSIONS.inventory.stocktakeApply) &&
+          !(await someoneElseHolds(db, ctx.userId, PERMISSIONS.inventory.stocktakeApply)),
+      };
     },
 
     /**
@@ -428,7 +436,11 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
       const { stocktakeId } = parse(refSchema, input);
       return inTransaction(db, async (tx) => {
         const st = await lock(tx, stocktakeId, 'update', ['REVIEW'], ctx);
-        if (st.created_by === ctx.userId) throw new SecondApproverRequiredError(st.id);
+        // Someone other than the counter applies it, unless nobody else may: then it says so.
+        const alone =
+          st.created_by === ctx.userId &&
+          !(await someoneElseHolds(tx, ctx.userId, PERMISSIONS.inventory.stocktakeApply));
+        if (st.created_by === ctx.userId && !alone) throw new SecondApproverRequiredError(st.id);
         const taken = await tx.stocktake.findUnique({
           where: { id: st.id },
           select: { snapshotAt: true },
@@ -461,7 +473,12 @@ export function createStocktakeService(db: Db, deps: LedgerDeps) {
         });
         await tx.stocktake.update({
           where: { id: st.id },
-          data: { status: 'APPLIED', appliedById: ctx.userId, appliedAt: new Date() },
+          data: {
+            status: 'APPLIED',
+            appliedById: ctx.userId,
+            appliedAt: new Date(),
+            appliedAlone: alone,
+          },
         });
         const canSeeCost = ctx.permissions.has(PERMISSIONS.inventory.costView);
         return {

@@ -10,6 +10,7 @@ import {
   type WriteContext,
 } from '../../shared/permissions.js';
 import { parse } from '../../shared/validation.js';
+import { someoneElseHolds } from '../auth/auth.service.js';
 import type { VariantView } from '../catalogue/catalogue.service.js';
 import {
   AdjustmentRequestStateError,
@@ -151,7 +152,11 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
       });
       if (!request) throw new NotFoundError('adjustment_request', id);
       if (request.status !== 'PENDING') throw new AdjustmentRequestStateError(id, request.status);
-      if (request.requestedById === ctx.userId) throw new SelfApprovalError(id);
+      // Four eyes, unless nobody else may decide: then the asker does, and it says so.
+      const alone =
+        request.requestedById === ctx.userId &&
+        !(await someoneElseHolds(tx, ctx.userId, PERMISSIONS.inventory.adjustApprove));
+      if (request.requestedById === ctx.userId && !alone) throw new SelfApprovalError(id);
       let movementId: string | null = null;
       if (status === 'APPROVED') {
         const result = await applyAdjustment(
@@ -174,7 +179,10 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
           status,
           decidedById: ctx.userId,
           decidedAt: new Date(),
-          decisionNote: note || null,
+          decisionNote: alone
+            ? `قرّره لحالو (ما في غيرو بيوافق)${note ? ` — ${note}` : ''}`
+            : note || null,
+          selfApproved: alone,
           movementId,
         },
       });
@@ -183,7 +191,7 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
         action: `inventory.adjust.${status.toLowerCase()}`,
         entityType: 'adjustment_request',
         entityId: id,
-        after: { movementId },
+        after: { movementId, alone },
       });
       return { id, status, movementId };
     });
@@ -361,6 +369,10 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
       ]);
       const byId = new Map(variants.map((v) => [v.id, v]));
       const costs = canSeeCost(ctx);
+      // The asker may decide their own only when nobody else may (re-audit 2026-10-24).
+      const alone =
+        ctx.permissions.has(PERMISSIONS.inventory.adjustApprove) &&
+        !(await someoneElseHolds(db, ctx.userId, PERMISSIONS.inventory.adjustApprove));
       return rows.map((r) => ({
         id: r.id,
         variant: byId.get(r.variantId) ?? null,
@@ -376,6 +388,8 @@ export function createInventoryService(db: Db, deps: LedgerDeps) {
         decidedBy: r.decidedBy?.nameAr ?? null,
         decidedAt: r.decidedAt,
         decisionNote: r.decisionNote,
+        selfApproved: r.selfApproved,
+        decideAlone: alone,
       }));
     },
 

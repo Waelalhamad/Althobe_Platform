@@ -603,7 +603,7 @@ function JournalLines({
             value={form.branch}
             onChange={(e) => set({ branch: e.target.value as FormState['branch'] })}
           >
-            <option value="">البلد: غير محدد</option>
+            <option value="">البلد: حسب الحساب (وإلا سوريا)</option>
             <option value="SY">{BRANCH.SY}</option>
             <option value="LY">{BRANCH.LY}</option>
           </Select>

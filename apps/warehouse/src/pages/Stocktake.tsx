@@ -121,7 +121,8 @@ export function StocktakePage() {
   const showExpected = st.status === 'REVIEW' || st.status === 'APPLIED';
   const uncounted = st.lines.filter((l) => l.countedQuantity === null).length;
   const differences = st.lines.filter((l) => (l.difference ?? 0) !== 0);
-  const isCreator = user?.id === st.createdById;
+  // The counter applies their own count only when nobody else may (re-audit 2026-10-24).
+  const isCreator = user?.id === st.createdById && !st.applyAlone;
   const reviewNeedsConfirm =
     review.error instanceof ApiError && review.error.code === 'STOCKTAKE_UNCOUNTED_LINES';
 

@@ -118,9 +118,13 @@ async function wipe(db: Db) {
 }
 
 async function buildWorld(db: Db, services: Services): Promise<World> {
-  const ownerUser = await db.user.create({ data: { email: 'owner@test.local', nameAr: 'المالك' } });
+  // Two people who may approve, so four eyes apply (a person without a login does not count).
+  const person = { roles: ['owner'], passwordHash: 'not-a-login' };
+  const ownerUser = await db.user.create({
+    data: { email: 'owner@test.local', nameAr: 'المالك', ...person },
+  });
   const approverUser = await db.user.create({
-    data: { email: 'approver@test.local', nameAr: 'المدقق' },
+    data: { email: 'approver@test.local', nameAr: 'المدقق', ...person },
   });
   const owner = { userId: ownerUser.id, permissions: new Set(ALL_PERMISSIONS) };
   const approver = { userId: approverUser.id, permissions: new Set(ALL_PERMISSIONS) };

@@ -238,9 +238,10 @@ export function createAccountingService(db: Db, deps: AccountingDeps) {
           throw new CurrencyMismatchError({ account: account.currency, journal: 'USD' });
         }
         const amount = (l.debit ?? 0n) - (l.credit ?? 0n);
-        lines.push(
-          line(account.id, 'USD', amount, '1', { branch: v.branch ?? null, memo: l.memo }),
-        );
+        // Every line has a country (re-audit 2026-10-24): the one chosen, else the account's,
+        // else Syria, so a report by country never misses an entry.
+        const branch = v.branch ?? (account.branch as Branch | null) ?? 'SY';
+        lines.push(line(account.id, 'USD', amount, '1', { branch, memo: l.memo }));
       }
       return { ...base, voucherType: 'JOURNAL', lines };
     }

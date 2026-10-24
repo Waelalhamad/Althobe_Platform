@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
 import { z } from 'zod';
 import { writeAudit } from '../../shared/audit.js';
-import { inTransaction, type Db } from '../../shared/db.js';
+import { inTransaction, type Db, type Queryable } from '../../shared/db.js';
 import { DomainError, NotFoundError } from '../../shared/errors.js';
 import {
   assertPermission,
@@ -127,6 +127,23 @@ export interface Authenticated {
 // Verifying against a fixed hash when the email is unknown keeps login time the same whether or
 // not the account exists, so response timing does not reveal which emails are registered.
 let dummyHash: Promise<string> | undefined;
+
+/**
+ * Trusted call (re-audit 2026-10-24): whether an active person other than `userId` holds
+ * `permission`. Four eyes need a second person; with nobody else, the asker approves alone and it
+ * is recorded so.
+ */
+export async function someoneElseHolds(
+  q: Queryable,
+  userId: string,
+  permission: Permission,
+): Promise<boolean> {
+  const others = await q.user.findMany({
+    where: { isActive: true, passwordHash: { not: null }, id: { not: userId } },
+    select: { roles: true },
+  });
+  return others.some((u) => permissionsFor(u.roles).has(permission));
+}
 
 export function createAuthService(db: Db) {
   const sha256 = (token: string) => createHash('sha256').update(token).digest('hex');

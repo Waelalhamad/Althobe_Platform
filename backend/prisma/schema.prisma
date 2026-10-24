@@ -711,6 +711,8 @@ model Stocktake {
   id          String          @id @default(uuid(7)) @db.Uuid
   locationId  String          @map("location_id") @db.Uuid
   scope       StocktakeScope
+  // Applied by whoever counted it, with nobody else who may apply (re-audit 2026-10-24).
+  appliedAlone Boolean  @default(false) @map("applied_alone")
   status      StocktakeStatus @default(DRAFT)
   note        String?
   snapshotAt  DateTime?       @map("snapshot_at") @db.Timestamptz(3)
@@ -1205,6 +1207,8 @@ model AdjustmentRequest {
   note          String?
   valueEstimate BigInt    @map("value_estimate")
   // PENDING · APPROVED · REJECTED
+  // Approved by the asker, with nobody else who may approve (re-audit 2026-10-24).
+  selfApproved  Boolean   @default(false) @map("self_approved")
   status        String    @default("PENDING")
   requestedById String    @map("requested_by") @db.Uuid
   requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)

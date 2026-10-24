@@ -66,7 +66,7 @@ export const DEFAULT_CHART: AccountDef[] = [
   { code: '1105', nameAr: 'المخزون', heading: true, role: 'INVENTORY_PARENT' },
   {
     code: '110599',
-    nameAr: 'بضاعة في الطريق بين المواقع',
+    nameAr: 'تحويلات بين المواقع والفروع',
     kind: 'INVENTORY',
     role: 'INVENTORY_TRANSIT',
   },
@@ -199,7 +199,11 @@ export async function ensureLocationAccounts(tx: Tx, locations: LocationView[]):
     await tx.glAccount.create({
       data: {
         code,
-        nameAr: `مخزون ${location.nameAr}`,
+        // The road between branches holds goods on their way, not a warehouse's stock (F-04).
+        nameAr:
+          location.kind === 'TRANSIT'
+            ? 'بضاعة بالطريق — شحنات بين الفروع'
+            : `مخزون ${location.nameAr}`,
         class: 1,
         parentId: parent.id,
         kind: 'INVENTORY',

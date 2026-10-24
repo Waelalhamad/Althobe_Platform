@@ -66,6 +66,18 @@ describe('manual adjustments (developer report F-03)', () => {
     expect(listed.map((r) => r.status).sort()).toEqual(['APPROVED', 'REJECTED']);
   });
 
+  it('with nobody else who may approve, the asker decides alone, and it says so', async () => {
+    await t.db.user.update({ where: { id: w.approver.userId }, data: { isActive: false } });
+    const up = await ask(2, 'COUNT_DIFFERENCE', 'لقيناهم');
+    const listed = await inv.listAdjustmentRequests({ status: 'PENDING' }, w.owner);
+    expect(listed[0]).toMatchObject({ decideAlone: true });
+    await inv.approveAdjustment(up.requestId!, {}, write(w.owner));
+    expect(await quantity()).toBe(22);
+    const [done] = await inv.listAdjustmentRequests({ status: 'APPROVED' }, w.owner);
+    expect(done).toMatchObject({ selfApproved: true });
+    expect(done!.decisionNote).toMatch(/لحالو/);
+  });
+
   it('refuses a reason outside the list, an increase that is not a count, and a gift (F-06 has its own)', async () => {
     for (const bad of [
       { delta: -1, reasonCode: 'خطأ إدخال' },
