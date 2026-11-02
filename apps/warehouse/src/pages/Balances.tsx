@@ -38,18 +38,46 @@ export function BalancesPage() {
     enabled: Boolean(locationId),
   });
   const [filter, setFilter] = useState('');
+  const [category, setCategory] = useState('');
+  // One chosen value per option group (القماش، اللون، القياس…), by group id.
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<StockStatus>('');
   const showCost = can(user, 'inventory.cost.view');
   const canAdjust = can(user, 'inventory.adjust');
 
+  // The choices come from what is in this location, so no filter can lead to an empty list.
+  const categories = [...new Set(rows.map((r) => r.variant.product.nameAr))].sort();
+  const groups = new Map<string, { name: string; values: Set<string> }>();
+  for (const { variant } of rows)
+    for (const o of variant.options) {
+      const g = groups.get(o.groupId) ?? { name: o.group, values: new Set<string>() };
+      g.values.add(o.value);
+      groups.set(o.groupId, g);
+    }
+
   const needle = filter.trim().toLowerCase();
-  const visible = needle
-    ? rows.filter(({ variant: v }) =>
-        [v.product.nameAr, v.product.code, v.sku, v.barcode, v.title].some((f) =>
-          f.toLowerCase().includes(needle),
-        ),
+  const visible = rows.filter(({ variant: v, balance: b }) => {
+    if (
+      needle &&
+      ![v.product.nameAr, v.product.code, v.sku, v.barcode, v.title].some((f) =>
+        f.toLowerCase().includes(needle),
       )
-    : rows;
+    )
+      return false;
+    if (category && v.product.nameAr !== category) return false;
+    for (const [groupId, value] of Object.entries(picked))
+      if (value && !v.options.some((o) => o.groupId === groupId && o.value === value)) return false;
+    return matchesStatus(status, v, b);
+  });
+  const filtering = Boolean(needle || category || status) || Object.values(picked).some(Boolean);
+  const clear = () => {
+    setFilter('');
+    setCategory('');
+    setPicked({});
+    setStatus('');
+  };
   const total = visible.reduce((sum, r) => sum + r.balance.quantity, 0);
+  const totalValue = visible.reduce((sum, r) => sum + Number(r.balance.valueBaseAmount ?? 0), 0);
 
   return (
     <>
@@ -72,6 +100,56 @@ export function BalancesPage() {
         <Field label="بحث" hint="بالاسم أو الباركود أو SKU أو القماش أو اللون أو القياس">
           <Input value={filter} onChange={(e) => setFilter(e.target.value)} />
         </Field>
+        <div className="grid gap-3 sm:grid-cols-2 md:col-span-2 lg:grid-cols-4">
+          <Field label="المنتج">
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">الكل</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {[...groups].map(([groupId, g]) => (
+            <Field key={groupId} label={g.name}>
+              <Select
+                value={picked[groupId] ?? ''}
+                onChange={(e) => setPicked({ ...picked, [groupId]: e.target.value })}
+              >
+                <option value="">الكل</option>
+                {[...g.values]
+                  .sort((x, y) => x.localeCompare(y, 'ar', { numeric: true }))
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+          ))}
+          <Field label="الحالة">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as StockStatus)}>
+              {Object.entries(STOCK_STATUS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="flex items-center justify-between gap-2 md:col-span-2">
+          <p className="text-sm text-ink-muted">
+            {filtering
+              ? `${formatQuantity(visible.length)} من ${formatQuantity(rows.length)} مقاس`
+              : `${formatQuantity(rows.length)} مقاس`}
+          </p>
+          {filtering && (
+            <Button variant="ghost" onClick={clear}>
+              مسح الفلاتر
+            </Button>
+          )}
+        </div>
       </Card>
 
       <Card className="overflow-x-auto p-0">
@@ -110,8 +188,8 @@ export function BalancesPage() {
             {!isLoading && visible.length === 0 && (
               <tr>
                 <td colSpan={8} className="p-3">
-                  {needle ? (
-                    <p className="p-3 text-center text-ink-muted">لا نتائج لهذا البحث</p>
+                  {filtering ? (
+                    <p className="p-3 text-center text-ink-muted">ما في نتائج بهالفلاتر</p>
                   ) : (
                     <EmptyState title="لا توجد قطع في هذا الموقع بعد">
                       الرصيد يزيد عندما تُدخل القطع بالمسح: «جرد افتتاحي» للبضاعة الموجودة أصلاً، أو
@@ -129,7 +207,11 @@ export function BalancesPage() {
                   المجموع
                 </td>
                 <td className="tabular p-3 font-bold">{formatQuantity(total)}</td>
-                <td colSpan={showCost ? 5 : 3} />
+                <td colSpan={3} />
+                {showCost && (
+                  <td className="tabular p-3 font-bold">{formatMoney(String(totalValue))}</td>
+                )}
+                {showCost && <td />}
               </tr>
             </tfoot>
           )}
@@ -137,6 +219,31 @@ export function BalancesPage() {
       </Card>
     </>
   );
+}
+
+type StockStatus = '' | 'IN_STOCK' | 'EMPTY' | 'LOW' | 'NO_PRICE';
+
+const STOCK_STATUS: Record<StockStatus, string> = {
+  '': 'الكل',
+  IN_STOCK: 'فيها قطع',
+  LOW: 'قليلة (٣ أو أقل)',
+  EMPTY: 'خالصة (صفر)',
+  NO_PRICE: 'بدون سعر مفرق',
+};
+
+function matchesStatus(status: StockStatus, v: Variant, b: Balance): boolean {
+  switch (status) {
+    case 'IN_STOCK':
+      return b.quantity > 0;
+    case 'LOW':
+      return b.quantity > 0 && b.quantity <= 3;
+    case 'EMPTY':
+      return b.quantity <= 0;
+    case 'NO_PRICE':
+      return v.prices.retailSyp === null && v.prices.retailLyd === null;
+    default:
+      return true;
+  }
 }
 
 function BalanceRow({
