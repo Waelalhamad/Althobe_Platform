@@ -300,7 +300,8 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
           {
             locationId: request.query.locationId as string,
             inStockOnly: request.query.inStockOnly === 'true',
-            limit: 500,
+            // A whole warehouse: the balances page and picking without scanning filter it here.
+            limit: 5000,
           },
           actorOf(request),
         ),

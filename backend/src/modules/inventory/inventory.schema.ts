@@ -132,7 +132,7 @@ export const listBalancesSchema = z.object({
   locationId: z.uuid(),
   variantIds: z.array(z.uuid()).max(500).optional(),
   inStockOnly: z.boolean().default(false),
-  limit: z.number().int().min(1).max(500).default(100),
+  limit: z.number().int().min(1).max(5000).default(100),
 });
 
 export const movementsQuerySchema = z.object({

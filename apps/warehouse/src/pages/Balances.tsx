@@ -23,6 +23,7 @@ import {
   normalizeDigits,
 } from '../format';
 import { PAGES } from '../help';
+import { useVariantFilters } from '../stock-filters';
 import { balancesQuery, can, myLocationsQuery, meQuery } from '../queries';
 
 const route = getRouteApi('/app/balances');
@@ -37,43 +38,16 @@ export function BalancesPage() {
     ...balancesQuery(locationId ?? ''),
     enabled: Boolean(locationId),
   });
-  const [filter, setFilter] = useState('');
-  const [category, setCategory] = useState('');
-  // One chosen value per option group (القماش، اللون، القياس…), by group id.
-  const [picked, setPicked] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<StockStatus>('');
   const showCost = can(user, 'inventory.cost.view');
   const canAdjust = can(user, 'inventory.adjust');
-
-  // The choices come from what is in this location, so no filter can lead to an empty list.
-  const categories = [...new Set(rows.map((r) => r.variant.product.nameAr))].sort();
-  const groups = new Map<string, { name: string; values: Set<string> }>();
-  for (const { variant } of rows)
-    for (const o of variant.options) {
-      const g = groups.get(o.groupId) ?? { name: o.group, values: new Set<string>() };
-      g.values.add(o.value);
-      groups.set(o.groupId, g);
-    }
-
-  const needle = filter.trim().toLowerCase();
-  const visible = rows.filter(({ variant: v, balance: b }) => {
-    if (
-      needle &&
-      ![v.product.nameAr, v.product.code, v.sku, v.barcode, v.title].some((f) =>
-        f.toLowerCase().includes(needle),
-      )
-    )
-      return false;
-    if (category && v.product.nameAr !== category) return false;
-    for (const [groupId, value] of Object.entries(picked))
-      if (value && !v.options.some((o) => o.groupId === groupId && o.value === value)) return false;
-    return matchesStatus(status, v, b);
-  });
-  const filtering = Boolean(needle || category || status) || Object.values(picked).some(Boolean);
+  const filters = useVariantFilters(rows.map((r) => r.variant));
+  const visible = rows.filter(
+    ({ variant: v, balance: b }) => filters.matches(v) && matchesStatus(status, v, b),
+  );
+  const filtering = filters.filtering || Boolean(status);
   const clear = () => {
-    setFilter('');
-    setCategory('');
-    setPicked({});
+    filters.clear();
     setStatus('');
   };
   const total = visible.reduce((sum, r) => sum + r.balance.quantity, 0);
@@ -97,37 +71,9 @@ export function BalancesPage() {
             ))}
           </Select>
         </Field>
-        <Field label="بحث" hint="بالاسم أو الباركود أو SKU أو القماش أو اللون أو القياس">
-          <Input value={filter} onChange={(e) => setFilter(e.target.value)} />
-        </Field>
+        {filters.searchField}
         <div className="grid gap-3 sm:grid-cols-2 md:col-span-2 lg:grid-cols-4">
-          <Field label="المنتج">
-            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">الكل</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {[...groups].map(([groupId, g]) => (
-            <Field key={groupId} label={g.name}>
-              <Select
-                value={picked[groupId] ?? ''}
-                onChange={(e) => setPicked({ ...picked, [groupId]: e.target.value })}
-              >
-                <option value="">الكل</option>
-                {[...g.values]
-                  .sort((x, y) => x.localeCompare(y, 'ar', { numeric: true }))
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-          ))}
+          {filters.selectFields}
           <Field label="الحالة">
             <Select value={status} onChange={(e) => setStatus(e.target.value as StockStatus)}>
               {Object.entries(STOCK_STATUS).map(([k, label]) => (

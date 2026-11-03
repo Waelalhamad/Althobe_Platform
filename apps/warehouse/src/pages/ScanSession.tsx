@@ -19,14 +19,17 @@ import { isTransient, sendScan } from '../scan-retry';
 import {
   api,
   ApiError,
+  type Balance,
   type Currency,
   type ReceiptSource,
   type ScanLine,
   type ScanSession,
+  type Variant,
 } from '../api';
 import {
   errorText,
   formatMoney,
+  normalizeDigits,
   CURRENCY_SYMBOL,
   formatPrice,
   formatRetail,
@@ -37,6 +40,7 @@ import {
   toUsdCents,
 } from '../format';
 import { PhotoThumb } from '../photo';
+import { useVariantFilters } from '../stock-filters';
 import { ShipmentExpected, ShipmentSendNote } from './Shipments';
 import { GiftCard, GiftDone, giftBody, giftReady, NO_GIFT, type GiftDraft } from './GiftForm';
 import {
@@ -368,6 +372,15 @@ export function ScanSessionPage() {
           <LastScanPanel last={last} pending={pending} />
         </Card>
       )}
+      {open && outgoing && sourceBalances && (
+        <PickFromStock
+          sessionId={sessionId}
+          session={session}
+          rows={sourceBalances}
+          from={locationName(session.locationId)}
+          onLine={updateLine}
+        />
+      )}
 
       <Card className="overflow-x-auto p-0">
         <table className="w-full">
@@ -479,6 +492,185 @@ export function ScanSessionPage() {
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Goods that already left, or too many to scan: pick them from what is in stock here, with the
+ * same filters as the balances page, and type how many. Each typed quantity is kept in the
+ * session's audit trail, as a typed quantity after a scan is.
+ */
+function PickFromStock({
+  sessionId,
+  session,
+  rows,
+  from,
+  onLine,
+}: {
+  sessionId: string;
+  session: ScanSession;
+  rows: { variant: Variant; balance: Balance }[];
+  from: string;
+  onLine: (line: ScanLine) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [shown, setShown] = useState(false);
+  const inStock = rows.filter((r) => r.balance.availableQuantity > 0);
+  const filters = useVariantFilters(inStock.map((r) => r.variant));
+  const visible = inStock.filter((r) => filters.matches(r.variant));
+  const inSession = new Map(session.lines.map((l) => [l.variant.id, l.quantity]));
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [progress, setProgress] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationKey: lineSaveKey(sessionId),
+    mutationFn: async ({ variantId, quantity }: { variantId: string; quantity: number }) => {
+      if (quantity === 0) {
+        await api.removeLine(sessionId, variantId);
+        return null;
+      }
+      return api.setLine(sessionId, variantId, { quantity });
+    },
+    onSuccess: async (line, { variantId }) => {
+      setTyped(({ [variantId]: _done, ...rest }) => rest);
+      if (line) onLine(line);
+      else await queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+    },
+  });
+  const commitTyped = (variantId: string) => {
+    const text = typed[variantId];
+    if (text === undefined) return;
+    const n = Number(normalizeDigits(text.trim() || '0'));
+    if (!Number.isInteger(n) || n < 0) return;
+    if (n === (inSession.get(variantId) ?? 0)) {
+      setTyped(({ [variantId]: _same, ...rest }) => rest);
+      return;
+    }
+    save.mutate({ variantId, quantity: n });
+  };
+  // Everything shown, all of it: one size after the other, so a failure says where it stopped.
+  const takeAll = async () => {
+    let done = 0;
+    for (const r of visible) {
+      const want = r.balance.availableQuantity;
+      if (inSession.get(r.variant.id) === want) continue;
+      setProgress(`${done} من ${visible.length}…`);
+      await save.mutateAsync({ variantId: r.variant.id, quantity: want });
+      done++;
+    }
+    setProgress(null);
+  };
+
+  if (!shown) {
+    return (
+      <div className="mb-4">
+        <Button variant="secondary" onClick={() => setShown(true)}>
+          📋 أضف بدون مسح — من المتوفر بـ {from}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <Card className="mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold">أضف بدون مسح — من المتوفر بـ {from}</h2>
+        <Button variant="ghost" onClick={() => setShown(false)}>
+          إخفاء
+        </Button>
+      </div>
+      <p className="mt-1 text-sm text-ink-muted">
+        للبضاعة يلي طلعت قبل ما تنمسح، أو الكتيرة: فلتر، واكتب كم قطعة من كل مقاس (0 بيشيلو). كل رقم
+        بتكتبو بينحفظ بسجل الجلسة.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {filters.searchField}
+        {filters.selectFields}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-ink-muted">
+          {visible.length} مقاس ·{' '}
+          {formatQuantity(visible.reduce((n, r) => n + r.balance.availableQuantity, 0))} قطعة متوفرة
+        </span>
+        {filters.filtering && (
+          <Button variant="ghost" onClick={filters.clear}>
+            مسح الفلاتر
+          </Button>
+        )}
+        {filters.filtering && visible.length > 0 && (
+          <ConfirmButton
+            variant="secondary"
+            disabled={save.isPending || progress !== null}
+            onConfirm={() => void takeAll()}
+          >
+            أضف كل الظاهر بكامل كميتو
+          </ConfirmButton>
+        )}
+        {progress && <span className="text-sm text-ink-muted">{progress}</span>}
+      </div>
+      <div className="mt-3 max-h-[60vh] overflow-auto">
+        <table className="w-full">
+          <thead className="sticky top-0 bg-blush text-sm text-ink-muted">
+            <tr>
+              <th className="p-2 text-start">الصنف</th>
+              <th className="p-2 text-start">المتوفر</th>
+              <th className="w-32 p-2 text-start">بالشحنة</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map(({ variant: v, balance: b }) => {
+              const now = inSession.get(v.id) ?? 0;
+              return (
+                <tr key={v.id} className={`border-t border-stone ${now ? 'bg-blush/40' : ''}`}>
+                  <td className="p-2">
+                    <div className="font-medium">{v.product.nameAr}</div>
+                    <div className="text-sm text-ink-muted">{v.title}</div>
+                  </td>
+                  <td className="tabular p-2">{formatQuantity(b.availableQuantity)}</td>
+                  <td className="p-2">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        dir="ltr"
+                        inputMode="numeric"
+                        className="w-16"
+                        value={typed[v.id] ?? String(now)}
+                        onChange={(e) => setTyped({ ...typed, [v.id]: e.target.value })}
+                        onBlur={() => commitTyped(v.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitTyped(v.id);
+                        }}
+                      />
+                      {now !== b.availableQuantity && (
+                        <Button
+                          variant="ghost"
+                          disabled={save.isPending}
+                          onClick={() =>
+                            save.mutate({ variantId: v.id, quantity: b.availableQuantity })
+                          }
+                        >
+                          الكل
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={3} className="p-6 text-center text-ink-muted">
+                  ما في شي متوفر بهالفلاتر
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {save.isError && (
+        <div className="mt-3">
+          <Alert>{errorText(save.error)}</Alert>
+        </div>
+      )}
+    </Card>
   );
 }
 
