@@ -22,10 +22,12 @@ import {
   PartyCurrencyLockedError,
   PartyCurrencyMismatchError,
   PartyNotUsableError,
+  ReceiptHasSourceError,
   UnassignedTooSmallError,
   WrongSessionKindError,
 } from './parties.errors.js';
 import {
+  claimReceiptsSchema,
   createPartySchema,
   goodsOutTermsSchema,
   partiesQuerySchema,
@@ -766,6 +768,139 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
         suppliers: list(totals.SUPPLIER),
         books: await unassigned(db),
       };
+    },
+
+    /**
+     * Receipts confirmed with no supplier, or as stock owned before the system: the ones a
+     * supplier can claim.
+     */
+    async unsourcedReceipts(ctx: ActorContext) {
+      assertPermission(ctx, PERMISSIONS.parties.manage);
+      const terms = new Map(
+        (await db.receiptTerms.findMany({ select: { sessionId: true, source: true } })).map((t) => [
+          t.sessionId,
+          t.source,
+        ]),
+      );
+      return (await deps.scanSessions.committedReceipts(db))
+        .filter((r) => !terms.has(r.sessionId) || terms.get(r.sessionId) === 'OPENING')
+        .map(({ byCurrency, ...r }) => ({
+          ...r,
+          source: terms.get(r.sessionId) ?? null,
+          currencies: [...byCurrency.keys()],
+        }));
+    },
+
+    /**
+     * The goods of these receipts came from this supplier after all (owner, 2026-11-03): each
+     * becomes a bill on their account, and the books move with it. What was still owed with no
+     * name is named; what had been counted as opening stock (3901) is owed to them instead. The
+     * stock, its cost and the profit do not change.
+     */
+    async claimReceipts(partyId: string, input: unknown, ctx: WriteContext) {
+      assertPermission(ctx, PERMISSIONS.parties.manage);
+      const data = parse(claimReceiptsSchema, input);
+      await deps.accounting.syncInventory();
+      return inTransaction(db, async (tx) =>
+        withIdempotency(
+          tx,
+          {
+            key: ctx.idempotencyKey,
+            operation: 'parties.receipts.claim',
+            request: { partyId, ...data },
+          },
+          async () => {
+            const party = usable(await lockParty(tx, partyId), 'SUPPLIER');
+            await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(${UNASSIGNED_LOCK})`);
+            const receipts = await deps.scanSessions.committedReceipts(tx, data.sessionIds);
+            const terms = new Map(
+              (
+                await tx.receiptTerms.findMany({
+                  where: { sessionId: { in: data.sessionIds } },
+                  select: { sessionId: true, source: true },
+                })
+              ).map((t) => [t.sessionId, t.source]),
+            );
+            for (const id of data.sessionIds) {
+              const source = terms.get(id) ?? null;
+              if (!receipts.some((r) => r.sessionId === id) || (source && source !== 'OPENING')) {
+                throw new ReceiptHasSourceError(id, source);
+              }
+            }
+            const found = [...new Set(receipts.flatMap((r) => [...r.byCurrency.keys()]))];
+            if (found.some((c) => c !== party.currency)) {
+              throw new PartyCurrencyMismatchError(party.id, party.currency, found);
+            }
+
+            const value = receipts.reduce((s, r) => s + r.value, 0n);
+            const unnamed = receipts
+              .filter((r) => !terms.has(r.sessionId))
+              .reduce((s, r) => s + r.value, 0n);
+            // A receipt with no supplier is owed with no name until it is settled; the owner
+            // settled those as opening stock (3901). What is still unnamed is only named.
+            const left = (await unassigned(tx)).payable.unassigned;
+            const named = unnamed < left ? unnamed : left > 0n ? left : 0n;
+            const fromOpening = value - named;
+            const result = {
+              partyId,
+              receipts: receipts.length,
+              pieces: receipts.reduce((n, r) => n + r.pieces, 0),
+              value,
+              named,
+              fromOpening,
+              journalEntryId: null as string | null,
+            };
+            if (data.dryRun) return result;
+
+            for (const r of receipts) {
+              const own = r.byCurrency.get(party.currency) ?? { amount: 0n, base: 0n };
+              await tx.receiptTerms.upsert({
+                where: { sessionId: r.sessionId },
+                create: {
+                  sessionId: r.sessionId,
+                  source: 'SUPPLIER',
+                  partyId: party.id,
+                  createdById: ctx.userId,
+                },
+                update: { source: 'SUPPLIER', partyId: party.id },
+              });
+              await tx.partyEntry.create({
+                data: {
+                  partyId: party.id,
+                  kind: 'BILL',
+                  amount: own.amount,
+                  amountBase: r.value,
+                  sourceType: 'SCAN_SESSION',
+                  sourceId: r.sessionId,
+                  note: `استلام ${r.committedAt.toISOString().slice(0, 10)} — كان بدون مورد`,
+                  createdById: ctx.userId,
+                },
+              });
+            }
+            if (fromOpening !== 0n) {
+              result.journalEntryId = await deps.accounting.postPartyEntry(tx, {
+                side: 'PAYABLE',
+                control: { currency: 'USD', amount: -fromOpening, base: -fromOpening },
+                other: { role: 'OPENING_EQUITY', base: fromOpening },
+                voucherType: 'JOURNAL',
+                sourceType: 'PARTY_RECEIPTS_CLAIM',
+                sourceId: uuidv7(),
+                branch: party.branch as Branch,
+                memo: `بضاعة كانت رصيد افتتاحي طلعت من ${party.nameAr} — صارت دين عليه`,
+                createdById: ctx.userId,
+              });
+            }
+            await writeAudit(tx, {
+              actorId: ctx.userId,
+              action: 'parties.receipts.claim',
+              entityType: 'party',
+              entityId: partyId,
+              after: { ...result, sessionIds: data.sessionIds },
+            });
+            return result;
+          },
+        ),
+      );
     },
 
     /**

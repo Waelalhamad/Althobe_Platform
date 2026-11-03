@@ -793,6 +793,16 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await par.commitGoodsOut(request.params.id, request.body, actorOf(request)),
     }));
 
+    // Receipts with no supplier (or counted as opening stock) that a supplier can claim.
+    priv.get('/parties/unsourced-receipts', async (request) => ({
+      data: await par.unsourcedReceipts(actorOf(request)),
+    }));
+
+    // { sessionIds, dryRun? }: those receipts were this supplier's — bills on their account.
+    priv.post('/parties/:id/claim-receipts', async (request: Id) => ({
+      data: await par.claimReceipts(request.params.id, request.body, writeContextOf(request)),
+    }));
+
     priv.get('/parties/:id', async (request: Id) => ({
       data: await par.getParty(request.params.id, actorOf(request)),
     }));

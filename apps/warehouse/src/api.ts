@@ -150,6 +150,30 @@ export interface SplitResult {
   staying: number;
 }
 
+export interface UnsourcedReceipt {
+  sessionId: string;
+  committedAt: string;
+  locationId: string;
+  pieces: number;
+  /** USD cents. */
+  value: string;
+  /** null: confirmed before sources were asked; OPENING: as stock owned before the system. */
+  source: 'OPENING' | null;
+  currencies: string[];
+}
+
+export interface ClaimResult {
+  receipts: number;
+  pieces: number;
+  /** USD cents, as are the two below. */
+  value: string;
+  /** Still owed with no name: only named. */
+  named: string;
+  /** Had been counted as opening stock (3901): owed to the supplier instead. */
+  fromOpening: string;
+  journalEntryId: string | null;
+}
+
 export interface Variant {
   id: string;
   sku: string;
@@ -1042,6 +1066,17 @@ export const api = {
       'idempotency-key': idempotencyKey,
     }),
   partiesSummary: async () => get<PartiesSummary>('/parties/summary'),
+  /** Confirmed receipts with no supplier, or counted as opening stock. */
+  unsourcedReceipts: async () => get<UnsourcedReceipt[]>('/parties/unsourced-receipts'),
+  /** Those receipts were this supplier's: bills on their account. */
+  claimReceipts: async (
+    id: string,
+    input: { sessionIds: string[]; dryRun?: boolean },
+    idempotencyKey: string,
+  ) =>
+    request<ClaimResult>('POST', `/parties/${id}/claim-receipts`, input, {
+      'idempotency-key': idempotencyKey,
+    }),
   settleUnassigned: async (
     input: {
       side: 'PAYABLE' | 'RECEIVABLE';

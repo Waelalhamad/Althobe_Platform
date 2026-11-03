@@ -31,6 +31,7 @@ Suppliers and customers: what is owed both ways, and their statements (ADR-016).
 
 ```
 listParties  getParty  createParty  updateParty  settle
+unsourcedReceipts  claimReceipts   (receipts with no supplier that were one's: bills, from 3901 if settled as opening)
 commitReceipt  commitGoodsOut  summary  settleUnassigned
 customerForSale  recordPosSale  recordPosRefund   (trusted, for retail)
 ```

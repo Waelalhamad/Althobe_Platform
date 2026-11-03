@@ -53,3 +53,13 @@ export class UnassignedTooSmallError extends DomainError {
     super('UNASSIGNED_EXCEEDED', 'More than what is left without a name', { left, wanted });
   }
 }
+
+/** Only a confirmed receipt with no supplier, or one counted as opening stock, is claimed. */
+export class ReceiptHasSourceError extends DomainError {
+  constructor(sessionId: string, source: string | null) {
+    super('RECEIPT_HAS_SOURCE', 'This receipt is not one without a supplier', {
+      sessionId,
+      source,
+    });
+  }
+}

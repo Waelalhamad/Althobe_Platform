@@ -1,6 +1,6 @@
 import type { ScanSessionKind } from '@prisma/client';
 import { writeAudit } from '../../shared/audit.js';
-import { inTransaction, type Db, type Tx } from '../../shared/db.js';
+import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { uuidv7 } from '../../shared/ids.js';
 import type { Currency } from '../../shared/money.js';
@@ -762,6 +762,47 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
      * their cost; `alreadyCommitted` tells a retry from the first commit.
      */
     commitInTx,
+
+    /**
+     * Trusted call for parties: each confirmed receipt (all, or `ids`) with the pieces and value it
+     * brought in, corrections included, and that value per cost currency.
+     */
+    async committedReceipts(q: Queryable, ids?: readonly string[]) {
+      const sessions = await q.scanSession.findMany({
+        where: { kind: 'RECEIVE', status: 'COMMITTED', ...(ids ? { id: { in: [...ids] } } : {}) },
+        orderBy: { committedAt: 'asc' },
+        select: { id: true, committedAt: true, locationId: true },
+      });
+      const moves = await q.inventoryMovement.findMany({
+        where: { referenceType: 'SCAN_SESSION', referenceId: { in: sessions.map((s) => s.id) } },
+        select: {
+          referenceId: true,
+          quantity: true,
+          unitCostAmount: true,
+          unitCostCurrency: true,
+          valueBaseAmount: true,
+        },
+      });
+      return sessions.map((s) => {
+        const own = moves.filter((m) => m.referenceId === s.id);
+        const byCurrency = new Map<string, { amount: bigint; base: bigint }>();
+        for (const m of own) {
+          const c = m.unitCostCurrency ?? 'USD';
+          const t = byCurrency.get(c) ?? { amount: 0n, base: 0n };
+          t.amount += (m.unitCostAmount ?? 0n) * BigInt(m.quantity);
+          t.base += m.valueBaseAmount;
+          byCurrency.set(c, t);
+        }
+        return {
+          sessionId: s.id,
+          committedAt: s.committedAt!,
+          locationId: s.locationId,
+          pieces: own.reduce((n, m) => n + m.quantity, 0),
+          value: own.reduce((n, m) => n + m.valueBaseAmount, 0n),
+          byCurrency,
+        };
+      });
+    },
 
     async cancelSession(input: SessionRef, ctx: ActorContext): Promise<void> {
       const data = parse(sessionRefSchema, input);

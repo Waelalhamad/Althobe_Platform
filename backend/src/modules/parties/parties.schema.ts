@@ -73,6 +73,17 @@ export const goodsOutTermsSchema = z.object({
  * Closing what is owed with no name on it: paid from a box; or, with no box, the owner already
  * paid it (3201), or — for goods — it was stock owned before the system (3901).
  */
+/** Receipts with no supplier, or counted as opening stock, that were this supplier's. */
+export const claimReceiptsSchema = z.object({
+  sessionIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(1000)
+    .transform((list) => [...new Set(list)]),
+  /** Only say what would happen. */
+  dryRun: z.boolean().default(false),
+});
+
 export const settleSchema = z.object({
   side: z.enum(['PAYABLE', 'RECEIVABLE']),
   boxId: z.uuid().optional(),

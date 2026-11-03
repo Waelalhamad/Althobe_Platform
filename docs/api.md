@@ -172,6 +172,8 @@ Amounts in minor units of the party's currency. Settling and closing the unnamed
 | Method | Path | Permission |
 | --- | --- | --- |
 | `GET` | `/parties?kind=&includeInactive=` (balance only with `parties.read`) | `parties.read`, or picking: `inventory.receive` · `inventory.issue` · `retail.sell` |
+| `GET` | `/parties/unsourced-receipts` — confirmed receipts with no supplier, or as opening stock | `parties.manage` |
+| `POST` | `/parties/:id/claim-receipts` — `{ sessionIds, dryRun? }`: they were this supplier's; one bill each. What is still owed with no name is named, the rest moves from 3901 (`RECEIPT_HAS_SOURCE`, `PARTY_CURRENCY_MISMATCH`). Idempotency-Key | `parties.manage` |
 | `POST` / `PATCH` | `/parties` · `/parties/:id` — `{ kind, nameAr, phone?, currency, branch, notes?, isActive? }` | `parties.manage` |
 | `GET` | `/parties/:id` (statement with running balance) · `/parties/summary` (totals, unnamed balance) | `parties.read` |
 | `POST` | `/parties/:id/settle` — `{ boxId, amount, note? }` (box currency) | `parties.manage` |

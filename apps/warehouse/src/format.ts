@@ -41,6 +41,7 @@ const ERRORS: Record<string, string> = {
   OPTION_VALUE_TAKEN: 'هذه القيمة موجودة مسبقاً',
   CATEGORY_CODE_TAKEN: 'يوجد تصنيف بهذا الرمز',
   CATEGORY_INACTIVE: 'هذا التصنيف موقوف',
+  RECEIPT_HAS_SOURCE: 'هالاستلام إلو مورد أو مصدر من قبل',
   SPLIT_GROUP_INVALID: 'اختار خيار من خيارات هالتصنيف (مو القياس)، ويكون مستعمل بمنتجاتو',
   SPLIT_CONFLICT: 'في تصنيف داخلي فيه منتج بنفس التصميم — شوف التصنيف الداخلي قبل',
   CATEGORY_TOO_DEEP: 'التصنيفات حتى ثلاثة مستويات، ولا يوضع تصنيف داخل نفسه',

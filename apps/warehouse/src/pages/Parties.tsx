@@ -14,7 +14,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
-import { api, type Branch, type Currency, type Party, type PartyKind } from '../api';
+import {
+  api,
+  type Branch,
+  type ClaimResult,
+  type Currency,
+  type Party,
+  type PartyKind,
+} from '../api';
 import {
   BRANCH,
   CURRENCY_NAME,
@@ -481,6 +488,7 @@ export function PartyPage() {
         )}
       </div>
 
+      {manage && !customer && p.isActive && <ClaimReceipts party={p} />}
       {editing && <PartyForm kind={p.kind} party={p} onDone={() => setEditing(false)} />}
       {settling && <SettleForm party={p} onDone={() => setSettling(false)} />}
 
@@ -530,6 +538,103 @@ export function PartyPage() {
         </Card>
       )}
     </>
+  );
+}
+
+/**
+ * Receipts confirmed with no supplier (or as stock owned before the system) that were this
+ * supplier's after all: by day, to pick from. They become bills on this account; the stock and
+ * its cost do not change.
+ */
+function ClaimReceipts({ party }: { party: Party }) {
+  const { data: receipts = [] } = useQuery({
+    queryKey: ['parties', 'unsourced'],
+    queryFn: async () => api.unsourcedReceipts(),
+  });
+  const refresh = useRefreshParties();
+  const toast = useToast();
+  const days = [...new Set(receipts.map((r) => r.committedAt.slice(0, 10)))];
+  const [off, setOff] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<ClaimResult | null>(null);
+  const [key, setKey] = useState(() => crypto.randomUUID());
+  const chosen = receipts.filter((r) => !off.has(r.committedAt.slice(0, 10)));
+  const sessionIds = chosen.map((r) => r.sessionId);
+
+  const look = useMutation({
+    mutationFn: async () =>
+      api.claimReceipts(party.id, { sessionIds, dryRun: true }, crypto.randomUUID()),
+    onSuccess: setPreview,
+  });
+  const claim = useMutation({
+    mutationFn: async () => api.claimReceipts(party.id, { sessionIds }, key),
+    onSuccess: async (r) => {
+      toast(`صار على ${party.nameAr} ${formatMoney(r.value)} — ${r.receipts} استلام`);
+      setPreview(null);
+      setKey(crypto.randomUUID());
+      await refresh();
+    },
+  });
+  if (!receipts.length) return null;
+
+  return (
+    <Card className="mb-6 border-warn">
+      <h2 className="text-lg font-bold">استلامات بدون مورد</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        بضاعة استلمتها بدون ما تختار مورد، أو سجّلتها «كانت موجودة قبل النظام». إذا كانت من{' '}
+        {party.nameAr}، بتنحط عليه كدين. المخزون والتكلفة والربح ما بيتغيروا، والملصقات متل ما هي.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {days.map((day) => {
+          const of = receipts.filter((r) => r.committedAt.slice(0, 10) === day);
+          const value = of.reduce((s, r) => s + BigInt(r.value), 0n);
+          return (
+            <Chip
+              key={day}
+              selected={!off.has(day)}
+              onClick={() => {
+                setPreview(null);
+                setOff((o) => {
+                  const next = new Set(o);
+                  if (next.has(day)) next.delete(day);
+                  else next.add(day);
+                  return next;
+                });
+              }}
+            >
+              {new Date(day).toLocaleDateString('ar-SY-u-nu-latn')} · {of.length} استلام ·{' '}
+              {of.reduce((n, r) => n + r.pieces, 0)} قطعة · {formatMoney(value.toString())}
+            </Chip>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {!preview ? (
+          <Button disabled={!sessionIds.length || look.isPending} onClick={() => look.mutate()}>
+            شوف شو رح يصير
+          </Button>
+        ) : (
+          <>
+            <p className="w-full">
+              {preview.receipts} استلام، {preview.pieces} قطعة: بيصير على {party.nameAr}{' '}
+              <b>{formatMoney(preview.value)}</b>.
+              {BigInt(preview.fromOpening) > 0n &&
+                ` منها ${formatMoney(preview.fromOpening)} بتطلع من «الأرصدة الافتتاحية».`}
+            </p>
+            <ConfirmButton disabled={claim.isPending} onConfirm={() => claim.mutate()}>
+              سجّلها على {party.nameAr}
+            </ConfirmButton>
+            <Button variant="ghost" onClick={() => setPreview(null)}>
+              رجوع
+            </Button>
+          </>
+        )}
+      </div>
+      {(look.error ?? claim.error) && (
+        <div className="mt-3">
+          <Alert>{errorText(look.error ?? claim.error)}</Alert>
+        </div>
+      )}
+    </Card>
   );
 }
 
