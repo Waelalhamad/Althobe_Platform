@@ -151,7 +151,15 @@ export const searchVariantsSchema = z.object({
   limit: z.number().int().min(1).max(2000).default(50),
 });
 
+/** Turn one option type of a category into its sub-categories (سفاري، رسمي…). */
+export const splitCategorySchema = z.object({
+  groupId: z.uuid(),
+  /** Only say what would happen. */
+  dryRun: z.boolean().default(false),
+});
+
 export type CreateCategoryInput = z.input<typeof createCategorySchema>;
+export type SplitCategoryInput = z.input<typeof splitCategorySchema>;
 export type UpdateCategoryInput = z.input<typeof updateCategorySchema>;
 export type GenerateProductsInput = z.input<typeof generateProductsSchema>;
 export type ListProductsInput = z.input<typeof listProductsSchema>;

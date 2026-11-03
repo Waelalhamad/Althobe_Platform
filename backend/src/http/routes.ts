@@ -124,6 +124,15 @@ export async function registerRoutes(api: FastifyInstance, deps: RouteDeps) {
       data: await s.catalogue.deleteCategory(request.params.id, actorOf(request)),
     }));
 
+    // One option type of a category becomes its sub-categories: { groupId, dryRun? }.
+    priv.post('/categories/:id/split', async (request: Params<{ id: string }>) => ({
+      data: await s.catalogue.splitCategory(
+        request.params.id,
+        request.body as never,
+        actorOf(request),
+      ),
+    }));
+
     // Every chosen design × size of a category: { selections, prices? }.
     priv.post('/categories/:id/products/generate', async (request: Params<{ id: string }>) => ({
       data: await s.catalogue.generateProducts(

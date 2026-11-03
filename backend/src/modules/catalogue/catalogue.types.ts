@@ -35,6 +35,29 @@ export const PRICE_KEYS = Object.keys(PRICE_LISTS) as PriceKey[];
 
 export type Prices = Record<PriceKey, PriceView | null>;
 
+/** One sub-category a split fills: one value of the option type it turns into categories. */
+export interface SplitPart {
+  valueId: string;
+  /** The value's name, which becomes the sub-category's: سفاري. */
+  nameAr: string;
+  /** The sub-category, or null while only previewing a new one. */
+  categoryId: string | null;
+  /** A sub-category of this name already existed and is reused. */
+  existing: boolean;
+  products: number;
+  /** Pieces in stock across every location; they move with their products. */
+  pieces: number;
+}
+
+export interface SplitResult {
+  dryRun: boolean;
+  /** The option type that becomes sub-categories. */
+  group: string;
+  parts: SplitPart[];
+  /** Products without a value of the type («بدون»): they stay in the category. */
+  staying: number;
+}
+
 /** Everything a scan screen needs to show about a variant (one size of a product). */
 export interface VariantView {
   id: string;

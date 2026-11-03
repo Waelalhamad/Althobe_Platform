@@ -136,3 +136,21 @@ export class OptionBuiltInError extends DomainError {
     super('OPTION_BUILT_IN', 'The size type is built in and cannot be deleted; hide it instead');
   }
 }
+
+/** Splitting a category by an option type it does not have, the size, or one no product uses. */
+export class SplitGroupInvalidError extends DomainError {
+  constructor(groupId: string) {
+    super(
+      'SPLIT_GROUP_INVALID',
+      'Choose an option type of this category, other than the size, that its products use',
+      { groupId },
+    );
+  }
+}
+
+/** A sub-category it would move into already holds a product with the same design. */
+export class SplitConflictError extends DomainError {
+  constructor(details: { category: string; productCode: string }) {
+    super('SPLIT_CONFLICT', 'A sub-category already holds a product with the same design', details);
+  }
+}

@@ -43,6 +43,7 @@ stock endpoints arriving in Phase 3 will require it.
 | `PUT` | `/rates` — `{ currency, rate }` | `admin.rates.write` |
 | `GET` / `POST` | `/categories` — `{ nameAr, code?, parentId?, groupIds? }` (ADR-011) | `products.read` / `products.write` |
 | `PATCH` / `DELETE` | `/categories/:id` — name, code, `parentId`, `groupIds`, `isActive`, `move`; delete only without stock | `products.write` |
+| `POST` | `/categories/:id/split` — `{ groupId, dryRun? }`: one option type becomes sub-categories (one per value used); products move without it, keeping id, SKU, barcode, prices, photos and stock. A sub-category of the same name is reused; a clashing design is refused (`SPLIT_CONFLICT`) | `products.write` |
 | `POST` | `/categories/:id/products/generate` — `{ selections: [{ groupId, valueIds }], prices? }` (a type left out = «بدون»; sizes required) | `products.write` (+ `prices.write` with prices) |
 | `GET` | `/products?categoryId=` · `/products/:id` (with its sizes) | `products.read` |
 | `PATCH` / `DELETE` | `/products/:id` — `{ isActive }`; delete only without stock | `products.write` |

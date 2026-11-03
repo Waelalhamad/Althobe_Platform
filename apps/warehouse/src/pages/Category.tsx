@@ -24,8 +24,9 @@ import {
   type OptionGroup,
   type PriceKey,
   type Product,
+  type SplitResult,
 } from '../api';
-import { errorText, formatPrice, fromMinorUnits, PRICE_META } from '../format';
+import { errorText, formatPrice, formatQuantity, fromMinorUnits, PRICE_META } from '../format';
 import { PAGES } from '../help';
 import { PhotoThumb } from '../photo';
 import {
@@ -724,6 +725,120 @@ function CategorySettings({
           <Alert>{errorText(update.error)}</Alert>
         </div>
       )}
+      <SplitCategory
+        category={category}
+        groups={groups.filter((g) => category.groupIds.includes(g.id) && g.key !== 'SIZE')}
+        onDone={onClose}
+      />
     </Card>
+  );
+}
+
+/**
+ * Turns one option type into sub-categories (موديل الطقم → سفاري، رسمي…): first says what would
+ * move where, then does it. Barcodes, SKUs, stock and prices stay with each product.
+ */
+function SplitCategory({
+  category,
+  groups,
+  onDone,
+}: {
+  category: Category;
+  groups: OptionGroup[];
+  onDone: () => void;
+}) {
+  const refresh = useCatalogueRefresh();
+  const toast = useToast();
+  const [groupId, setGroupId] = useState('');
+  const [preview, setPreview] = useState<SplitResult | null>(null);
+
+  const look = useMutation({
+    mutationFn: async (id: string) => api.splitCategory(category.id, { groupId: id, dryRun: true }),
+    onSuccess: setPreview,
+  });
+  const split = useMutation({
+    mutationFn: async () => api.splitCategory(category.id, { groupId }),
+    onSuccess: async (r) => {
+      toast(
+        `صار في ${formatQuantity(r.parts.length)} تصنيف داخلي تحت «${category.nameAr}» — الباركودات والمخزون ما تغيروا`,
+      );
+      onDone();
+      await refresh();
+    },
+  });
+  if (!groups.length) return null;
+
+  return (
+    <div className="mt-6 border-t border-stone pt-4">
+      <h3 className="font-bold">حوّل خيار لتصنيفات داخلية</h3>
+      <p className="mt-1 text-sm text-ink-muted">
+        مثلاً «موديل الطقم»: بيصير تحت «{category.nameAr}» تصنيف داخلي لكل قيمة (سفاري، رسمي…)، وكل
+        منتج بينتقل لتصنيفو وبينشال منو هالخيار. الباركود و SKU والمخزون والأسعار والصور بيضلّوا متل
+        ما هنن، والملصقات المطبوعة بتضل صالحة.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <div className="w-56">
+          <Field label="الخيار">
+            <Select
+              value={groupId}
+              onChange={(e) => {
+                setGroupId(e.target.value);
+                setPreview(null);
+                if (e.target.value) look.mutate(e.target.value);
+              }}
+            >
+              <option value="">— اختر —</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.nameAr}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </div>
+      {look.isPending && <p className="mt-3 text-sm text-ink-muted">جارٍ الحساب…</p>}
+      {preview && preview.dryRun && (
+        <div className="mt-3">
+          <table className="w-full max-w-xl text-sm">
+            <thead className="bg-blush text-ink-muted">
+              <tr>
+                <th className="p-2 text-start">التصنيف الداخلي</th>
+                <th className="p-2 text-start">المنتجات</th>
+                <th className="p-2 text-start">القطع بالمخزون</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.parts.map((p) => (
+                <tr key={p.valueId} className="border-t border-stone">
+                  <td className="p-2 font-medium">
+                    {category.nameAr} › {p.nameAr}
+                    {p.existing && <span className="text-ink-muted"> (موجود من قبل)</span>}
+                  </td>
+                  <td className="tabular p-2">{formatQuantity(p.products)}</td>
+                  <td className="tabular p-2">{formatQuantity(p.pieces)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {preview.staying > 0 && (
+            <p className="mt-2 text-sm text-ink-muted">
+              {formatQuantity(preview.staying)} منتج ما إلو «{preview.group}» — بيضل بـ «
+              {category.nameAr}» نفسو.
+            </p>
+          )}
+          <div className="mt-3">
+            <ConfirmButton disabled={split.isPending} onConfirm={() => split.mutate()}>
+              حوّل «{preview.group}» لتصنيفات داخلية
+            </ConfirmButton>
+          </div>
+        </div>
+      )}
+      {(look.isError || split.isError) && (
+        <div className="mt-3">
+          <Alert>{errorText(look.error ?? split.error)}</Alert>
+        </div>
+      )}
+    </div>
   );
 }

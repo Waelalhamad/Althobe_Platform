@@ -129,6 +129,27 @@ export interface Money {
   currency: Currency;
 }
 
+/** One sub-category a split fills: one value of the option type. */
+export interface SplitPart {
+  valueId: string;
+  nameAr: string;
+  /** null while only previewing a new one. */
+  categoryId: string | null;
+  /** A sub-category of this name already existed and is reused. */
+  existing: boolean;
+  products: number;
+  /** Pieces in stock; they move with their products. */
+  pieces: number;
+}
+
+export interface SplitResult {
+  dryRun: boolean;
+  group: string;
+  parts: SplitPart[];
+  /** Products without a value of the type: they stay in the category. */
+  staying: number;
+}
+
 export interface Variant {
   id: string;
   sku: string;
@@ -848,6 +869,9 @@ export const api = {
     },
   ) => request<Category>('PATCH', `/categories/${id}`, patch),
   deleteCategory: async (id: string) => request<{ ok: true }>('DELETE', `/categories/${id}`),
+  /** One option type of the category becomes its sub-categories; `dryRun` only says how. */
+  splitCategory: async (id: string, input: { groupId: string; dryRun?: boolean }) =>
+    post<SplitResult>(`/categories/${id}/split`, input),
   generateProducts: async (
     categoryId: string,
     input: {

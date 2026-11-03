@@ -16,6 +16,8 @@ import {
   InvalidOptionGroupsError,
   InvalidSelectionError,
   OptionGroupInUseError,
+  SplitConflictError,
+  SplitGroupInvalidError,
   TooManyCombinationsError,
 } from './catalogue.errors.js';
 import * as repo from './catalogue.repository.js';
@@ -28,6 +30,7 @@ import {
   setActiveSchema,
   setPricesSchema,
   setProductPricesSchema,
+  splitCategorySchema,
   updateCategorySchema,
   type CreateCategoryInput,
   type GenerateProductsInput,
@@ -37,6 +40,7 @@ import {
   type SetActiveInput,
   type SetPricesInput,
   type SetProductPricesInput,
+  type SplitCategoryInput,
   type UpdateCategoryInput,
 } from './catalogue.schema.js';
 import {
@@ -45,6 +49,7 @@ import {
   type CategoryView,
   type PriceKey,
   type ProductView,
+  type SplitResult,
   type VariantView,
 } from './catalogue.types.js';
 import { createOptionsService, isUniqueViolation, moved, renumber } from './options.service.js';
@@ -267,6 +272,178 @@ export function createCatalogueService(db: Db) {
           before: { code: category.code },
         });
         return { ok: true };
+      });
+    },
+
+    /**
+     * Turns one option type of a category into sub-categories, one per value its products use
+     * (طقم عربي → سفاري، رسمي…), and moves each product into its own, without that type. A product
+     * keeps its id, SKU, barcode, prices, photos, stock and history: printed labels stay valid and
+     * nothing is posted. Products without a value of the type stay. A sub-category of the same
+     * name is reused; a new one takes the category's other types.
+     */
+    async splitCategory(
+      id: string,
+      input: SplitCategoryInput,
+      ctx: ActorContext,
+    ): Promise<SplitResult> {
+      assertPermission(ctx, PERMISSIONS.products.write);
+      const data = parse(splitCategorySchema, input);
+
+      return inTransaction(db, async (tx) => {
+        if (!(await repo.lockCategory(tx, id))) throw new NotFoundError('category', id);
+        const all = await repo.listCategories(tx);
+        const category = all.find((c) => c.id === id)!;
+        const group = await tx.optionGroup.findUnique({
+          where: { id: data.groupId },
+          select: { id: true, key: true, nameAr: true },
+        });
+        if (!group || group.key === 'SIZE' || !category.groupIds.includes(group.id)) {
+          throw new SplitGroupInvalidError(data.groupId);
+        }
+
+        // Deleted products move too, so a design restored later lands where its siblings are.
+        const products = await tx.product.findMany({
+          where: { categoryId: id },
+          select: {
+            id: true,
+            code: true,
+            deletedAt: true,
+            styleValues: { select: { groupId: true, valueId: true } },
+          },
+        });
+        type Row = (typeof products)[number];
+        const byValue = new Map<string, Row[]>();
+        for (const p of products) {
+          const valueId = p.styleValues.find((v) => v.groupId === group.id)?.valueId;
+          if (valueId) byValue.set(valueId, [...(byValue.get(valueId) ?? []), p]);
+        }
+        if (!byValue.size) throw new SplitGroupInvalidError(data.groupId);
+        if (depthOf(all, id) >= MAX_CATEGORY_DEPTH) throw new CategoryTooDeepError();
+
+        const values = await tx.optionValue.findMany({
+          where: { id: { in: [...byValue.keys()] } },
+          orderBy: [{ sortOrder: 'asc' }, { valueAr: 'asc' }],
+          select: {
+            id: true,
+            code: true,
+            valueAr: true,
+            parent: { select: { valueAr: true, parent: { select: { valueAr: true } } } },
+          },
+        });
+        // A detail reads with what it details, as everywhere else: "جوخ هندي مشخط".
+        const nameOf = (v: (typeof values)[number]) =>
+          [v.parent?.parent?.valueAr, v.parent?.valueAr, v.valueAr].filter(Boolean).join(' ');
+
+        const balances = await tx.inventoryBalance.findMany({
+          where: { variant: { productId: { in: products.map((p) => p.id) } } },
+          select: { quantity: true, variant: { select: { productId: true } } },
+        });
+        const piecesOf = new Map<string, number>();
+        for (const b of balances) {
+          const pid = b.variant.productId;
+          piecesOf.set(pid, (piecesOf.get(pid) ?? 0) + b.quantity);
+        }
+        const children = all.filter((c) => c.parentId === id);
+        const notDeleted = (list: readonly Row[]) => list.filter((p) => !p.deletedAt);
+        const keyWithout = (p: Row) =>
+          optionKey(p.styleValues.filter((v) => v.groupId !== group.id).map((v) => v.valueId));
+
+        const parts: SplitResult['parts'] = [];
+        const codes = new Set(
+          (await tx.category.findMany({ select: { code: true } })).map((c) => c.code),
+        );
+        for (const value of values) {
+          const moving = byValue.get(value.id)!;
+          const nameAr = nameOf(value);
+          const found = children.find((c) => c.nameAr === nameAr);
+          if (found) {
+            // The same design already in that sub-category would make two products of one.
+            const there = new Set(
+              (
+                await tx.product.findMany({
+                  where: { categoryId: found.id },
+                  select: { styleKey: true },
+                })
+              ).map((p) => p.styleKey),
+            );
+            const clash = moving.find((p) => there.has(keyWithout(p)));
+            if (clash) {
+              throw new SplitConflictError({ category: nameAr, productCode: clash.code });
+            }
+          }
+          const part = {
+            valueId: value.id,
+            nameAr,
+            categoryId: found?.id ?? null,
+            existing: Boolean(found),
+            products: notDeleted(moving).length,
+            pieces: moving.reduce((n, p) => n + (piecesOf.get(p.id) ?? 0), 0),
+          };
+          parts.push(part);
+          if (data.dryRun) continue;
+
+          if (!found) {
+            // Its SKUs start with the category's: TQM-SF. Codes are unique across categories.
+            const base = `${category.code}-${value.code}`.slice(0, 20);
+            let code = base;
+            for (let n = 2; codes.has(code); n++) code = `${base.slice(0, 18)}-${n}`;
+            codes.add(code);
+            const last = await tx.category.aggregate({
+              where: { parentId: id, deletedAt: null },
+              _max: { sortOrder: true },
+            });
+            const created = await tx.category.create({
+              data: {
+                nameAr,
+                code,
+                parentId: id,
+                unitOfMeasure: category.unitOfMeasure,
+                sortOrder: (last._max.sortOrder ?? 0) + 10,
+                optionGroups: {
+                  create: category.groupIds
+                    .filter((g) => g !== group.id)
+                    .map((groupId) => ({ groupId })),
+                },
+              },
+              select: { id: true },
+            });
+            part.categoryId = created.id;
+          }
+          for (const p of moving) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { categoryId: part.categoryId!, styleKey: keyWithout(p) },
+            });
+          }
+          await tx.productStyleValue.deleteMany({
+            where: { productId: { in: moving.map((p) => p.id) }, groupId: group.id },
+          });
+        }
+
+        const staying = notDeleted(products).length - parts.reduce((n, p) => n + p.products, 0);
+        if (!data.dryRun) {
+          // Every product that used the type has left, so the category no longer offers it.
+          await tx.categoryOptionGroup.deleteMany({
+            where: { categoryId: id, groupId: group.id },
+          });
+          await writeAudit(tx, {
+            actorId: ctx.userId,
+            action: 'categories.split',
+            entityType: 'category',
+            entityId: id,
+            before: { groupIds: category.groupIds },
+            after: {
+              groupId: group.id,
+              parts: parts.map((p) => ({
+                categoryId: p.categoryId,
+                nameAr: p.nameAr,
+                products: byValue.get(p.valueId)!.map((x) => x.id),
+              })),
+            },
+          });
+        }
+        return { dryRun: data.dryRun, group: group.nameAr, parts, staying };
       });
     },
 

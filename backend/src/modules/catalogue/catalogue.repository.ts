@@ -96,6 +96,29 @@ const firstPhoto = {
   select: { id: true },
 } satisfies Prisma.Product$photosArgs;
 
+// ─── Category names: a sub-category reads with its parents, "طقم عربي سفاري" ──────────────────
+
+const categoryParents = {
+  select: { nameAr: true, parent: { select: { nameAr: true } } },
+} as const;
+
+interface NamedCategory {
+  nameAr: string;
+  parent?: { nameAr: string; parent?: { nameAr: string } | null } | null;
+}
+
+function categoryName(c: NamedCategory): string {
+  return [c.parent?.parent?.nameAr, c.parent?.nameAr, c.nameAr].filter(Boolean).join(' ');
+}
+
+const categoryNameMatches = (text: string) => ({
+  OR: [
+    { nameAr: { contains: text, mode: 'insensitive' as const } },
+    { parent: { nameAr: { contains: text, mode: 'insensitive' as const } } },
+    { parent: { parent: { nameAr: { contains: text, mode: 'insensitive' as const } } } },
+  ],
+});
+
 // ─── Variants ────────────────────────────────────────────────────────────────────────────────
 
 const variantSelect = {
@@ -121,6 +144,7 @@ const variantSelect = {
           nameEn: true,
           unitOfMeasure: true,
           isActive: true,
+          parent: categoryParents,
         },
       },
     },
@@ -154,7 +178,7 @@ function toView(row: VariantRow): VariantView {
     product: {
       id: product.id,
       code: product.code,
-      nameAr: product.category.nameAr,
+      nameAr: categoryName(product.category),
       nameEn: product.category.nameEn,
       title: design.map((o) => o.value).join(' · '),
       categoryId: product.category.id,
@@ -239,7 +263,7 @@ export async function searchVariants(
             OR: [
               { sku: { contains: text, mode: 'insensitive' } },
               { barcode: { startsWith: text } },
-              { product: { category: { nameAr: { contains: text, mode: 'insensitive' } } } },
+              { product: { category: categoryNameMatches(text) } },
               { product: { styleValues: { some: valueMatches(text) } } },
               { optionValues: { some: valueMatches(text) } },
             ],
@@ -262,7 +286,9 @@ const productSelect = {
   prices: priceSelect,
   photos: firstPhoto,
   styleValues: { select: optionRowSelect },
-  category: { select: { id: true, code: true, nameAr: true, isActive: true } },
+  category: {
+    select: { id: true, code: true, nameAr: true, isActive: true, parent: categoryParents },
+  },
   _count: { select: { variants: { where: live } } },
 } satisfies Prisma.ProductSelect;
 
@@ -274,7 +300,12 @@ function toProductView(row: ProductRow): ProductView {
     id: row.id,
     code: row.code,
     isActive: row.isActive,
-    category: row.category,
+    category: {
+      id: row.category.id,
+      code: row.category.code,
+      nameAr: categoryName(row.category),
+      isActive: row.category.isActive,
+    },
     options,
     title: options.map((o) => o.value).join(' · '),
     prices: pricesOf(row.prices),
