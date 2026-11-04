@@ -15,6 +15,17 @@ export class ReceiptCorrectionNotPossibleError extends DomainError {
   }
 }
 
+/** A receipt's cost put right while some of its pieces are on the road between branches. */
+export class ReceiptCostOnTheRoadError extends DomainError {
+  constructor(details: Record<string, unknown>) {
+    super(
+      'RECEIPT_COST_ON_THE_ROAD',
+      'Some of these pieces are on the road: confirm the shipment first',
+      details,
+    );
+  }
+}
+
 /** «تراجع» refused: the stock it would take back is no longer there at that value. */
 export class MovementUndoNotPossibleError extends DomainError {
   constructor(details: Record<string, unknown>) {

@@ -3,7 +3,7 @@ import { writeAudit } from '../../shared/audit.js';
 import { inTransaction, type Db, type Queryable, type Tx } from '../../shared/db.js';
 import { NotFoundError } from '../../shared/errors.js';
 import { uuidv7 } from '../../shared/ids.js';
-import type { Currency } from '../../shared/money.js';
+import { toBaseAmount, type Currency } from '../../shared/money.js';
 import {
   assertPermission,
   PERMISSIONS,
@@ -23,6 +23,7 @@ import {
   ReceiptNeedsSourceError,
   ScanSessionNotOpenError,
   ReceiptCorrectionNotPossibleError,
+  ReceiptCostOnTheRoadError,
   ShipmentExcessError,
   ShipmentStateError,
   VariantInactiveError,
@@ -695,6 +696,9 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         toMovementView,
       );
       const entries: MovementEntry[] = [];
+      // Pieces of a re-costed line no longer in stock (sold, given, lost): the caller puts their
+      // difference on the cost of goods sold.
+      const gone: ReceiptCostGone[] = [];
       for (const change of data.changes) {
         const own = received.filter(
           (m) =>
@@ -715,9 +719,11 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
           reason: data.reason,
         };
         if (change.unitCost !== undefined) {
-          // Every piece goes back at the cost it came in at and in again at the right one, so the
-          // stock's value, the supplier's bill (or the opening balances) and nothing else move.
-          // Refused, like any correction, once pieces of it were sold or moved.
+          // A cost typed for now (the real one not known yet) is put right later, wherever the
+          // pieces went: where they are, each goes in again at the right cost and out at the one
+          // it came in at, so only the stock's value moves; what is no longer in stock takes the
+          // difference to the cost of goods sold. The supplier's bill (or the opening balances)
+          // takes all of it. Pieces of it here are counted first.
           if (change.unitCost === first.unitCost.amount || now <= 0) continue;
           if (change.quantity !== now) {
             throw new ReceiptCorrectionNotPossibleError({
@@ -726,15 +732,44 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
               quantity: now,
             });
           }
-          entries.push(
-            { ...base, variantId: change.variantId, quantity: -now },
-            {
-              ...base,
+          const right = { ...first.unitCost, amount: change.unitCost };
+          let left = now;
+          let onTheRoad = 0;
+          for (const at of await wherePieces(tx, change.variantId, session.location_id)) {
+            if (left === 0) break;
+            if (at.kind === 'TRANSIT') {
+              onTheRoad += at.quantity;
+              continue;
+            }
+            const take = Math.min(left, at.quantity);
+            entries.push(
+              {
+                ...base,
+                locationId: at.locationId,
+                variantId: change.variantId,
+                quantity: take,
+                unitCost: right,
+              },
+              { ...base, locationId: at.locationId, variantId: change.variantId, quantity: -take },
+            );
+            left -= take;
+          }
+          // On the road nothing may happen to them: until they arrive, they cannot be told apart
+          // from what was sold.
+          if (left > 0 && onTheRoad > 0) {
+            throw new ReceiptCostOnTheRoadError({ variantId: change.variantId, onTheRoad });
+          }
+          if (left > 0) {
+            const per = (c: typeof right) =>
+              toBaseAmount(c.amount, c.currency, c.rateToBase) * BigInt(left);
+            gone.push({
               variantId: change.variantId,
-              quantity: now,
-              unitCost: { ...first.unitCost, amount: change.unitCost },
-            },
-          );
+              quantity: left,
+              currency: right.currency,
+              amount: (right.amount - first.unitCost.amount) * BigInt(left),
+              base: per(right) - per(first.unitCost),
+            });
+          }
         } else if (change.toVariantId) {
           // Part of the line was another variant all along: it moves, at the same cost.
           const moved = now - change.quantity;
@@ -753,7 +788,7 @@ export function createScanSessionService(db: Db, deps: LedgerDeps) {
         entityType: 'scan_session',
         entityId: sessionId,
       });
-      return { locationId: session.location_id, movements: result.movements };
+      return { locationId: session.location_id, movements: result.movements, gone };
     },
 
     /**
@@ -967,4 +1002,31 @@ function toSessionHeader(s: {
     createdById: s.createdById,
     committedAt: s.committedAt,
   };
+}
+
+/** Pieces of a received line re-costed after they left stock: their difference, signed. */
+export interface ReceiptCostGone {
+  variantId: string;
+  quantity: number;
+  currency: Currency;
+  /** In the cost's currency, minor units. */
+  amount: bigint;
+  /** USD cents. */
+  base: bigint;
+}
+
+/** Where a variant is in stock now: the receipt's location first, then the most first. */
+async function wherePieces(tx: Tx, variantId: string, receivedAt: string) {
+  const rows = await tx.inventoryBalance.findMany({
+    where: { variantId, quantity: { gt: 0 } },
+    select: { locationId: true, quantity: true, location: { select: { kind: true } } },
+  });
+  return rows
+    .map((r) => ({ locationId: r.locationId, quantity: r.quantity, kind: r.location.kind }))
+    .sort(
+      (a, b) =>
+        Number(b.locationId === receivedAt) - Number(a.locationId === receivedAt) ||
+        b.quantity - a.quantity ||
+        a.locationId.localeCompare(b.locationId),
+    );
 }

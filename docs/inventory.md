@@ -63,6 +63,7 @@ Which movement types each kind accepts. Enforced in `InventoryService`, defined 
 | `ADJUSTMENT` | yes | yes | |
 | `DAMAGE` | yes | yes | |
 | `STOCKTAKE` | yes | yes | |
+| `RECEIPT_CORRECTION` | yes | yes, cost only | A receipt's cost put right later reaches its pieces wherever they went: in again at the right cost and out at the old one, at each location; pieces already gone take the difference to COGS (5101). Refused while pieces of that variant are on the road (`RECEIPT_COST_ON_THE_ROAD`) |
 | Reservation | yes | **no** | Retail does not reserve; stock leaves at the moment of sale |
 
 Assumption to confirm: the store never receives directly from a supplier. If it does, it is a

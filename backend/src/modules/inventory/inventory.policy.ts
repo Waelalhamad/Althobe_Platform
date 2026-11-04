@@ -19,10 +19,9 @@ const ALL_MOVEMENTS: readonly MovementType[] = [
 
 const ALLOWED_MOVEMENTS: Record<LocationKind, ReadonlySet<MovementType>> = {
   WAREHOUSE: new Set(ALL_MOVEMENTS),
-  // Receipts (and so their corrections) happen at warehouses only.
-  STORE: new Set(
-    ALL_MOVEMENTS.filter((type) => type !== 'PURCHASE' && type !== 'RECEIPT_CORRECTION'),
-  ),
+  // Receipts happen at warehouses only. A receipt's cost put right later reaches its pieces
+  // wherever they went, the store too (the only correction that can happen there).
+  STORE: new Set(ALL_MOVEMENTS.filter((type) => type !== 'PURCHASE')),
   // The road between branches (F-04): shipments pass through it, and what never arrives is
   // lost from it. Nothing else happens there.
   TRANSIT: new Set(['TRANSFER_OUT', 'TRANSFER_IN', 'SHIPPING_LOSS']),

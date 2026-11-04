@@ -1005,6 +1005,10 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
   const [cost, setCost] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [key, setKey] = useState(() => crypto.randomUUID());
+  // One cost for every size of a product at once (or of all of them): a cost typed for now is
+  // usually the same for the whole receipt.
+  const [fillProduct, setFillProduct] = useState('');
+  const [fillCost, setFillCost] = useState('');
   const products = [...new Set(received.map((r) => r.variant.product.id))];
   const { data: sizes = [] } = useQuery({
     queryKey: ['variants', 'receipt-sizes', ...products],
@@ -1020,7 +1024,8 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
     const n = text === undefined || text.trim() === '' ? r.quantity : Number(text);
     if (!Number.isInteger(n) || n < 0) return [];
     const typed = cost[r.variant.id];
-    const unitCost = typed && r.unitCost ? toMinorUnits(typed, r.unitCost.currency) : null;
+    const unitCost =
+      typed && r.unitCost ? toMinorUnits(normalizeDigits(typed.trim()), r.unitCost.currency) : null;
     if (unitCost && r.unitCost && unitCost !== r.unitCost.amount && n === r.quantity && !target) {
       return [{ variantId: r.variant.id, quantity: n, unitCost }];
     }
@@ -1059,10 +1064,61 @@ function CorrectReceipt({ session }: { session: ScanSession }) {
       <h2 className="font-bold">تصحيح الاستلام</h2>
       <p className="text-sm text-ink-muted">
         اكتب الكمية الصحيحة لكل صنف (0 = ما وصل أبداً)، أو انقل الزيادة لمقاسها الصح، أو صحّح تكلفة
-        القطعة إذا انكتبت غلط (الكمية بتضل نفسها). التصحيح بيمشي بتكلفة الاستلام نفسها وعلى نفس
-        الحساب (المورد أو الرصيد الافتتاحي)، وما بيأثر على الأرباح. ما بيمشي إذا القطع انباعت أو
-        انتقلت.
+        القطعة إذا انكتبت غلط أو كانت مؤقتة (الكمية بتضل نفسها). تصحيح الكمية والمقاس بيمشي بتكلفة
+        الاستلام نفسها وعلى نفس الحساب، وما بيمشي إذا القطع انباعت أو انتقلت.
       </p>
+      {fixesCost && (
+        <p className="text-sm text-ink-muted">
+          <b>تصحيح التكلفة</b> بيمشي حتى لو القطع انتقلت أو انباعت: يلي لسا بالمخازن بتتصلّح قيمتو
+          وين ما كان، ويلي انباع بيتصلّح ربحو، ودين المورد بيصير عالتكلفة الصح. بس إذا في قطع من نفس
+          المقاس بالطريق لليبيا، أكّد وصول الشحنة أول.
+        </p>
+      )}
+      {fixesCost && (
+        <div className="flex flex-wrap items-end gap-2 rounded-lg bg-blush/40 p-2">
+          <div className="w-64">
+            <Field label="نفس التكلفة لكل مقاسات">
+              <Select value={fillProduct} onChange={(e) => setFillProduct(e.target.value)}>
+                <option value="">كل الأصناف بالاستلام</option>
+                {products.map((id) => (
+                  <option key={id} value={id}>
+                    {received.find((r) => r.variant.product.id === id)?.variant.product.nameAr}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="w-32">
+            <Field label="التكلفة الصح للقطعة">
+              <Input
+                dir="ltr"
+                inputMode="decimal"
+                value={fillCost}
+                onChange={(e) => setFillCost(e.target.value)}
+              />
+            </Field>
+          </div>
+          <Button
+            variant="secondary"
+            disabled={!toMinorUnits(normalizeDigits(fillCost.trim()))}
+            onClick={() => {
+              const text = normalizeDigits(fillCost.trim());
+              setCost({
+                ...cost,
+                ...Object.fromEntries(
+                  received
+                    .filter(
+                      (r) => r.unitCost && (!fillProduct || r.variant.product.id === fillProduct),
+                    )
+                    .map((r) => [r.variant.id, text]),
+                ),
+              });
+            }}
+          >
+            عبّيها بالجدول
+          </Button>
+        </div>
+      )}
       <table className="w-full">
         <thead className="text-sm text-ink-muted">
           <tr>

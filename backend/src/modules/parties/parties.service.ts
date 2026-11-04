@@ -522,23 +522,55 @@ export function createPartiesService(db: Db, deps: PartiesDeps) {
             request: { sessionId, input },
           },
           async () => {
-            const { movements } = await deps.scanSessions.correctReceiptInTx(
+            const { movements, gone } = await deps.scanSessions.correctReceiptInTx(
               tx,
               sessionId,
               input,
               ctx,
             );
             const terms = await tx.receiptTerms.findUnique({ where: { sessionId } });
-            const value = movements.reduce((s, m) => s + (m.valueBaseAmount ?? 0n), 0n);
             const byCurrency = new Map<Currency, { amount: bigint; base: bigint }>();
-            for (const m of movements) {
-              const c = m.unitCost?.currency ?? 'USD';
+            const add = (c: Currency, amount: bigint, base: bigint) => {
               const t = byCurrency.get(c) ?? { amount: 0n, base: 0n };
-              t.amount += (m.unitCost?.amount ?? 0n) * BigInt(m.quantity);
-              t.base += m.valueBaseAmount ?? 0n;
+              t.amount += amount;
+              t.base += base;
               byCurrency.set(c, t);
+            };
+            for (const m of movements) {
+              add(
+                m.unitCost?.currency ?? 'USD',
+                (m.unitCost?.amount ?? 0n) * BigInt(m.quantity),
+                m.valueBaseAmount ?? 0n,
+              );
             }
             const reason = (input as { reason?: string }).reason ?? '';
+            // A cost put right after pieces were sold: what they cost more (or less) is the cost
+            // of goods sold's, owed on the same account as the rest of the receipt.
+            const goneBy = new Map<Currency, { amount: bigint; base: bigint }>();
+            for (const g of gone) {
+              add(g.currency, g.amount, g.base);
+              const t = goneBy.get(g.currency) ?? { amount: 0n, base: 0n };
+              goneBy.set(g.currency, { amount: t.amount + g.amount, base: t.base + g.base });
+            }
+            for (const [currency, t] of goneBy) {
+              if (t.base === 0n) continue;
+              await deps.accounting.postPartyEntry(tx, {
+                side: 'PAYABLE',
+                control: {
+                  currency,
+                  amount: -(currency === 'USD' ? t.base : t.amount),
+                  base: -t.base,
+                },
+                other: { role: 'COGS', base: t.base },
+                voucherType: 'JOURNAL',
+                sourceType: 'RECEIPT_COST_SOLD',
+                sourceId: uuidv7(),
+                branch: 'SY',
+                memo: `تصحيح تكلفة استلام — قطع انباعت أو طلعت — ${reason}`,
+                createdById: ctx.userId,
+              });
+            }
+            const value = [...byCurrency.values()].reduce((s, t) => s + t.base, 0n);
 
             if (terms?.partyId && value !== 0n) {
               const party = await lockParty(tx, terms.partyId);

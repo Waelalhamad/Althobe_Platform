@@ -163,13 +163,73 @@ describe('correcting a receipt (developer report F-02)', () => {
     expect(await account('5103')).toBe(0n);
     expect((await books.checkBooks(w.owner)).ok).toBe(true);
 
-    // Only those who approve change a cost; and not once a piece of it has gone.
+    // Only those who approve change a cost.
     const keeper = withoutPermission(w.owner, 'inventory.adjust.approve');
     await expect(fix(1_700n, keeper)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
-    await t.services.inventory.issueStock(
-      { variantId: w.x.id, locationId: w.wh1.id, quantity: 1 },
+  });
+
+  it('a cost typed for now is put right after pieces were moved and sold (owner, 2026-11-04)', async () => {
+    const supplier = await parties.createParty(
+      { kind: 'SUPPLIER', nameAr: 'محمد الحايك', currency: 'USD' },
+      w.owner,
+    );
+    // 10 × X at 1 $ for now: the real cost is not known yet.
+    const id = await receipt({ source: 'SUPPLIER', partyId: supplier.id }, [[w.x, 10, 1]]);
+    const inv = t.services.inventory;
+    // 3 go to the store, 2 are sold there, 1 is sold here: 6 here, 1 at the store, 3 gone.
+    await inv.transferStock(
+      { variantId: w.x.id, fromLocationId: w.wh1.id, toLocationId: w.store.id, quantity: 3 },
       write(w.owner),
     );
-    await expect(fix(1_700n)).rejects.toMatchObject({ code: 'RECEIPT_CORRECTION_NOT_POSSIBLE' });
+    await inv.issueStock(
+      { variantId: w.x.id, locationId: w.store.id, quantity: 2 },
+      write(w.owner),
+    );
+    await inv.issueStock({ variantId: w.x.id, locationId: w.wh1.id, quantity: 1 }, write(w.owner));
+    const cogsBefore = await account('5101');
+
+    // It was 12 $.
+    await parties.correctReceipt(
+      id,
+      {
+        changes: [{ variantId: w.x.id, quantity: 10, unitCost: 1_200n }],
+        reason: 'التكلفة الحقيقية',
+      },
+      write(w.owner),
+    );
+    const value = async (locationId: string) =>
+      (await inv.getBalance({ variantId: w.x.id, locationId }, w.owner)).valueBaseAmount;
+    expect([await value(w.wh1.id), await value(w.store.id)]).toEqual([7_200n, 1_200n]);
+    // All 10 pieces at 12 $ are owed; the 3 gone cost 11 $ more each than the profit counted.
+    expect((await parties.getParty(supplier.id, w.owner)).balance).toBe(12_000n);
+    expect((await account('5101')) - cogsBefore).toBe(3_300n);
+    expect((await parties.summary(w.owner)).books.payable).toEqual({
+      books: 12_000n,
+      named: 12_000n,
+      unassigned: 0n,
+    });
+    expect((await books.checkBooks(w.owner)).ok).toBe(true);
+    // The receipt shows its cost as it is now.
+    const shown = await sessions.getSession({ sessionId: id }, w.owner);
+    expect(shown.received?.map((r) => [r.quantity, r.unitCost?.amount])).toEqual([[10, 1_200n]]);
+
+    // Pieces on the road wait for the shipment: they cannot be told from what was sold.
+    const road = await sessions.openSession(
+      { kind: 'TRANSFER', locationId: w.wh1.id, toLocationId: w.ly.id },
+      w.owner,
+    );
+    await sessions.scan(
+      { sessionId: road.id, barcode: w.x.barcode, scanId: randomUUID() },
+      w.owner,
+    );
+    await sessions.setLineQuantity({ sessionId: road.id, variantId: w.x.id, quantity: 6 }, w.owner);
+    await sessions.commitSession({ sessionId: road.id }, w.owner);
+    await expect(
+      parties.correctReceipt(
+        id,
+        { changes: [{ variantId: w.x.id, quantity: 10, unitCost: 1_100n }], reason: 'مرة تانية' },
+        write(w.owner),
+      ),
+    ).rejects.toMatchObject({ code: 'RECEIPT_COST_ON_THE_ROAD' });
   });
 });
