@@ -382,6 +382,9 @@ export function ScanSessionPage() {
         />
       )}
 
+      {open && costed && session.lines.length > 0 && (
+        <CostForAll sessionId={sessionId} session={session} onLine={updateLine} />
+      )}
       <Card className="overflow-x-auto p-0">
         <table className="w-full">
           <thead className="bg-blush text-sm text-ink-muted">
@@ -670,6 +673,84 @@ function PickFromStock({
           <Alert>{errorText(save.error)}</Alert>
         </div>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The real cost is not known yet and the goods must go in: one cost (in dollars) for every line
+ * still without one, or for all of them. Put right later with «تصحيح الاستلام».
+ */
+function CostForAll({
+  sessionId,
+  session,
+  onLine,
+}: {
+  sessionId: string;
+  session: ScanSession;
+  onLine: (line: ScanLine) => void;
+}) {
+  const [amount, setAmount] = useState('');
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const minor = toMinorUnits(normalizeDigits(amount.trim()), 'USD');
+  const without = session.lines.filter((l) => !l.unitCost);
+
+  const apply = async (lines: ScanLine[]) => {
+    if (!minor) return;
+    setError(null);
+    let done = 0;
+    try {
+      for (const l of lines) {
+        setProgress(`${done} من ${lines.length}…`);
+        onLine(
+          await api.setLine(sessionId, l.variant.id, {
+            unitCost: { amount: minor, currency: 'USD', rateToBase: '1' },
+          }),
+        );
+        done++;
+      }
+    } catch (e) {
+      setError(`وقف بعد ${done} من ${lines.length}: ${errorText(e)}`);
+    }
+    setProgress(null);
+  };
+
+  return (
+    <Card className="mb-4 flex flex-col gap-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="w-36">
+          <Field label="تكلفة مؤقتة للقطعة ($)">
+            <Input
+              dir="ltr"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="1"
+            />
+          </Field>
+        </div>
+        <Button
+          variant="secondary"
+          disabled={!minor || without.length === 0 || progress !== null}
+          onClick={() => void apply(without)}
+        >
+          حطها على يلي ما إلو تكلفة ({without.length})
+        </Button>
+        <ConfirmButton
+          variant="ghost"
+          disabled={!minor || progress !== null}
+          onConfirm={() => void apply(session.lines)}
+        >
+          على كل الأصناف ({session.lines.length})
+        </ConfirmButton>
+        {progress && <span className="text-sm text-ink-muted">{progress}</span>}
+      </div>
+      <p className="text-sm text-ink-muted">
+        إذا لسا ما بتعرف التكلفة الحقيقية: حط رقم مؤقت، وبس تعرفها صلّحها من «تصحيح الاستلام».
+        انتبه: لحد ما تصلّحها، قيمة المخزون والربح ودين المورد محسوبين عالرقم المؤقت.
+      </p>
+      {error && <Alert>{error}</Alert>}
     </Card>
   );
 }
@@ -1217,6 +1298,8 @@ function LineRow({
         <td className="p-2">
           {editable ? (
             <CostEditor
+              // A cost set for all lines at once shows here too.
+              key={line.unitCost ? `${line.unitCost.amount}-${line.unitCost.currency}` : 'none'}
               line={line}
               onSave={(unitCost) => save.mutate({ unitCost })}
               busy={save.isPending}
